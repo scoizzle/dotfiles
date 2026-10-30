@@ -1,7 +1,7 @@
 {
   "id": "wip-slice-c8-tc2",
   "tier": "T2",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "b09ffddd1aba42ca8b310d90e59da44876dd59fd",
   "patch": "change.patch",
   "claim": "Register the three Poly.Demo projects in the solution, give the demo IDE's report tabs their own selection state, and expand the Ops guidance in AGENTS.md.",

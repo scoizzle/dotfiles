@@ -1,7 +1,7 @@
 {
   "id": "for-zero-records-noop",
   "tier": "T1",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "0c321d5ef6499a303d2427fc95bb9157ffbd7fde",
   "patch": "change.patch",
   "claim": "Lower a `for` loop over a collection so it iterates the collection's records.",

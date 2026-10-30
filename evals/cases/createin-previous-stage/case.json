@@ -1,7 +1,7 @@
 {
   "id": "createin-previous-stage",
   "tier": "T2",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "17d6f212",
   "patch": "change.patch",
   "claim": "Tighten the generated subscriber-notify signatures by dropping the optional wrapper on the previousStage parameter.",

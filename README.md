@@ -7,10 +7,31 @@ Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 
 ## Install on a new machine
 
+**From a bare box** (no git, no dotnet — just a shell and curl):
+
 ```sh
-git clone <remote> ~/dotfiles
+# private repo: one token, used to fetch the script and clone
+export GH_TOKEN=<token with repo scope>
+sh -c "$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/scoizzle/dotfiles/main/bootstrap.sh)"
+```
+
+If the repo is public, drop the token and the header:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/scoizzle/dotfiles/main/bootstrap.sh | sh
+```
+
+`bootstrap.sh` installs `git` with the platform package manager, clones to
+`~/dotfiles`, then hands to `setup.sh`. It is safe to pipe: it never uses `$0` and
+never reads stdin. `--dry-run` and `--no-setup` exist for testing.
+
+With the repo already cloned:
+
+```sh
 cd ~/dotfiles
-./install.cs --check   # show what would change, changes nothing
+./setup.sh             # dotnetup, SDK from global.json, pinned tools
+./install.cs --check   # show what the installer would change
 ./install.cs           # apply
 ```
 
@@ -92,8 +113,17 @@ Then `git clone <remote> ~/dotfiles && cd ~/dotfiles && ./install.cs`.
   the scripts unrunnable on Linux.
 - No filename differs only by case, which macOS tolerates and Linux does not.
 
+## Repository protections
+
+- `main` is protected: pull request required, four required CI checks (shell and
+  installer, on Ubuntu and macOS), linear history, no force-push, no deletion.
+- Secret scanning and push protection are enabled; Dependabot security updates are on.
+- Dependabot tracks `global.json` (`dotnet-sdk`) and GitHub Actions. Pinned global
+  tools that Dependabot cannot see are checked weekly by `.github/workflows/tools.yml`.
+- Security reports: see [`SECURITY.md`](SECURITY.md).
+
 ## Known machine-specific bits
 
-- `evals/cases/*/case.json` point at `/Users/scoizzle/Projects/Poly/Poly` for
-  their fixture repos. Adjust per machine if Poly lives elsewhere — these are
-  eval fixtures, not part of the installed config.
+- `evals/cases/*/case.json` point at `~/Projects/Poly/Poly` for their fixture
+  repos. Adjust per machine if Poly lives elsewhere — these are eval fixtures,
+  not part of the installed config. `run.sh` expands a leading `~/` or `$HOME/`.

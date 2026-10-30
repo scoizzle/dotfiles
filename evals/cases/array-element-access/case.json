@@ -1,7 +1,7 @@
 {
   "id": "array-element-access",
   "tier": "T2",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "254e4fe3df503bb7419818afb7f30a2abc61877f",
   "patch": "change.patch",
   "claim": "Support array element access in the C# surface: index read and write, and .Length, for both scalar and reference arrays.",

@@ -77,7 +77,7 @@ Binary is ~76 MB.
 ## Verified hand-off
 
 ```sh
-dotnetup dotnet -- run /Users/scoizzle/dotfiles/install.cs --check
+dotnetup dotnet -- run ~/dotfiles/install.cs --check
 # -> exit 0, "nothing to do"
 ```
 
