@@ -1,19 +1,12 @@
 version: 2
 updates:
-  # global.json -> sdk.version. Dependabot's dotnet-sdk updater is the only native
-  # ecosystem that understands this file; NuGet does not read global.json.
-  - package-ecosystem: dotnet-sdk
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    # main requires branches to be up to date, so a stale bump is unmergeable.
-    # Let Dependabot rebase itself instead of clicking "Update branch" per PR.
-    rebase-strategy: auto
-    commit-message:
-      prefix: sdk
-    labels:
-      - dependencies
+  # Deliberately NO dotnet-sdk entry.
+  #
+  # "sdk.version" with "rollForward" is a FLOOR, not a target: it means "any 10.0.x
+  # from this feature band upward". Dependabot treats it as a target and raised it to
+  # 10.0.403, which the system SDK (10.0.401) could not satisfy — so every `dotnet`
+  # call in this directory failed, including install.cs. SDK currency is
+  # `dotnetup update`'s job; Dependabot has no way to express "floor".
 
   - package-ecosystem: github-actions
     directory: /
