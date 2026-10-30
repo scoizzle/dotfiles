@@ -406,6 +406,20 @@ static int RunDoctor(string home, string repoRoot)
             required: false);
     }
 
+    // Aspire is a project tool, not a config prerequisite, so it is advisory.
+    // Read the bundle version file rather than executing a 182 MB binary.
+    var aspireVersion = AspireBundleVersion(home);
+    Check($"aspire bundle{(aspireVersion is null ? "" : $" ({aspireVersion})")}",
+        () => aspireVersion is not null || OnPath("aspire"),
+        "curl -sSL https://aspire.dev/install.sh | bash",
+        required: false);
+
+    // The Roslynk package ships no skill, so setup.sh restores it from the tag.
+    Check("roslynk skill in ~/.agents/skills",
+        () => File.Exists(Path.Combine(home, ".agents", "skills", "roslynk", "SKILL.md")),
+        "re-run ./setup.sh to restore it from the pinned tag",
+        required: false);
+
     Check("~/.dotnet/tools on PATH",
         () => (Environment.GetEnvironmentVariable("PATH") ?? "")
             .Split(Path.PathSeparator)
@@ -460,6 +474,17 @@ static bool OnPath(string exe)
         if (File.Exists(Path.Combine(dir, exe))) return true;
     }
     return false;
+}
+
+static string? AspireBundleVersion(string home)
+{
+    // Format: "13.6.1+<sha>|<bytes>|<ticks>"
+    var path = Path.Combine(home, ".aspire", ".aspire-bundle-version");
+    if (!File.Exists(path)) return null;
+
+    var text = File.ReadAllText(path).Trim();
+    var cut = text.IndexOfAny(new[] { '|', '+' });
+    return cut > 0 ? text[..cut] : text;
 }
 
 static string? PinnedRoslynkVersion(string repoRoot)

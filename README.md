@@ -68,6 +68,15 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `reviews.jsonl` — append-only log of review runs.
 - `evals/canary-*/` — recorded model output from past eval runs.
 
+Outside `~/.config/opencode`, also untracked on purpose:
+
+- `~/.agents/skills/` — skill directories are owned by the tools that install them.
+  The Aspire CLI regenerates its set with `aspire agent init`, and `setup.sh`
+  restores Roslynk's from the tag pinned in `tools.json`. Tracking them here would
+  only make them drift from the tool that owns them.
+- `~/.claude/skills/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
+  of it credential-bearing.
+
 ## Adding a file to the repo
 
 1. Copy it in next to its future destination, e.g. `~/dotfiles/.zshrc`.

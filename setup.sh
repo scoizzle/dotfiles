@@ -226,6 +226,76 @@ else
     fi
 fi
 
+# The Roslynk NuGet package ships no SKILL.md (only appsettings.json), so the skill
+# cannot come from the tool. Without this a wiped machine silently loses it.
+if [ -n "$ROS_PIN" ]; then
+    SKILL_DIR="$HOME/.agents/skills/roslynk"
+    if [ -f "$SKILL_DIR/SKILL.md" ] && [ "$(cat "$SKILL_DIR/.pin" 2>/dev/null)" = "$ROS_PIN" ]; then
+        say "  ok      roslynk skill $ROS_PIN"
+    elif [ "$DRY_RUN" -eq 1 ]; then
+        say "would fetch the roslynk skill at tag $ROS_PIN"
+    else
+        tmp=$(mktemp -d)
+        if curl -fsSL "https://github.com/mrpmorris/Roslynk/archive/refs/tags/${ROS_PIN}.tar.gz" |
+            tar -xz -C "$tmp" 2>/dev/null; then
+            src=$(find "$tmp" -maxdepth 3 -type d -path "*/skills/roslynk" | head -1)
+            if [ -n "$src" ]; then
+                mkdir -p "$SKILL_DIR"
+                cp -R "$src/." "$SKILL_DIR/"
+                printf '%s\n' "$ROS_PIN" > "$SKILL_DIR/.pin"
+                say "  ok      roslynk skill $ROS_PIN"
+            else
+                say "  note    no skills/roslynk in the tag archive"
+            fi
+        else
+            say "  note    could not download the roslynk skill at $ROS_PIN"
+        fi
+        rm -rf "$tmp"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# aspire
+#
+# Deliberately the self-contained bundle, not `dotnet tool Aspire.Cli`: the bundle
+# carries the dashboard and templates, and `aspire agent init` regenerates the agent
+# skills into ~/.agents/skills, so those never need to live in this repo.
+# Not added to tools.json because it is not a dotnet tool in this install mode.
+# ---------------------------------------------------------------------------
+step "aspire"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    say "would install the Aspire bundle if missing, then: aspire agent init"
+else
+    if have aspire; then
+        say "  ok      $(command -v aspire)"
+    elif [ -x "$HOME/.aspire/bin/aspire" ]; then
+        PATH="$HOME/.aspire/bin:$PATH"
+        export PATH
+        say "  ok      $HOME/.aspire/bin/aspire"
+    else
+        say "  installing to $HOME/.aspire"
+        curl -sSL https://aspire.dev/install.sh | bash
+        PATH="$HOME/.aspire/bin:$PATH"
+        export PATH
+    fi
+
+    if have aspire; then
+        say "  version $(aspire --version 2>/dev/null | head -1)"
+        # `standard` is ~/.agents/skills, which opencode already discovers. Deliberately
+        # NOT passing `opencode`: that location is ~/.config/opencode/skills, a symlink
+        # into this repo, so the CLI would write generated skills into version control.
+        # `--workspace-root "$HOME"` is required: without it the CLI treats the cwd (this
+        # repo) as the workspace and writes .agents/, .claude/ and .github/skills/ into
+        # the working tree. Verified on Ubuntu 26.04.
+        (cd "$HOME" && aspire agent init --non-interactive --skills all \
+            --skill-locations standard,claudecode,github --workspace-root "$HOME") 2>&1 | tail -3 ||
+            say "  note    aspire agent init failed; run it manually"
+    else
+        say "  note    aspire still not on PATH; skipping agent init"
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # hand off
 # ---------------------------------------------------------------------------
