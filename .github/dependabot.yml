@@ -7,6 +7,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # main requires branches to be up to date, so a stale bump is unmergeable.
+    # Let Dependabot rebase itself instead of clicking "Update branch" per PR.
+    rebase-strategy: auto
     commit-message:
       prefix: sdk
     labels:
@@ -17,6 +20,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # main requires branches to be up to date, so a stale bump is unmergeable.
+    # Let Dependabot rebase itself instead of clicking "Update branch" per PR.
+    rebase-strategy: auto
     commit-message:
       prefix: ci
     labels:
