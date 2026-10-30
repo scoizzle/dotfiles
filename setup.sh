@@ -107,13 +107,33 @@ else
     esac
 fi
 
+# .NET on Linux needs the system ICU unless it runs in invariant mode, and dotnetup
+# installs an SDK without any system dependencies. Arch's `base` has no ICU; some
+# Debian images don't either (this is why the Ubuntu VM needed libicu-dev by hand).
+if [ "$OS" = linux ]; then
+    has_icu=0
+    for f in /usr/lib*/libicuuc.so* /usr/lib/*/libicuuc.so*; do
+        [ -e "$f" ] && has_icu=1 && break
+    done
+    if [ "$has_icu" -eq 1 ]; then
+        say "  ok      icu"
+    else
+        say "  MISSING icu (.NET needs it on Linux)"
+        case "$DISTRO" in
+            arch)   MISSING_PKGS="$MISSING_PKGS icu" ;;
+            debian) MISSING_PKGS="$MISSING_PKGS libicu-dev" ;;
+        esac
+    fi
+fi
+
 if have clang; then
     say "  ok      clang (native AOT available)"
 else
     say "  note    clang absent — tools will run interpreted (still works, ~200 ms)"
     note_toolchain=1
     case "$DISTRO" in
-        arch)   MISSING_PKGS="$MISSING_PKGS clang zlib" ;;
+        # binutils is only needed to link AOT output; --needed makes it a no-op otherwise.
+        arch)   MISSING_PKGS="$MISSING_PKGS clang zlib binutils" ;;
         debian) MISSING_PKGS="$MISSING_PKGS clang zlib1g-dev" ;;
     esac
 fi

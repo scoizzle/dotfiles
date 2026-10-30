@@ -383,8 +383,19 @@ static int RunDoctor(string home, string repoRoot)
 
     // CI lints with shellcheck; a machine without it cannot reproduce the build.
     Check("shellcheck (CI lints with it)", () => OnPath("shellcheck"),
-        isMac ? "brew install shellcheck" : "sudo apt-get install -y shellcheck",
+        isMac ? "brew install shellcheck"
+              : isArch ? "sudo pacman -S --needed shellcheck"
+                       : "sudo apt-get install -y shellcheck",
         required: false);
+
+    // .NET needs the system ICU on Linux and dotnetup installs no system dependencies.
+    // Blocking because a missing ICU makes .NET apps fail, not just warnings.
+    if (!OperatingSystem.IsMacOS())
+    {
+        Check("icu (.NET runtime dependency)", HasIcu,
+            isArch ? "sudo pacman -S --needed icu" : "sudo apt-get install -y libicu-dev",
+            required: true);
+    }
 
     Check("opencode", () => OnPath("opencode"), "install opencode, then re-run",
         required: false);
@@ -477,6 +488,21 @@ static bool OnPath(string exe)
     {
         if (string.IsNullOrWhiteSpace(dir)) continue;
         if (File.Exists(Path.Combine(dir, exe))) return true;
+    }
+    return false;
+}
+
+static bool HasIcu()
+{
+    // .NET binds libicuuc; the soname lives in different directories per distro/arch.
+    foreach (var dir in new[]
+    {
+        "/usr/lib", "/usr/lib64", "/lib", "/lib64",
+        "/usr/lib/aarch64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
+    })
+    {
+        if (!Directory.Exists(dir)) continue;
+        if (Directory.EnumerateFiles(dir, "libicuuc.so*").Any()) return true;
     }
     return false;
 }
