@@ -109,6 +109,22 @@ the official `dotnet-install.sh`. File-based apps (`install.cs`) need SDK 10+.
 
 Then `git clone <remote> ~/dotfiles && cd ~/dotfiles && ./install.cs`.
 
+### If `./install.cs` says "A compatible .NET SDK was not found"
+
+`global.json`'s `sdk.version` is a **floor**, not a target: with
+`"rollForward": "latestFeature"` it means "any 10.0.x from this feature band upward",
+not "exactly this SDK". If the `dotnet` first on `PATH` is older than the floor, every
+`dotnet` call in this directory fails — including `install.cs`, whose shebang resolves
+`dotnet` from `PATH`.
+
+That is why the floor stays at `10.0.100` rather than tracking the newest installed SDK,
+and why `.github/dependabot.yml` has **no** `dotnet-sdk` entry: Dependabot treats the
+value as a target and raises the floor, which breaks any machine whose system SDK lags.
+SDK currency is `dotnetup update`'s job.
+
+Fix on a machine that hits it: run `./setup.sh` (it puts the dotnetup-managed SDK on
+`PATH`), then `./install.cs`.
+
 ### Why the config is portable
 
 - `opencode.json` uses `{env:HOME}/.dotnet/tools/roslynk` for the Roslynk MCP
