@@ -37,6 +37,7 @@ jobs:
           shellcheck --version | head -2
           shellcheck -s sh setup.sh
           shellcheck -s sh bootstrap.sh
+          shellcheck -s sh update.sh
           shellcheck -s bash evals/run.sh
 
       # Ensures the cold-start path still works when the script is piped, which is the
