@@ -1,0 +1,85 @@
+name: tools
+
+# Dependabot covers global.json (dotnet-sdk ecosystem) and GitHub Actions, but it has
+# no ecosystem for global .NET tools: `dotnet tool install -g roslynk` writes outside
+# the repo, so nothing is scanned. This workflow closes that gap by comparing the pin
+# in tools.json against NuGet.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tools
+  cancel-in-progress: false
+
+jobs:
+  pinned-tools:
+    name: pinned tool versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: compare pins against nuget
+        id: check
+        run: |
+          set -eu
+          pinned="$(python3 -c 'import json;print(json.load(open("tools.json"))["tools"]["roslynk"])')"
+          latest="$(
+            curl -fsSL https://api.nuget.org/v3-flatcontainer/roslynk/index.json |
+              python3 -c 'import json,sys; v=[x for x in json.load(sys.stdin)["versions"] if "-" not in x]; print(v[-1])'
+          )"
+          echo "roslynk pinned=$pinned latest=$latest"
+          {
+            echo "pinned=$pinned"
+            echo "latest=$latest"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$pinned" = "$latest" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: open or update the issue
+        if: steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+        run: |
+          set -eu
+          title="roslynk ${LATEST} available"
+          body="$(
+            printf '`tools.json` pins roslynk **%s**; NuGet has **%s**.\n\n```sh\n# set "roslynk" in tools.json to %s\n./setup.sh          # installs the pinned version\n./install.cs --doctor\n```\n' \
+              "$PINNED" "$LATEST" "$LATEST"
+          )"
+          num="$(gh issue list --state open --limit 200 --json number,title \
+            --jq '.[] | "\(.number)\t\(.title)"' |
+            awk -F'\t' -v t="$title" '$2 == t { print $1; exit }')"
+          if [ -n "$num" ]; then
+            echo "commenting on existing issue #$num"
+            gh issue comment "$num" --body "$body"
+          else
+            echo "opening: $title"
+            gh issue create --title "$title" --body "$body"
+          fi
+
+      - name: close resolved issues
+        if: steps.check.outputs.stale == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          gh issue list --state open --limit 200 --json number,title \
+            --jq '.[] | "\(.number)\t\(.title)"' |
+            awk -F'\t' '$2 ~ /^roslynk .* available$/ { print $1 }' |
+            while read -r num; do
+              [ -n "$num" ] || continue
+              echo "closing #$num"
+              gh issue close "$num" --comment "Resolved: tools.json is current."
+            done

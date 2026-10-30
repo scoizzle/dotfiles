@@ -204,6 +204,29 @@ if [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# pinned global tools
+#
+# Dependabot cannot see global .NET tools, so tools.json pins them and the scheduled
+# tools workflow compares that pin to NuGet. Install the pin, not "latest", or the
+# repo has no reproducible toolchain.
+# ---------------------------------------------------------------------------
+step "tools"
+
+ROS_PIN=$(sed -n 's/.*"roslynk"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REPO/tools.json" 2>/dev/null | head -1)
+
+if [ -z "$ROS_PIN" ]; then
+    say "  no roslynk pin in tools.json; skipping"
+elif [ "$DRY_RUN" -eq 1 ]; then
+    say "would install roslynk $ROS_PIN from the tools.json pin"
+else
+    if dotnet tool list -g 2>/dev/null | awk 'NR > 2 { print $1 }' | grep -qx roslynk; then
+        run dotnet tool update -g roslynk --version "$ROS_PIN"
+    else
+        run dotnet tool install -g roslynk --version "$ROS_PIN"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # hand off
 # ---------------------------------------------------------------------------
 step "install"

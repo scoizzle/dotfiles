@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # global.json -> sdk.version. Dependabot's dotnet-sdk updater is the only native
+  # ecosystem that understands this file; NuGet does not read global.json.
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: sdk
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies

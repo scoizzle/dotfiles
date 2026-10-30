@@ -1,0 +1,6 @@
+{
+  "//": "Pinned versions for tools installed outside this repo's build. Dependabot cannot see global .NET tools, so .github/workflows/tools.yml checks these against NuGet weekly.",
+  "tools": {
+    "roslynk": "3.0.0"
+  }
+}

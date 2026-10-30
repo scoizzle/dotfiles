@@ -41,7 +41,7 @@ if (args.Contains("--help") || args.Contains("-h") || args.Contains("help"))
 }
 
 if (args.Contains("--doctor"))
-    return RunDoctor(home);
+    return RunDoctor(home, repoRoot);
 
 string mode = copyMode ? "copy" : "link";
 Console.WriteLine($"repo     {repoRoot}");
@@ -338,7 +338,7 @@ static List<string> EnvironmentWarnings(string targetRoot, string home)
 // ---------------------------------------------------------------------------
 // --doctor: what a fresh machine needs before any of this works
 // ---------------------------------------------------------------------------
-static int RunDoctor(string home)
+static int RunDoctor(string home, string repoRoot)
 {
     var isArch = File.Exists("/etc/arch-release");
     var isMac = OperatingSystem.IsMacOS();
@@ -384,9 +384,27 @@ static int RunDoctor(string home)
     Check("opencode", () => OnPath("opencode"), "install opencode, then re-run",
         required: false);
 
-    Check("roslynk tool", () => File.Exists(Path.Combine(toolsDir, "roslynk")),
-        "dotnet tool install -g roslynk",
-        required: false);
+    // A global tool's version is not visible to Dependabot, so tools.json pins it and
+    // the scheduled tools workflow compares that pin to NuGet. Compare here too, or the
+    // pin is decorative.
+    var pinned = PinnedRoslynkVersion(repoRoot);
+    var installedRoslynk = InstalledRoslynkVersion(home);
+
+    if (pinned is null)
+    {
+        Check("roslynk tool", () => File.Exists(Path.Combine(toolsDir, "roslynk")),
+            "dotnet tool install -g roslynk",
+            required: false);
+    }
+    else
+    {
+        Check($"roslynk {pinned} (pin; installed {installedRoslynk ?? "none"})",
+            () => installedRoslynk == pinned,
+            installedRoslynk is null
+                ? $"dotnet tool install -g roslynk --version {pinned}"
+                : $"dotnet tool update -g roslynk --version {pinned}",
+            required: false);
+    }
 
     Check("~/.dotnet/tools on PATH",
         () => (Environment.GetEnvironmentVariable("PATH") ?? "")
@@ -442,6 +460,30 @@ static bool OnPath(string exe)
         if (File.Exists(Path.Combine(dir, exe))) return true;
     }
     return false;
+}
+
+static string? PinnedRoslynkVersion(string repoRoot)
+{
+    var path = Path.Combine(repoRoot, "tools.json");
+    if (!File.Exists(path)) return null;
+
+    var m = System.Text.RegularExpressions.Regex.Match(
+        File.ReadAllText(path), "\"roslynk\"\\s*:\\s*\"([^\"]+)\"");
+    return m.Success ? m.Groups[1].Value : null;
+}
+
+static string? InstalledRoslynkVersion(string home)
+{
+    // A global tool's version lives in its .store directory. `roslynk --version` starts
+    // the daemon and fails, so read the directory rather than executing the tool.
+    var store = Path.Combine(home, ".dotnet", "tools", ".store", "roslynk");
+    if (!Directory.Exists(store)) return null;
+
+    return Directory.GetDirectories(store)
+        .Select(d => Path.GetFileName(d))
+        .Where(v => Version.TryParse(v, out _))
+        .OrderByDescending(v => Version.Parse(v))
+        .FirstOrDefault();
 }
 
 static (int Code, string Output) RunCapture(string file, string arguments)
