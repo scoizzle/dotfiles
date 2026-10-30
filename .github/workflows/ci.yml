@@ -1,0 +1,139 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    name: shell / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup must be a dry run: it may not install anything on a CI box.
+      # On a bare runner this exits 0 after printing the plan.
+      - name: setup.sh --dry-run
+        run: ./setup.sh --dry-run
+
+      # Linting is OS-independent, so run it once instead of paying `brew install
+      # shellcheck` on the macOS leg.
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck --version | head -2
+          shellcheck -s sh setup.sh
+          shellcheck -s bash evals/run.sh
+
+      # The shebang is #!/bin/sh and the guest /bin/sh is dash on Debian/Ubuntu,
+      # so a bashism that works on macOS would only appear here.
+      - name: dash -n (POSIX syntax)
+        if: runner.os == 'Linux'
+        run: dash -n setup.sh
+
+  installer:
+    name: installer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: global.json satisfied
+        run: |
+          dotnet --version
+          dotnet --version | grep -qE '^10\.'
+
+      - name: install
+        run: ./install.cs
+
+      # The stamp/link pass must converge. A second run changing anything means
+      # the install is not idempotent.
+      - name: second run changes nothing
+        run: |
+          out="$(./install.cs)"
+          echo "$out"
+          echo "$out" | grep -q 'done (0 path(s) changed)'
+
+      # Exit code is about blocking prerequisites only (dotnet, python3, git).
+      # opencode/roslynk/PATH are advisory and must not fail the build.
+      - name: doctor
+        run: ./install.cs --doctor
+
+      - name: managed paths are symlinks that resolve
+        run: |
+          set -eu
+          for p in AGENTS.md opencode.json agents commands skills bin evals; do
+            test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
+            test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
+          done
+          test -f "$HOME/.config/opencode/skills/roslynk-rules/SKILL.md"
+
+      # A wrong skill header fails silently in opencode, so assert the contract:
+      # name matches the directory and is a valid slug, description within bounds.
+      - name: skill frontmatter valid
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          p = pathlib.Path("skills/roslynk-rules/SKILL.md")
+          fm = p.read_text().split("---\n", 2)[1]
+          f = {
+              k: v
+              for k, v in (
+                  line.split(": ", 1)
+                  for line in fm.strip().splitlines()
+                  if ": " in line and not line.startswith((" ", "\t"))
+              )
+          }
+          checks = {
+              "name matches dir": f.get("name") == p.parent.name,
+              "name is a slug": bool(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", f.get("name", ""))),
+              "description bound": 1 <= len(f.get("description", "")) <= 1024,
+          }
+          for k, v in checks.items():
+              print(f"{'ok  ' if v else 'FAIL'} {k}")
+          sys.exit(0 if all(checks.values()) else 1)
+          PY
+
+      - name: python tools still parse
+        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow evals/cost.py evals/score.py evals/scoreboard.py
+
+      # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
+      - name: review-bundle smoke
+        run: |
+          set -eu
+          bundle="$(./bin/review-bundle .)"
+          echo "bundle: $bundle"
+          test -d "$bundle"
+          test -f "$bundle/00-status.txt"
+          test -f "$bundle/01-diffstat.txt"
+
+      - name: review-bundle exit codes
+        run: |
+          set +e
+          ./bin/review-bundle >/dev/null 2>&1; rc=$?
+          [ "$rc" -eq 2 ] || { echo "no-args should be 2, got $rc"; exit 1; }
+          ./bin/review-bundle . --nope >/dev/null 2>&1; rc=$?
+          [ "$rc" -eq 2 ] || { echo "bad flag should be 2, got $rc"; exit 1; }
+          ./bin/review-bundle /tmp >/dev/null 2>&1; rc=$?
+          [ "$rc" -eq 2 ] || { echo "non-git should be 2, got $rc"; exit 1; }
+          echo "exit codes ok"
