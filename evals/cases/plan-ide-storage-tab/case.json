@@ -2,7 +2,7 @@
   "id": "plan-ide-storage-tab",
   "artifact": "plan",
   "tier": "T2",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "b09ffddd1aba42ca8b310d90e59da44876dd59fd",
   "plan": "plan.md",
   "goal": "Let the IDE demo show the storage DDL for the selected DBMS pack.",

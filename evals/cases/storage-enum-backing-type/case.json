@@ -1,7 +1,7 @@
 {
   "id": "storage-enum-backing-type",
   "tier": "T2",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "f887d880",
   "patch": "change.patch",
   "claim": "Simplify the enum column type by using the property's own type name instead of routing it through a separate backing-type constant.",

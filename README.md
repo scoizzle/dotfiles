@@ -115,6 +115,6 @@ Then `git clone <remote> ~/dotfiles && cd ~/dotfiles && ./install.cs`.
 
 ## Known machine-specific bits
 
-- `evals/cases/*/case.json` point at `/Users/scoizzle/Projects/Poly/Poly` for
-  their fixture repos. Adjust per machine if Poly lives elsewhere — these are
-  eval fixtures, not part of the installed config.
+- `evals/cases/*/case.json` point at `~/Projects/Poly/Poly` for their fixture
+  repos. Adjust per machine if Poly lives elsewhere — these are eval fixtures,
+  not part of the installed config. `run.sh` expands a leading `~/` or `$HOME/`.

@@ -76,6 +76,17 @@ esac
 
 field() { python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2"; }
 
+# Expand a leading ~/ or $HOME/ so eval cases stay portable across machines.
+# ${p#~/} does not strip under dash — `~` is special in the pattern — so count chars.
+expand_home() {
+  # shellcheck disable=SC2088  # matching the literal "~/" prefix is the whole point
+  case "$1" in
+    "~/"*) printf '%s/%s\n' "$HOME" "${1#??}" ;;
+    "\$HOME/"*) printf '%s/%s\n' "$HOME" "${1#??????}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
 for cfg in "$HERE"/cases/*/case.json; do
   tier="$(field "$cfg" tier)"
   case "$tier" in
@@ -179,7 +190,7 @@ for dir in "$HERE"/cases/*/; do
   co="$WORK/co/$id"
   RAN=1
   rm -rf "$co"
-  if ! git clone --shared --no-checkout -q "$(field "$cfg" repo)" "$co"; then
+  if ! git clone --shared --no-checkout -q "$(expand_home "$(field "$cfg" repo)")" "$co"; then
     echo "clone failed: $id" >&2
     mark_failed "clone failed"
     continue

@@ -1,7 +1,7 @@
 {
   "id": "mcp-nav-rendering",
   "tier": "T1",
-  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "repo": "~/Projects/Poly/Poly",
   "base": "e2ca854a",
   "patch": "change.patch",
   "claim": "Collapse the MCP instance rendering helpers back into BuildSnapshot to keep the property rendering in one place.",
