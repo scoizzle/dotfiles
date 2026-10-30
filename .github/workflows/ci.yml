@@ -36,7 +36,16 @@ jobs:
         run: |
           shellcheck --version | head -2
           shellcheck -s sh setup.sh
+          shellcheck -s sh bootstrap.sh
           shellcheck -s bash evals/run.sh
+
+      # Ensures the cold-start path still works when the script is piped, which is the
+      # only way it will ever be run on a bare machine.
+      - name: bootstrap.sh survives being piped
+        run: |
+          out="$(cat bootstrap.sh | sh -s -- --dry-run)"
+          echo "$out"
+          echo "$out" | grep -q 'would clone'
 
       # The shebang is #!/bin/sh and the guest /bin/sh is dash on Debian/Ubuntu,
       # so a bashism that works on macOS would only appear here.
