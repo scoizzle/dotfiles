@@ -381,6 +381,11 @@ static int RunDoctor(string home, string repoRoot)
         isArch ? "sudo pacman -S --needed git" : "install git",
         required: true);
 
+    // CI lints with shellcheck; a machine without it cannot reproduce the build.
+    Check("shellcheck (CI lints with it)", () => OnPath("shellcheck"),
+        isMac ? "brew install shellcheck" : "sudo apt-get install -y shellcheck",
+        required: false);
+
     Check("opencode", () => OnPath("opencode"), "install opencode, then re-run",
         required: false);
 

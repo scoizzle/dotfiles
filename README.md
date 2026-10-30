@@ -83,6 +83,25 @@ Outside `~/.config/opencode`, also untracked on purpose:
 2. Add its name to the `entries` array at the top of `install.cs`.
 3. `./install.cs --check` to confirm the plan, then `./install.cs`.
 
+## Keeping tools current
+
+```sh
+./update.sh             # dotnetup, SDK, pinned roslynk, aspire, opencode, t3, rebuild
+./update.sh --brew      # also refresh the packages declared in Brewfile
+./update.sh --dry-run   # print the plan, change nothing
+```
+
+`update.sh` never rewrites a declared version:
+
+- `global.json` is a **floor** and is left alone — `dotnetup update` runs without
+  `--update-global-json`, because raising the floor breaks machines whose system SDK is
+  older.
+- `tools.json` pins are **exact**: roslynk is updated *to the pin*, never to latest.
+  New pins arrive as PRs/issues from `.github/workflows/tools.yml`.
+
+Run it from a plain terminal, not from inside opencode or T3 — it replaces the binaries
+those processes are running.
+
 ## Platforms
 
 Works on macOS and on Linux (Arch / [Omarchy](https://omarchy.org)). Same
