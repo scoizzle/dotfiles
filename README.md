@@ -113,6 +113,15 @@ Then `git clone <remote> ~/dotfiles && cd ~/dotfiles && ./install.cs`.
   the scripts unrunnable on Linux.
 - No filename differs only by case, which macOS tolerates and Linux does not.
 
+## Repository protections
+
+- `main` is protected: pull request required, four required CI checks (shell and
+  installer, on Ubuntu and macOS), linear history, no force-push, no deletion.
+- Secret scanning and push protection are enabled; Dependabot security updates are on.
+- Dependabot tracks `global.json` (`dotnet-sdk`) and GitHub Actions. Pinned global
+  tools that Dependabot cannot see are checked weekly by `.github/workflows/tools.yml`.
+- Security reports: see [`SECURITY.md`](SECURITY.md).
+
 ## Known machine-specific bits
 
 - `evals/cases/*/case.json` point at `~/Projects/Poly/Poly` for their fixture
