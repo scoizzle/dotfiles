@@ -1,0 +1,54 @@
+{
+  "id": "plan-ide-storage-tab",
+  "artifact": "plan",
+  "tier": "T2",
+  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "base": "b09ffddd1aba42ca8b310d90e59da44876dd59fd",
+  "plan": "plan.md",
+  "goal": "Let the IDE demo show the storage DDL for the selected DBMS pack.",
+  "authorship": "Hand-authored. Three defects were planted. Four more were added to `expected` after a real run surfaced them; each was verified against the base commit with the commands in evals/README.md before being added.",
+  "expected": [
+    {
+      "id": "no-ddl-producer",
+      "severity": "🔴",
+      "files": [],
+      "require": ["ddl", "no ddl|does not (emit|produce|exist)|no sql ddl|not exist|false premise|never (emitted|produced)|doesn't exist|absent|pure ddl artifact"],
+      "notes": "The plan's premise - that the compiler already produces DDL reflecting the chosen pack - is false. Only 'file' and 'tree' artifact types exist (IArtifactContributor.cs:29,69); nothing emits SQL DDL, and the repo's own gap map says so."
+    },
+    {
+      "id": "maui-project-in-solution",
+      "severity": "🟠",
+      "files": ["Poly.slnx", "Poly.Demo"],
+      "require": ["maui|ios|net10.0-ios|workload", "restore|ci|solution|ubuntu"],
+      "notes": "Adding the MAUI demo head to the only solution file makes a bare `dotnet restore` (and CI's restore step on ubuntu-latest) resolve a net10.0-iOS project with no MAUI workload installed."
+    },
+    {
+      "id": "versioned-package-reference",
+      "severity": "🟠",
+      "files": ["Directory.Packages.props", "Poly.Demo.Shared.csproj"],
+      "require": ["nu1008|central package management|managepackageversionscentrally|version attribute|already referenced|already (referenced|present)"],
+      "notes": "Under central package management a Version attribute on PackageReference is an error (NU1008); versions live only in Directory.Packages.props, and the FluentUI reference already exists without one."
+    },
+    {
+      "id": "wrong-test-runner",
+      "severity": "🟠",
+      "files": [],
+      "require": ["dotnet test", "dotnet run --project|not the|instead|unsupported"],
+      "notes": "The repo runs tests with `dotnet run --project Poly.Tests/Poly.Tests.csproj`, not `dotnet test`."
+    },
+    {
+      "id": "component-location-unimported",
+      "severity": "🟠",
+      "files": ["_Imports.razor", "Poly.Demo.Shared"],
+      "require": ["_imports|@using|namespace|components/", "layout|resolve|import|does not exist|missing"],
+      "notes": "Poly.Demo.Shared has no Components/ directory and _Imports.razor imports only Poly.Demo.Shared.Layout, so a component at Components/StorageDdlPanel.razor would not resolve from Ide.razor."
+    },
+    {
+      "id": "mode-dependency-omitted",
+      "severity": "🟠",
+      "files": [],
+      "require": ["compilemode|entities", "default|only|not available|absent|requires|db.*all"],
+      "notes": "Storage packs only take effect in CompileMode.Db or All (DslCompiler.cs SeedFor/LinkedVendor), but the IDE defaults to CompileMode.Entities, so the plan's verification step cannot pass in the default mode."
+    }
+  ]
+}

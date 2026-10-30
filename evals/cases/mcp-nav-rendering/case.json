@@ -1,0 +1,24 @@
+{
+  "id": "mcp-nav-rendering",
+  "tier": "T1",
+  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "base": "e2ca854a",
+  "patch": "change.patch",
+  "claim": "Collapse the MCP instance rendering helpers back into BuildSnapshot to keep the property rendering in one place.",
+  "expected": [
+    {
+      "id": "nav-dumps-instance",
+      "severity": "🟠",
+      "file": "RuntimeTool",
+      "require": ["nav|navigation", "instanc"],
+      "notes": "A navigation value rendered its whole DomainEntityInstance into the property list, dumping the domain and producing unusable output; it must render as a handle."
+    },
+    {
+      "id": "stage-less-entity",
+      "severity": "🟠",
+      "file": "RuntimeTool",
+      "require": ["currentStage|stage", "null|undefined|\\(none\\)"],
+      "notes": "A stage-less entity reported currentStage null, which the client serializer omits, so clients showed undefined; it must always be a string."
+    }
+  ]
+}

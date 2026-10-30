@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Append or resolve a review-ledger line for the scoreboard.
+
+    review-log --tier T1 --artifact change --model review-light \
+        --red 1 --amber 2 --yellow 1 --green 0 --acted 2 --dismissed 0 \
+        --cost 0.42 --latency 120 --pending
+
+    review-log --resolve <id> --acted 2 --dismissed 0
+
+The ledger is JSONL at ~/.config/opencode/reviews.jsonl. `pending` lines are
+excluded from yield by scoreboard.py; resolve them after the user answers.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import sys
+import uuid
+
+DEFAULT_LEDGER = "~/.config/opencode/reviews.jsonl"
+
+
+def now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def load(path: str) -> tuple[list[dict], list[str]]:
+    if not os.path.exists(path):
+        return [], []
+    entries = []
+    malformed = []
+    with open(path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                malformed.append(line)
+                continue
+            if isinstance(entry, dict):
+                entries.append(entry)
+            else:
+                malformed.append(line)
+    return entries, malformed
+
+
+def save(path: str, entries: list[dict], malformed: list[str]) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    temp = f"{path}.tmp"
+    with open(temp, "w") as handle:
+        for entry in entries:
+            handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        for line in malformed:
+            handle.write(line + "\n")
+    os.replace(temp, path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--ledger", default=DEFAULT_LEDGER)
+    parser.add_argument("--resolve", help="id of an existing line to resolve")
+    parser.add_argument("--tier", choices=["T0", "T1", "T2"])
+    parser.add_argument("--artifact", choices=["change", "plan"], default="change")
+    parser.add_argument("--model", default="")
+    parser.add_argument("--models", default="")
+    parser.add_argument("--red", type=int, default=0)
+    parser.add_argument("--amber", type=int, default=0)
+    parser.add_argument("--yellow", type=int, default=0)
+    parser.add_argument("--green", type=int, default=0)
+    parser.add_argument("--acted", type=int, default=None)
+    parser.add_argument("--dismissed", type=int, default=None)
+    parser.add_argument("--cost", type=float, default=0.0)
+    parser.add_argument("--latency", type=int, default=0)
+    parser.add_argument("--pending", action="store_true")
+    args = parser.parse_args()
+
+    path = os.path.expanduser(args.ledger)
+    entries, malformed = load(path)
+
+    if args.resolve:
+        if args.acted is None or args.dismissed is None:
+            parser.error("--resolve needs --acted and --dismissed")
+        for entry in entries:
+            if entry.get("id") == args.resolve:
+                entry["acted"] = args.acted
+                entry["dismissed"] = args.dismissed
+                entry["pending"] = False
+                entry["resolved_at"] = now()
+                save(path, entries, malformed)
+                print(args.resolve)
+                return 0
+        print(f"no ledger line with id {args.resolve}", file=sys.stderr)
+        return 1
+
+    if not args.tier:
+        parser.error("--tier is required when appending a line")
+
+    entry = {
+        "id": uuid.uuid4().hex[:12],
+        "ts": now(),
+        "tier": args.tier,
+        "artifact": args.artifact,
+        "model": args.model or args.models,
+        "models": args.models,
+        "red": args.red,
+        "amber": args.amber,
+        "yellow": args.yellow,
+        "green": args.green,
+        "acted": args.acted or 0,
+        "dismissed": args.dismissed or 0,
+        "cost": args.cost,
+        "latency": args.latency,
+        "pending": args.pending,
+    }
+    entries.append(entry)
+    save(path, entries, malformed)
+    print(entry["id"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

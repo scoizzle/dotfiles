@@ -1,0 +1,110 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 6e7cc451..926e2e4a 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -46,14 +46,15 @@ Compilation unit = library. Interpreter sim and C# print share the Syntax module
+ 
+ ## Ops
+ 
+-- **TFM:** `net10.0`, nullable on.
+-- **Build:** `dotnet build Poly.Benchmarks/Poly.Benchmarks.csproj`
+-- **Test:** `dotnet run --project Poly.Tests/Poly.Tests.csproj` — not `dotnet test`. While iterating, add `-- --treenode-filter` for the tests you changed. The full suite runs at the pre-ship gate. Do not weaken audit in-repo.
++- **TFM:** `net10.0`, nullable on. `Poly`, `Poly.Tests`, `Poly.Mcp`, and `Poly.Benchmarks` set `TreatWarningsAsErrors` — a warning fails the build.
++- **Packages:** central package management. Add `PackageReference` with no `Version`; bump versions only in `Directory.Packages.props`. CI restores with `-p:NuGetAudit=false` to clear NU1903 (the `SQLitePCLRaw.lib.e_sqlite3` pin exists for that). Do not weaken audit in-repo.
++- **Build:** `dotnet build Poly.Benchmarks/Poly.Benchmarks.csproj` — it references only `Poly`, so it does not typecheck `Poly.Mcp`, `src/Poly.Packs.*`, or `demo/`; build those projects or `Poly.slnx` for that.
++- **Test:** `dotnet run --project Poly.Tests/Poly.Tests.csproj` — not `dotnet test`. While iterating, filter with `-- --treenode-filter '/*/*/<Class>/*'` (e.g. `'/*/*/EmitGoldenTests/*'`). The tests project references `Poly.Mcp`, `Poly.DslCompiler`, and the sqlite/sqlserver/mysql packs. The full suite runs at the pre-ship gate.
+ - **MCP after code changes:** `scripts/restart-poly-mcp.sh`
+ - Incomplete while the build fails, unless the user blocks that. Tests ship with features. TUnit: `async [Test]`, `await Assert.That(…).IsEqualTo(…)`, `Method_Condition_ExpectedResult`. `Poly.Tests/TestHelpers/` stays test-only.
+ - Minimal diffs. Names say what they are (`UopCompiler`). No drive-by comments. No `#region`.
+ - **DSL:** before authoring, call `get_dsl_guide` (short body). Pass `section` for one heading, or `all` for [`Poly.Mcp/Docs/poly-dsl-guide.md`](Poly.Mcp/Docs/poly-dsl-guide.md). Update that file in the same change as the parser, printer, tokenizer, or an MCP tool that authors DSL.
+-- **Placement:** Ast → `Poly/Ast/`; analysis framework → `Poly/Analysis/`; semantic passes → `Poly/Interpretation/Analysis/`; VM → `Poly/Interpretation/Vm/`; C# language surface → `Poly/Interpretation/CSharp/`; types → `Poly/Introspection/`; domain → `Poly/DomainModeling/`; grammar engine → `Poly/Grammar/`; MCP → `Poly.Mcp/`.
++- **Placement:** Ast → `Poly/Ast/`; analysis framework → `Poly/Analysis/`; semantic passes → `Poly/Interpretation/Analysis/`; VM → `Poly/Interpretation/Vm/`; C# language surface → `Poly/Interpretation/CSharp/`; types → `Poly/Introspection/`; domain → `Poly/DomainModeling/`; grammar engine → `Poly/Grammar/`; MCP → `Poly.Mcp/`; extension packs and DSL compiler → `src/Poly.Packs.*`, `src/Poly.DslCompiler/`.
+ - **Admission:** [`docs/plans/poly-eng/board.md`](docs/plans/poly-eng/board.md) is the only CURRENT. If it is `(none)`, open only the file named on `THEN`. `docs/plans/archive/` and `docs/plans/parked/` are not queues.
+ - **Review:** adversarial → [`docs/agent/phenomenal-review.md`](docs/agent/phenomenal-review.md). Follow-ups are evidence until a human adds them to `THEN`. Pre-ship → [`docs/plans/archive/v2-to-v3/simple-agent-tasks/pr1-uncommitted-review-gate.md`](docs/plans/archive/v2-to-v3/simple-agent-tasks/pr1-uncommitted-review-gate.md) (fail closed; 🔴🟠 clear; suite green).
+ - **Doc roles:** CORE = machinery map · `docs/decisions/` = why · `docs/plans/` = execution (archive DONE) · `docs/agent/` = protocols. A CORE mechanism change updates CORE in the same change.
+diff --git a/Poly.Demo/Poly.Demo.Shared/Pages/Ide.razor b/Poly.Demo/Poly.Demo.Shared/Pages/Ide.razor
+index 7ce95e0e..9990c1ee 100644
+--- a/Poly.Demo/Poly.Demo.Shared/Pages/Ide.razor
++++ b/Poly.Demo/Poly.Demo.Shared/Pages/Ide.razor
+@@ -135,15 +135,15 @@
+                             <button class="artifact report-tab @(ReferenceEquals(artifact, _selected) ? "selected" : null)"
+                                     role="tab"
+                                     aria-selected="@(ReferenceEquals(artifact, _selected) ? "true" : "false")"
+-                                    @onclick="() => Select(artifact)">
++                                    @onclick="() => SelectReport(artifact)">
+                                 <span class="artifact-type">@artifact.Type</span>
+                                 <span class="artifact-path">@artifact.Path</span>
+                             </button>
+                         }
+                     </div>
+-                    @if (SelectedReport is not null)
++                    @if (_selectedReport is not null)
+                     {
+-                        <pre class="code">@SelectedReport.Text</pre>
++                        <pre class="code">@_selectedReport.Text</pre>
+                     }
+                     else
+                     {
+@@ -175,7 +175,7 @@
+     private IdeCompileResult? _result;
+     private IReadOnlyList<ArtifactGroup> _groups = [];
+     private IReadOnlyList<IdeArtifact> _reports = [];
+-    private IdeArtifact? _selected;
++    private IdeArtifact? _selected, _selectedReport;
+     private CancellationTokenSource? _pending;
+     private bool _isCompiling;
+ 
+@@ -183,9 +183,6 @@
+ 
+     private Orientation MainOrientation => _isMobile ? Orientation.Vertical : Orientation.Horizontal;
+ 
+-    private IdeArtifact? SelectedReport =>
+-        _reports.FirstOrDefault(report => ReferenceEquals(report, _selected));
+-
+     protected override void OnInitialized() => CompileNow();
+ 
+     public void Dispose() => CancelPendingCompile();
+@@ -229,6 +226,8 @@
+     }
+ 
+     private void CompileNow() {
++        var previouslySelectedPath = _selected?.Path;
++        var previouslySelectedReportPath = _selectedReport?.Path;
+         var result = Compiler.Compile(_source, _mode, _dbms);
+         _result = result;
+         _isCompiling = false;
+@@ -236,12 +235,17 @@
+         _reports = groups.FirstOrDefault(group => group.Name == ReportsGroupName)?.Items ?? [];
+         _groups = groups.Where(group => group.Name != ReportsGroupName).ToList();
+         var selectable = _groups.SelectMany(group => group.Items).Concat(_reports).ToList();
+-        _selected = selectable.FirstOrDefault(artifact => artifact.Type == "file")
++        _selected = 
++            selectable.FirstOrDefault(artifact => artifact.Path == previouslySelectedPath)
++            ?? selectable.FirstOrDefault(artifact => artifact.Type == "file")
+             ?? selectable.FirstOrDefault();
++        _selectedReport = _reports.FirstOrDefault(report => report.Path == previouslySelectedReportPath)
++            ?? _reports.FirstOrDefault();
+         StateHasChanged();
+     }
+ 
+     private void Select(IdeArtifact artifact) => _selected = artifact;
++    private void SelectReport(IdeArtifact artifact) => _selectedReport = artifact;
+ 
+     private static IReadOnlyList<ArtifactGroup> BuildGroups(IReadOnlyList<IdeArtifact> artifacts) =>
+         GroupOrder
+diff --git a/Poly.slnx b/Poly.slnx
+index 88e9fd95..22456923 100644
+--- a/Poly.slnx
++++ b/Poly.slnx
+@@ -7,6 +7,11 @@
+   <Folder Name="/demo/">
+     <Project Path="demo/Poly.RestApi/Poly.RestApi.csproj" />
+   </Folder>
++  <Folder Name="/Poly.Demo/">
++    <Project Path="Poly.Demo/Poly.Demo.Shared/Poly.Demo.Shared.csproj" />
++    <Project Path="Poly.Demo/Poly.Demo.Web/Poly.Demo.Web.csproj" />
++    <Project Path="Poly.Demo/Poly.Demo/Poly.Demo.csproj" />
++  </Folder>
+   <Folder Name="/src/">
+     <Project Path="src/Poly.DslCompiler/Poly.DslCompiler.csproj" />
+     <Project Path="src/Poly.Packs.MySql/Poly.Packs.MySql.csproj" />

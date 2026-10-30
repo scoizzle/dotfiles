@@ -1,0 +1,17 @@
+.DS_Store
+
+# Machine-local state. opencode writes these into ~/.config/opencode itself;
+# they hold a generated password / per-machine UI state and must not travel.
+service.json
+cli.json
+reviews.jsonl
+
+# Generated eval output (re-runnable with evals/run.sh)
+evals/canary-*/
+
+# Build output: AOT publish candidates, stamps, locks.
+# bin/ is deliberately NOT ignored yet — the Python tools are still tracked there and
+# stay the live entry points until each C# replacement passes ./install.cs --oracle.
+.build/
+*.dSYM/
+*.dbg

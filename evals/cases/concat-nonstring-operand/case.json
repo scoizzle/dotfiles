@@ -1,0 +1,17 @@
+{
+  "id": "concat-nonstring-operand",
+  "tier": "T1",
+  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "base": "9838889a913877d4119945e399b195eb5c1d1b49",
+  "patch": "change.patch",
+  "claim": "Make string concatenation with a non-string operand and boxing at the slot kind work in the C# surface.",
+  "expected": [
+    {
+      "id": "concat-no-conversion",
+      "severity": "🟠",
+      "files": ["DirectVmAbiEmitter.Expressions.cs", "DirectVmAbiEmitter.Statements.cs", "SyntaxTypeCompatibilityAnalyzer.cs"],
+      "require": ["concat|concatenat", "string"],
+      "notes": "Concatenation with a non-string operand does not convert or box the operand at the slot kind, so a value is combined with a string as a raw slot instead of through the string route."
+    }
+  ]
+}

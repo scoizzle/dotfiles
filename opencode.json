@@ -1,0 +1,61 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "default_agent": "build",
+  "permissions": [
+    { "action": "skill", "resource": "antigravity2.0", "effect": "deny" },
+    { "action": "skill", "resource": "pre-ship-review", "effect": "deny" },
+    { "action": "shell", "resource": "git push*", "effect": "deny" },
+    { "action": "shell", "resource": "git * push*", "effect": "deny" },
+    { "action": "shell", "resource": "git reset --hard*", "effect": "deny" },
+    { "action": "shell", "resource": "git * reset --hard*", "effect": "deny" },
+    { "action": "shell", "resource": "git clean*", "effect": "deny" },
+    { "action": "shell", "resource": "git * clean*", "effect": "deny" },
+    { "action": "shell", "resource": "rm -rf*", "effect": "deny" },
+    { "action": "shell", "resource": "sudo *", "effect": "deny" },
+    { "action": "read", "resource": "**/service.json", "effect": "deny" },
+    { "action": "read", "resource": "~/.ssh/*", "effect": "deny" },
+    { "action": "read", "resource": "~/.aws/*", "effect": "deny" },
+    { "action": "read", "resource": "~/.config/gh/*", "effect": "deny" }
+  ],
+  "agents": {
+    "build": {
+      "model": "opencode-go/deepseek-v4.1-flash#high",
+      "permissions": [
+        { "action": "shell", "resource": "git push*", "effect": "allow" },
+        { "action": "shell", "resource": "git * push*", "effect": "allow" },
+        { "action": "shell", "resource": "git push --force*", "effect": "deny" },
+        { "action": "shell", "resource": "git push -f*", "effect": "deny" },
+        { "action": "shell", "resource": "git * push --force*", "effect": "deny" },
+        { "action": "shell", "resource": "git * push -f*", "effect": "deny" }
+      ]
+    },
+    "general": {
+      "model": "opencode-go/deepseek-v4.1-flash#high"
+    },
+    "plan": {
+      "mode": "all",
+      "model": "opencode-go/deepseek-v4.1-flash#high"
+    },
+    "explore": {
+      "model": "opencode-go/mimo-v2.6-flash"
+    }
+  },
+  "mcp": {
+    "servers": {
+      "roslynk": {
+        "type": "local",
+        "command": [
+          "{env:HOME}/.dotnet/tools/roslynk",
+          "stdio"
+        ],
+        "codemode": false
+      },
+      "mslearn": {
+        "type": "remote",
+        "url": "https://learn.microsoft.com/api/mcp",
+        "disabled": true
+      }
+    }
+  }
+}

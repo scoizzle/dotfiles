@@ -1,0 +1,133 @@
+diff --git a/Poly/Interpretation/Analysis/Semantics/SyntaxTypeCompatibilityAnalyzer.cs b/Poly/Interpretation/Analysis/Semantics/SyntaxTypeCompatibilityAnalyzer.cs
+index 49090ed4..53b8dea6 100644
+--- a/Poly/Interpretation/Analysis/Semantics/SyntaxTypeCompatibilityAnalyzer.cs
++++ b/Poly/Interpretation/Analysis/Semantics/SyntaxTypeCompatibilityAnalyzer.cs
+@@ -776,8 +776,13 @@ internal sealed class SyntaxTypeCompatibilityAnalyzer : INodeAnalyzer {
+             return false;
+         ITypeMethod? method;
+         var allStrings = parts.All(p => ClrTypeOf(context, p) == typeof(string));
+-        if (!allStrings && parts.All(p => p is Constant)) {
+-            // Literal parts fold to one string constant (cheaper than a runtime call).
++        if (!allStrings) {
++            // A non-string part would have to be boxed into a Concat(object) argument, which
++            // the emitter does not do (a scalar ring slot read as a heap handle is garbage).
++            // Literal parts fold to one string constant — the common case — and anything
++            // else fails closed rather than emitting a wrong value.
++            if (!parts.All(p => p is Constant))
++                return false;
+             var text = "";
+             foreach (var p in parts)
+                 text += Convert.ToString(((Constant)p).Value, CultureInfo.InvariantCulture);
+@@ -786,18 +791,13 @@ internal sealed class SyntaxTypeCompatibilityAnalyzer : INodeAnalyzer {
+         }
+ 
+         if (parts.Count <= 4) {
+-            // A part that is not a string takes the object overload; the emitter boxes the
+-            // scalar into the object argument (`"a" + x`, `x` an int).
+-            var objectDef = context.TypeDefinitions.GetTypeDefinition(typeof(object)) ?? stringDef;
+-            var argTypes = parts
+-                .Select(p => ClrTypeOf(context, p) == typeof(string) ? stringDef : objectDef)
+-                .ToArray();
++            var argTypes = Enumerable.Repeat(stringDef, parts.Count);
+             method = stringDef.FindMatchingMethodOverloads("Concat", argTypes).FirstOrDefault();
+         }
+         else {
+-            method = FindConcatEnumerable(stringDef, allStrings ? typeof(string) : typeof(object));
++            method = FindConcatEnumerable(stringDef);
+         }
+-        method ??= FindConcatEnumerable(stringDef, allStrings ? typeof(string) : typeof(object));
++        method ??= FindConcatEnumerable(stringDef);
+         if (method is null)
+             return false;
+         var invoke = StampStaticInvoke(context, method, [.. parts]);
+@@ -829,9 +829,7 @@ internal sealed class SyntaxTypeCompatibilityAnalyzer : INodeAnalyzer {
+         node is Invoke { Delegate: Member { MemberName: "Concat", Value: ClrTypeReference { RuntimeType: var t } } }
+         && t == typeof(string);
+ 
+-    private static ITypeMethod? FindConcatEnumerable(ITypeDefinition stringDef, Type elementType) {
+-        var arrayType = elementType.MakeArrayType();
+-        var enumerableType = typeof(IEnumerable<>).MakeGenericType(elementType);
++    private static ITypeMethod? FindConcatEnumerable(ITypeDefinition stringDef) {
+         ITypeMethod? enumerable = null;
+         foreach (var method in stringDef.Methods) {
+             if (!method.IsStatic || !string.Equals(method.Name, "Concat", StringComparison.Ordinal))
+@@ -840,9 +838,9 @@ internal sealed class SyntaxTypeCompatibilityAnalyzer : INodeAnalyzer {
+             if (parameters.Length != 1)
+                 continue;
+             var paramType = parameters[0].ParameterTypeDefinition.GetRuntimeType();
+-            if (paramType == arrayType)
++            if (paramType == typeof(string[]))
+                 return method;
+-            if (paramType == enumerableType)
++            if (paramType == typeof(IEnumerable<string>))
+                 enumerable = method;
+         }
+         return enumerable;
+diff --git a/Poly/Interpretation/Vm/DirectVmAbiEmitter.Expressions.cs b/Poly/Interpretation/Vm/DirectVmAbiEmitter.Expressions.cs
+index b5f247ff..f8a596b8 100644
+--- a/Poly/Interpretation/Vm/DirectVmAbiEmitter.Expressions.cs
++++ b/Poly/Interpretation/Vm/DirectVmAbiEmitter.Expressions.cs
+@@ -477,45 +477,11 @@ public static partial class DirectVmAbiEmitter {
+             return NotEqual(ringVal, Constant(0L));
+         if (paramType.IsValueType && AbiValueTypes.IsLongRepresentable(paramType))
+             return Convert(ringVal, paramType);
+-        // A *scalar* argument reaching an `object` parameter must be boxed — its ring slot
+-        // holds the raw value, not a handle. Anything else (a reference, or a value type that
+-        // is a heap handle such as DateOnly/DateTime/decimal/nullable) is a handle and is
+-        // dereferenced. The test is the argument's representation kind, not `IsValueType`:
+-        // `int?` is a value type but its slot is a handle.
+-        if (paramType == typeof(object) && source is not null) {
+-            ValueRepresentationKind? kind = source is Constant constant
+-                ? ConstantSlotKind(constant.Value)
+-                : ctx.Analysis?.GetValueRepresentation(source);
+-            if (kind is ValueRepresentationKind.StackScalar or ValueRepresentationKind.Bool) {
+-                var sourceClr = source is Constant c2 && c2.Value is not null
+-                    ? c2.Value.GetType()
+-                    : ctx.Analysis?.GetMetadata<ValueRepresentationMetadata>(source)?.ClrType
+-                        ?? ctx.Analysis?.GetResolvedType(source)?.GetRuntimeType();
+-                if (sourceClr is not null) {
+-                    Expression scalar = sourceClr == typeof(double) || sourceClr == typeof(float)
+-                        ? Convert(Call(BitConverterInt64BitsToDouble, ringVal), sourceClr)
+-                        : sourceClr == typeof(bool)
+-                            ? NotEqual(ringVal, Constant(0L))
+-                            : Convert(ringVal, sourceClr);
+-                    return Convert(scalar, typeof(object));
+-                }
+-            }
+-        }
+         return Convert(
+             Call(ctx.HeapLocal, HeapUnsafeGet, Convert(ringVal, typeof(int))),
+             paramType);
+     }
+ 
+-    /// <summary>The slot kind of a constant, matching what <c>EmitConstant</c> actually stores:
+-    /// an integral/bool/char value or an IEEE bitcast is inline; everything else — including an
+-    /// enum constant, which <c>TryValueToLong</c> does not accept — is a heap handle.</summary>
+-    private static ValueRepresentationKind ConstantSlotKind(object? value) => value switch {
+-        bool => ValueRepresentationKind.Bool,
+-        int or long or short or byte or sbyte or ushort or uint or ulong or char
+-            or double or float => ValueRepresentationKind.StackScalar,
+-        _ => ValueRepresentationKind.HeapRef
+-    };
+-
+     /// <summary>TypeIs: test the operand against the target type. A scalar operand is
+     /// answered from its static type; a heap operand is tested against the target CLR
+     /// type at runtime (so a null handle is false). An unresolvable target fails closed.</summary>
+diff --git a/Poly/Interpretation/Vm/DirectVmAbiEmitter.Statements.cs b/Poly/Interpretation/Vm/DirectVmAbiEmitter.Statements.cs
+index cb7379c3..1fa26d0a 100644
+--- a/Poly/Interpretation/Vm/DirectVmAbiEmitter.Statements.cs
++++ b/Poly/Interpretation/Vm/DirectVmAbiEmitter.Statements.cs
+@@ -94,10 +94,9 @@ public static partial class DirectVmAbiEmitter {
+ 
+             Expression instanceObj;
+             var declaringTypeDef = resolved.DeclaringTypeDefinition;
+-            bool isInlineValueType = declaringTypeDef is ClrTypeDefinition clrDef
+-                && clrDef.RuntimeType.IsValueType
+-                && AbiValueTypes.IsLongRepresentable(clrDef.RuntimeType);
+-            if (isInlineValueType)
++            bool isValueType = declaringTypeDef is ClrTypeDefinition clrDef
++                && clrDef.RuntimeType.IsValueType;
++            if (isValueType)
+                 instanceObj = Convert(ctx.RingVar(instanceSlot), typeof(object));
+             else
+                 instanceObj = Call(ctx.HeapLocal,

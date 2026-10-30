@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Collect the complete uncommitted change of a repo into a bundle directory.
+
+Usage: review-bundle <repo> [--show <path>]... [--baseline]
+
+Writes section files under $OPENCODE_TMP/review-bundles/<name>-<stamp>/ and prints
+the directory on success. Section files:
+  00-status.txt      git status --short
+  01-diffstat.txt    git diff --stat HEAD
+  02-diff-NN.txt     git diff HEAD
+  03-untracked-NN.txt the contents of every untracked, non-ignored, non-secret file
+  04-show-NN.txt     the contents of each --show <path> at HEAD
+  05-baseline.json   diff hash and untracked git hashes for a later delta re-review
+  99-omitted.txt     binary, non-UTF-8, secret, and unreadable files, with reason and size
+
+Large sections (diff, untracked, show) are split into at most CHUNK lines per
+file, so a reviewer's 2000-line read cap is never hit. Nothing is cut except
+secret paths, which are excluded from the diff and untracked contents and listed
+in 99-omitted.txt.
+
+Read-only: only `status`, `diff`, `ls-files`, `show`, `rev-parse`, and
+`hash-object` run, with optional locks disabled. Nothing is staged and the index
+is never written. A git failure aborts the run rather than emitting an empty
+section.
+"""
+
+import datetime
+import hashlib
+import json
+import os
+import subprocess
+import sys
+
+CHUNK = 1500
+LIMIT = 20 * 1024 * 1024
+# OPENCODE_TMP wins; otherwise a per-user temp dir. TMPDIR is /var/folders/.../T on macOS
+# and usually /tmp on Linux — the old literal was macOS-only and crashed on Linux with
+# permission denied on /private. Resolve through /private/var on macOS is the same inode.
+DEFAULT_TMP = os.path.join(os.environ.get("TMPDIR") or "/tmp", "opencode")
+
+SECRET_NAMES = {
+    "service.json",
+    ".env",
+    "auth.json",
+    "credentials",
+    "id_rsa",
+    "id_ed25519",
+}
+SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+SECRET_PATHSPECS = [
+    ":(exclude,glob)**/service.json",
+    ":(exclude,glob)**/.env",
+    ":(exclude,glob)**/.env.*",
+    ":(exclude,glob)**/auth.json",
+    ":(exclude,glob)**/credentials",
+    ":(exclude,glob)**/id_rsa",
+    ":(exclude,glob)**/id_ed25519",
+    ":(exclude,glob)**/*.pem",
+    ":(exclude,glob)**/*.key",
+    ":(exclude,glob)**/*.p12",
+    ":(exclude,glob)**/*.pfx",
+]
+
+
+def is_secret(rel):
+    name = os.path.basename(rel)
+    if name == ".env.example":
+        return False
+    if name in SECRET_NAMES or name.startswith(".env."):
+        return True
+    return name.endswith(SECRET_SUFFIXES)
+
+
+def git(repo, args, text=True):
+    env = dict(os.environ)
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    kwargs = {"capture_output": True, "text": text, "env": env}
+    if text:
+        kwargs["errors"] = "replace"
+    return subprocess.run(["git", "-C", repo, *args], **kwargs)
+
+
+def git_ok(repo, args, text=True):
+    """Run git; abort the bundle on a non-zero exit rather than drop evidence."""
+    res = git(repo, args, text=text)
+    if res.returncode != 0:
+        detail = res.stderr if isinstance(res.stderr, str) else (res.stderr or b"")
+        sys.stderr.write(f"git {' '.join(args)} failed (rc={res.returncode}): {detail}\n")
+        sys.exit(4)
+    return res
+
+
+def chunks(lines):
+    for i in range(0, len(lines), CHUNK):
+        yield lines[i : i + CHUNK]
+
+
+def write_parts(root, prefix, text):
+    """Write text as <prefix>-NN.txt, one file per CHUNK lines. Returns bytes."""
+    if text == "":
+        text = "\n"
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        lines = ["\n"]
+    total = 0
+    for n, group in enumerate(chunks(lines)):
+        body = "".join(group)
+        path = os.path.join(root, f"{prefix}-{n:02d}.txt")
+        data = body.encode("utf-8", "replace")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        total += len(data)
+    return total
+
+
+def is_binary(data):
+    return b"\x00" in data[:8192]
+
+
+def main(argv):
+    if not argv:
+        print("usage: review-bundle <repo> [--show <path>]...", file=sys.stderr)
+        return 2
+    repo = os.path.abspath(argv[0])
+    shows = []
+    baseline = False
+    rest = argv[1:]
+    while rest:
+        if rest[0] == "--show":
+            if len(rest) < 2:
+                print("--show needs a path", file=sys.stderr)
+                return 2
+            shows.append(rest[1])
+            rest = rest[2:]
+        elif rest[0] == "--baseline":
+            baseline = True
+            rest = rest[1:]
+        else:
+            print(f"unknown argument: {rest[0]}", file=sys.stderr)
+            return 2
+
+    if git(repo, ["rev-parse", "--is-inside-work-tree"]).returncode != 0:
+        print(f"not a git repo: {repo}", file=sys.stderr)
+        return 2
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    base = os.path.join(
+        os.environ.get("OPENCODE_TMP", DEFAULT_TMP),
+        "review-bundles",
+        f"{os.path.basename(repo)}-{stamp}",
+    )
+    root, clash = base, 0
+    while os.path.exists(root):
+        clash += 1
+        root = f"{base}-{clash}"
+    os.makedirs(root)
+
+    total = 0
+    omitted = []
+
+    status = git_ok(repo, ["status", "--short"]).stdout or ""
+    with open(os.path.join(root, "00-status.txt"), "w") as fh:
+        fh.write(status)
+
+    diffstat = git_ok(repo, ["diff", "--stat", "HEAD", "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    with open(os.path.join(root, "01-diffstat.txt"), "w") as fh:
+        fh.write(diffstat)
+
+    diff = git_ok(repo, ["diff", "HEAD", "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    for rel in (git_ok(repo, ["diff", "--name-only", "HEAD"]).stdout or "").splitlines():
+        if os.path.basename(rel) == ".env.example":
+            omitted.append(f"{rel} (excluded by env glob; not secret)")
+        elif is_secret(rel):
+            omitted.append(f"{rel} (secret path; excluded from diff)")
+    for line in diff.splitlines():
+        if line.startswith("Binary files ") and line.endswith(" differ"):
+            omitted.append(f"{line[len('Binary files '):-len(' differ')]} (binary, tracked)")
+    total += write_parts(root, "02-diff", diff)
+
+    listed = git_ok(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout or ""
+    untracked = [p for p in listed.split("\0") if p]
+    flat = []
+    for rel in untracked:
+        if is_secret(rel):
+            omitted.append(f"{rel} (secret path; excluded)")
+            continue
+        path = os.path.join(repo, rel)
+        if os.path.islink(path):
+            omitted.append(f"{rel} (symlink; excluded)")
+            continue
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            omitted.append(f"{rel} (unreadable: {exc.strerror})")
+            continue
+        if is_binary(data):
+            omitted.append(f"{rel} (binary, {len(data)} bytes)")
+            continue
+        try:
+            body = data.decode("utf-8")
+        except UnicodeDecodeError:
+            omitted.append(f"{rel} (non-UTF-8; shown with replacement chars, {len(data)} bytes)")
+            body = data.decode("utf-8", "replace")
+        if body and not body.endswith("\n"):
+            body += "\n"
+        flat.append(f"### untracked: {rel} ({len(data)} bytes)\n")
+        flat.extend(body.splitlines(keepends=True))
+    if flat:
+        total += write_parts(root, "03-untracked", "".join(flat))
+
+    show_parts = []
+    for rel in shows:
+        res = git(repo, ["show", f"HEAD:{rel}"], text=False)
+        if res.returncode != 0 or res.stdout is None:
+            show_parts.append(f"### show: {rel}\nabsent at HEAD\n")
+            continue
+        data = res.stdout
+        if is_binary(data):
+            omitted.append(f"{rel} (binary baseline at HEAD, {len(data)} bytes)")
+            show_parts.append(f"### show: {rel}\nbinary at HEAD; see 99-omitted.txt\n")
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            omitted.append(
+                f"{rel} (non-UTF-8 baseline; shown with replacement chars, {len(data)} bytes)"
+            )
+            text = data.decode("utf-8", "replace")
+        if text and not text.endswith("\n"):
+            text += "\n"
+        show_parts.append(f"### show: {rel}\n{text}")
+    if show_parts:
+        total += write_parts(root, "04-show", "".join(show_parts))
+
+    if baseline:
+        untracked_hashes = []
+        for rel in untracked:
+            path = os.path.join(repo, rel)
+            if is_secret(rel) or os.path.islink(path):
+                continue
+            result = git(repo, ["hash-object", "--", rel])
+            if result.returncode == 0 and result.stdout:
+                untracked_hashes.append({"path": rel, "git_hash": result.stdout.strip()})
+            else:
+                detail = result.stderr.strip() if isinstance(result.stderr, str) else ""
+                untracked_hashes.append({"path": rel, "error": detail or "hash-object failed"})
+        payload = {
+            "head": git_ok(repo, ["rev-parse", "HEAD"]).stdout.strip(),
+            "diff_sha256": hashlib.sha256(diff.encode("utf-8", "replace")).hexdigest(),
+            "untracked": untracked_hashes,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        path = os.path.join(root, "05-baseline.json")
+        with open(path, "w") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.write("\n")
+        total += os.path.getsize(path)
+
+    if omitted:
+        path = os.path.join(root, "99-omitted.txt")
+        with open(path, "w") as fh:
+            fh.write("\n".join(omitted) + "\n")
+        total += os.path.getsize(path)
+
+    if total > LIMIT:
+        print(root)
+        print(
+            f"bundle exceeds {LIMIT} bytes ({total}); review by slice instead",
+            file=sys.stderr,
+        )
+        return 3
+
+    print(root)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

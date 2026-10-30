@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Smoke-test the default OpenCode workflow.
+
+Creates a throwaway git repo under $OPENCODE_TMP, runs three prompts through the
+default agent, and checks:
+  - the agent announces the expected tier;
+  - it launches the expected fixed-model subagents;
+  - it does not launch the wrong tier's agents;
+  - the second-opinion prompt does not contain the review-deep report marker;
+  - the repo's test.sh passes and the expected output contract holds.
+
+Run it before the workflow change (it should fail) and after (it should pass).
+
+    ./smoke-workflow
+    ./smoke-workflow --timeout 1200
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+# See bin/review-bundle: a literal /private/var path is macOS-only.
+DEFAULT_TMP = os.path.join(os.environ.get("TMPDIR") or "/tmp", "opencode")
+REVIEW_DEEP_MARKER = "REVIEW-DEEP REPORT"
+
+T0 = (
+    "Fix the typo in README.md: change 'helo' to 'hello'. "
+    "Do not change anything else."
+)
+T1 = (
+    "Add a `--upper` flag to hello.sh. With `--upper`, the greeting is "
+    "uppercased. Update test.sh to cover it. Keep the default output unchanged."
+)
+T2 = (
+    "Change hello.sh's output contract from `Hello, NAME!` to `Hello NAME` "
+    "(no comma, no exclamation). With `--upper`, produce `HELLO NAME`. "
+    "Update caller.sh and test.sh. This is a public output contract change."
+)
+
+
+def run(args: list[str], cwd: str | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
+    env = None
+    if cwd:
+        env = dict(os.environ)
+        env["PWD"] = cwd
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env, timeout=timeout)
+
+
+def write(path: str, body: str, mode: int = 0o644) -> None:
+    with open(path, "w") as handle:
+        handle.write(body)
+    os.chmod(path, mode)
+
+
+def setup_repo(root: str) -> None:
+    if os.path.exists(root):
+        shutil.rmtree(root)
+    os.makedirs(root)
+    write(os.path.join(root, "README.md"), "# Smoke repo\n\nhelo world\n")
+    write(
+        os.path.join(root, "hello.sh"),
+        '#!/usr/bin/env bash\nset -euo pipefail\nname="${1:-World}"\n'
+        'printf \'Hello, %s!\\n\' "$name"\n',
+        0o755,
+    )
+    write(
+        os.path.join(root, "caller.sh"),
+        '#!/usr/bin/env bash\nset -euo pipefail\n./hello.sh "$1"\n',
+        0o755,
+    )
+    write(
+        os.path.join(root, "test.sh"),
+        '#!/usr/bin/env bash\nset -euo pipefail\n'
+        'out="$(./hello.sh World)"\n'
+        '[[ "$out" == "Hello, World!" ]] || { echo "unexpected: $out"; exit 1; }\n'
+        'echo ok\n',
+        0o755,
+    )
+    write(os.path.join(root, "AGENTS.md"), "# Smoke repo\n\n- Build: none\n- Test: ./test.sh\n")
+    for args in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "smoke@example.invalid"],
+        ["git", "config", "user.name", "Smoke"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", "baseline"],
+    ):
+        result = run(args, cwd=root)
+        if result.returncode != 0:
+            raise SystemExit(f"git failed: {' '.join(args)}\n{result.stderr}")
+
+
+def reset_repo(root: str) -> None:
+    for args in (["git", "reset", "--hard", "-q", "HEAD"], ["git", "clean", "-fdq"]):
+        result = run(args, cwd=root)
+        if result.returncode != 0:
+            raise SystemExit(f"git failed: {' '.join(args)}\n{result.stderr}")
+
+
+def parse_output(raw: str) -> tuple[str, list[dict]]:
+    texts: list[str] = []
+    calls: list[dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = event.get("type")
+        part = event.get("part", {})
+        if kind == "text":
+            texts.append(part.get("text", ""))
+        elif kind == "tool_use":
+            calls.append(
+                {
+                    "tool": part.get("tool"),
+                    "input": part.get("state", {}).get("input", {}) or {},
+                    "sessionID": event.get("sessionID"),
+                }
+            )
+    return "\n".join(texts), calls
+
+
+def subagents(calls: list[dict]) -> list[dict]:
+    found = []
+    for call in calls:
+        if call["tool"] in ("subagent", "task"):
+            found.append(
+                {
+                    "agent": call["input"].get("agent"),
+                    "prompt": call["input"].get("prompt", ""),
+                    "sessionID": call["sessionID"],
+                }
+            )
+    return found
+
+
+def announced_tier(raw: str) -> str | None:
+    """Return the first tier line before the first edit or subagent call.
+
+    A short read-only look at the repo is allowed before classification. A
+    tentative wrong tier before the real one is not: the first tier line wins.
+    """
+    lines: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = event.get("type")
+        part = event.get("part", {})
+        if kind == "tool_use":
+            tool = part.get("tool")
+            if tool in ("subagent", "task", "edit", "write", "patch"):
+                break
+        elif kind == "text":
+            lines.extend(part.get("text", "").splitlines())
+    for line in lines:
+        match = re.match(
+            r"^\s*(?:\*\*)?tier(?:\*\*)?\s*[:\-]\s*(?:\*\*)?(T[012])\b",
+            line,
+            re.I,
+        )
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def run_prompt(root: str, prompt: str, timeout: int) -> tuple[subprocess.CompletedProcess, str, list[dict], str | None]:
+    result = run(
+        ["opencode", "run", "--standalone", "--format", "json", "--auto", prompt],
+        cwd=root,
+        timeout=timeout,
+    )
+    text, calls = parse_output(result.stdout)
+    return result, text, calls, announced_tier(result.stdout)
+
+
+def check_t0(root: str) -> tuple[bool, str]:
+    readme = open(os.path.join(root, "README.md")).read()
+    if "helo" in readme:
+        return False, "README still contains 'helo'"
+    if "hello" not in readme:
+        return False, "README does not contain 'hello'"
+    return True, "README fixed"
+
+
+def check_t1(root: str) -> tuple[bool, str]:
+    result = run(["./hello.sh", "--upper", "World"], cwd=root)
+    if result.returncode != 0:
+        return False, f"--upper failed: {result.stderr.strip()}"
+    if result.stdout.strip() != "HELLO, WORLD!":
+        return False, f"--upper output {result.stdout.strip()!r} != 'HELLO, WORLD!'"
+    return True, "--upper output ok"
+
+
+def check_t2(root: str) -> tuple[bool, str]:
+    result = run(["./hello.sh", "World"], cwd=root)
+    if result.returncode != 0:
+        return False, f"default output failed: {result.stderr.strip()}"
+    if result.stdout.strip() != "Hello World":
+        return False, f"default output {result.stdout.strip()!r} != 'Hello World'"
+    result = run(["./hello.sh", "--upper", "World"], cwd=root)
+    if result.returncode != 0:
+        return False, f"--upper failed: {result.stderr.strip()}"
+    if result.stdout.strip() != "HELLO WORLD":
+        return False, f"--upper output {result.stdout.strip()!r} != 'HELLO WORLD'"
+    return True, "output contract ok"
+
+
+def check_case(
+    root: str,
+    name: str,
+    prompt: str,
+    expected_tier: str,
+    expected_agents: list[str],
+    forbidden_agents: list[str],
+    extra_check,
+    timeout: int,
+) -> bool:
+    reset_repo(root)
+    result, text, calls, tier = run_prompt(root, prompt, timeout)
+    agents = [agent["agent"] for agent in subagents(calls)]
+    problems: list[str] = []
+
+    if result.returncode != 0:
+        problems.append(f"opencode exit {result.returncode}: {result.stderr.strip()[-500:]}")
+    if tier != expected_tier:
+        problems.append(f"tier {tier!r} != {expected_tier!r}")
+    for agent in expected_agents:
+        if agent not in agents:
+            problems.append(f"missing subagent {agent!r}; saw {agents}")
+    for agent in forbidden_agents:
+        if agent in agents:
+            problems.append(f"unexpected subagent {agent!r}")
+
+    for child in subagents(calls):
+        if child["agent"] == "second-opinion" and REVIEW_DEEP_MARKER in child["prompt"]:
+            problems.append("second-opinion prompt contains the review-deep report marker")
+
+    test = run(["./test.sh"], cwd=root)
+    if test.returncode != 0:
+        problems.append(f"test.sh failed: {(test.stdout + test.stderr).strip()[-500:]}")
+    ok, detail = extra_check(root)
+    if not ok:
+        problems.append(detail)
+
+    print(f"== {name} ==")
+    print(f"   tier:   {tier!r} (expected {expected_tier!r})")
+    print(f"   agents: {agents}")
+    print(f"   test:   {'ok' if test.returncode == 0 else 'FAIL'}")
+    print(f"   extra:  {detail}")
+    if problems:
+        for problem in problems:
+            print(f"   FAIL:   {problem}")
+        if text:
+            print(f"   text:   {text.strip()[:600]}")
+        return False
+    print("   PASS")
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--timeout", type=int, default=900, help="seconds per prompt")
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=["T0", "T1", "T2"],
+        help="run only the named case; repeatable",
+    )
+    parser.add_argument("--root", default=os.path.join(
+        os.environ.get("OPENCODE_TMP", DEFAULT_TMP), "smoke-workflow"
+    ))
+    args = parser.parse_args()
+
+    temp_root = os.path.realpath(os.environ.get("OPENCODE_TMP", DEFAULT_TMP))
+    root = os.path.realpath(args.root)
+    base = os.path.join(temp_root, "smoke-workflow")
+    if root != base and not root.startswith(base + "-") and not root.startswith(base + os.sep):
+        parser.error("--root must be the smoke-workflow directory under OPENCODE_TMP")
+    args.root = root
+
+    if not shutil.which("opencode"):
+        print("opencode is not on PATH", file=sys.stderr)
+        return 2
+
+    print(f"smoke repo: {args.root}")
+    setup_repo(args.root)
+    started = time.time()
+    selected = set(args.case or ["T0", "T1", "T2"])
+    cases = [
+        ("T0", T0, "T0", [], [
+            "plan-review-deep", "review-light", "review-deep",
+            "second-opinion", "implement-deep",
+        ], check_t0),
+        ("T1", T1, "T1", ["review-light"], [
+            "plan-review-deep", "review-deep", "second-opinion", "implement-deep",
+        ], check_t1),
+        ("T2", T2, "T2",
+         ["plan-review-deep", "implement-deep", "review-deep", "second-opinion"],
+         ["review-light"], check_t2),
+    ]
+    results = [
+        check_case(
+            args.root, name, prompt, expected_tier, expected_agents,
+            forbidden_agents, extra_check, args.timeout,
+        )
+        for name, prompt, expected_tier, expected_agents, forbidden_agents, extra_check in cases
+        if name in selected
+    ]
+    elapsed = int(time.time() - started)
+    print(f"\n{sum(results)}/{len(results)} cases passed in {elapsed}s")
+    return 0 if all(results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

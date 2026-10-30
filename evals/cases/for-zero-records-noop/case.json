@@ -1,0 +1,17 @@
+{
+  "id": "for-zero-records-noop",
+  "tier": "T1",
+  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "base": "0c321d5ef6499a303d2427fc95bb9157ffbd7fde",
+  "patch": "change.patch",
+  "claim": "Lower a `for` loop over a collection so it iterates the collection's records.",
+  "expected": [
+    {
+      "id": "zero-records-fails",
+      "severity": "🟠",
+      "files": ["EffectLoweringPass.cs", "ForEachInvokeEffect.cs"],
+      "require": ["zero", "for"],
+      "notes": "A `for` over zero records lowers to a failure (or a guarded path) instead of a no-op, so an empty collection is an error where C#/the model expects zero iterations."
+    }
+  ]
+}

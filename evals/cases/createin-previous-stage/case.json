@@ -1,0 +1,17 @@
+{
+  "id": "createin-previous-stage",
+  "tier": "T2",
+  "repo": "/Users/scoizzle/Projects/Poly/Poly",
+  "base": "17d6f212",
+  "patch": "change.patch",
+  "claim": "Tighten the generated subscriber-notify signatures by dropping the optional wrapper on the previousStage parameter.",
+  "expected": [
+    {
+      "id": "previous-stage-nullable",
+      "severity": "🟠",
+      "file": "DomainToCSharpExporter",
+      "require": ["previousStage|previous stage", "null|nullable|optional"],
+      "notes": "A create-in lands the child in its first stage with no previous stage, so the caller passes null. A non-nullable stage enum makes the emitted C# fail to compile (CS1503)."
+    }
+  ]
+}
