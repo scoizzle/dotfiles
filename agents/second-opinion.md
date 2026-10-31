@@ -1,7 +1,7 @@
 ---
 description: Independent read-only T2 second reviewer from a different model family. Use after the T2 change review, without showing it the first report.
 mode: subagent
-model: opencode-go/claude-haiku-5-5#high
+model: claude-agent/haiku#high
 steps: 30
 color: "#b5179e"
 permissions:
