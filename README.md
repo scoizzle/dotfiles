@@ -74,8 +74,9 @@ Outside `~/.config/opencode`, also untracked on purpose:
   The Aspire CLI regenerates its set with `aspire agent init`, and `setup.sh`
   restores Roslynk's from the tag pinned in `tools.json`. Tracking them here would
   only make them drift from the tool that owns them.
-- `~/.claude/skills/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
-  of it credential-bearing.
+- `~/.claude/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
+  of it credential-bearing. `~/.claude` also holds the login the Claude Agent
+  integration borrows, so it is never linked or copied.
 
 ## Adding a file to the repo
 
@@ -101,6 +102,22 @@ Outside `~/.config/opencode`, also untracked on purpose:
 
 Run it from a plain terminal, not from inside opencode or T3 — it replaces the binaries
 those processes are running.
+
+## Claude subscription
+
+opencode reaches Claude through its **Claude Agent** integration, which borrows
+the local Claude Code login instead of storing an API key. That is the path for
+a Claude Pro/Max subscription; the `anthropic` provider is still key-only
+(`ANTHROPIC_API_KEY`, or `/connect` → **Anthropic**).
+
+```sh
+claude auth login     # once per machine; tokens stay in ~/.claude
+```
+
+Then in opencode run `/connect`, select **Claude Agent**, and choose a
+`claude-agent/...` model with `/models`. `./install.cs --doctor` reports the CLI
+and its login as advisory checks, and `./update.sh` upgrades the CLI when it is
+installed.
 
 ## Platforms
 

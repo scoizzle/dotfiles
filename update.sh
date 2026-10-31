@@ -123,6 +123,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+step "claude"
+
+if have claude; then
+    run claude update
+else
+    say "  claude not installed; skipped (needed only for the Claude subscription)"
+fi
+
+# ---------------------------------------------------------------------------
 if [ "$BREW" -eq 1 ]; then
     step "homebrew"
 
