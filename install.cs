@@ -440,8 +440,10 @@ static int RunDoctor(string home, string repoRoot)
     }
 
     // Aspire is a project tool, not a config prerequisite, so it is advisory.
-    // Read the bundle version file rather than executing a 182 MB binary.
-    var aspireVersion = AspireBundleVersion(home);
+    // Prefer the CLI's own report: `aspire update --self` rewrites the binary but
+    // not ~/.aspire/.aspire-bundle-version, so that file goes stale after an update.
+    // Fall back to the file when the CLI cannot be run or its version cannot be parsed.
+    var aspireVersion = AspireCliVersion() ?? AspireBundleVersion(home);
     Check($"aspire bundle{(aspireVersion is null ? "" : $" ({aspireVersion})")}",
         () => aspireVersion is not null || OnPath("aspire"),
         "curl -sSL https://aspire.dev/install.sh | bash",
@@ -522,6 +524,19 @@ static bool HasIcu()
         if (Directory.EnumerateFiles(dir, "libicuuc.so*").Any()) return true;
     }
     return false;
+}
+
+static string? AspireCliVersion()
+{
+    // `aspire --version` prints "13.6.4+c89352703f78ae46de90fbf751ed8b52b77b89bf".
+    // RunCapture merges stdout and stderr, so take the first line that starts with
+    // a version rather than assuming the banner is line one. A hyphenated preview
+    // build keeps its numeric triple, which is the same shape the bundle file uses.
+    var (code, output) = RunCapture("aspire", "--version");
+    if (code != 0) return null;
+
+    var m = System.Text.RegularExpressions.Regex.Match(output, "(?m)^\\s*(\\d+\\.\\d+\\.\\d+)");
+    return m.Success ? m.Groups[1].Value : null;
 }
 
 static string? AspireBundleVersion(string home)
