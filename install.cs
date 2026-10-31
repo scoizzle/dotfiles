@@ -11,6 +11,7 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 // ---------------------------------------------------------------------------
 // what we manage. Everything else in ~/.config/opencode is machine-local and
@@ -400,6 +401,22 @@ static int RunDoctor(string home, string repoRoot)
     Check("opencode", () => OnPath("opencode"), "install opencode, then re-run",
         required: false);
 
+    // A Claude subscription reaches opencode through the Claude Agent integration,
+    // which borrows the local Claude Code login instead of an API key. Neither is
+    // needed by the rest of the config, so both checks are advisory.
+    Check("claude CLI (Claude subscription via Claude Agent)",
+        () => OnPath("claude"),
+        "install Claude Code, then run: claude auth login",
+        required: false);
+
+    if (OnPath("claude"))
+    {
+        Check("claude login (opencode Claude Agent)",
+            () => ClaudeLoggedIn() == true,
+            "claude auth login",
+            required: false);
+    }
+
     // A global tool's version is not visible to Dependabot, so tools.json pins it and
     // the scheduled tools workflow compares that pin to NuGet. Compare here too, or the
     // pin is decorative.
@@ -540,6 +557,35 @@ static string? InstalledRoslynkVersion(string home)
         .Where(v => Version.TryParse(v, out _))
         .OrderByDescending(v => Version.Parse(v))
         .FirstOrDefault();
+}
+
+static bool? ClaudeLoggedIn()
+{
+    // `claude auth status` prints a JSON object. Parse it rather than matching a
+    // formatted substring: a spacing or key-order change must not flip the answer.
+    // A missing CLI, a CLI without this subcommand, a non-zero exit or unparsable
+    // output is null, which the doctor reports as "not logged in" instead of
+    // crashing or claiming success.
+    var (code, output) = RunCapture("claude", "auth status");
+    if (code != 0) return null;
+
+    // RunCapture merges stdout and stderr, so slice the outermost braces to ignore
+    // any warning text around the object.
+    var start = output.IndexOf('{');
+    var end = output.LastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+
+    try
+    {
+        using var status = JsonDocument.Parse(output[start..(end + 1)]);
+        return status.RootElement.ValueKind == JsonValueKind.Object
+            && status.RootElement.TryGetProperty("loggedIn", out var loggedIn)
+            && loggedIn.ValueKind == JsonValueKind.True;
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
 }
 
 static (int Code, string Output) RunCapture(string file, string arguments)
