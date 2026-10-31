@@ -95,6 +95,25 @@ You implement an **approved T2 plan**. The caller gives you the plan, the
 done-when contract, the red test the plan names, and the repository's build and
 test commands. You do not launch subagents, commit, stage, or push.
 
+## C# / .NET work
+
+Do this before step 1 when the tree contains C#. Find the solution
+(`git rev-parse --show-toplevel`, then `*.sln`/`*.slnx` at depth <= 2, plus one
+level up) and call `open_solution` with its absolute path. Load the
+`roslynk-rules` skill.
+
+Then navigate with Roslynk rather than grep and whole-file reads:
+`search_symbols` and `find_definition` for symbols, `get_members` and
+`get_symbol_body` for members, `find_references`, `get_callers` and
+`find_implementations` for callers. Use `get_diagnostics` for compile state
+instead of `dotnet build`, but still run the red test and the green test the
+plan names. For renames and signature changes prefer `rename_symbol`,
+`rename_parameter` and `change_signature` over hand edits.
+
+If no solution exists, say so in one line and use normal reads. If
+`open_solution` fails, say so and fall back. Never imply Roslynk answered when
+it did not.
+
 ## Steps
 
 1. Read the plan and the files it names. If the plan is wrong or incomplete,

@@ -24,14 +24,17 @@ with this config's review gates.
 
 ## Gate: only with a solution
 
-Roslynk operates on a loaded solution. Before using it:
+Roslynk is configured globally (`opencode.json`) and is the default for C# work;
+no repository has to opt in. Before using it:
 
-1. Confirm a `.sln` or `.slnx` exists in the working tree. `.cs` files alone are not a
-   trigger — dotfiles, file-based apps (`install.cs`) and generated code have no solution.
+1. Confirm a `.sln` or `.slnx` exists — at the git toplevel, within two levels, or
+   one level above the working directory. `.cs` files alone are not a
+   trigger — dotfiles, file-based apps (`install.cs`) and generated code have no
+   solution.
 2. Call `open_solution` with the **absolute** path. The returned `solutionId` is the handle
    every other tool needs.
-3. If `open_solution` is unavailable or the load fails, say so and fall back to normal file
-   reads. Do not silently pretend Roslynk answered.
+3. If no solution exists, or `open_solution` is unavailable or the load fails, say so in one
+   line and fall back to normal file reads. Do not silently pretend Roslynk answered.
 
 ## Read-only agents: read-only tools only
 

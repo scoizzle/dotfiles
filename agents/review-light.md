@@ -106,6 +106,9 @@ Coverage
 4. Callers and consumers of every changed shape were updated. Use the diff and
    bundle first; read a changed file only when its hunk is not enough. If a
    caller is not in the diff, report it as `unproven`; do not explore the repo.
+   For C# symbols, `find_definition` and `find_references` are the exception:
+   they are targeted, not exploration, so use them before calling a caller
+   unproven.
 5. Nullability across boundaries, symmetry, and changed behaviour that no test
    exercises.
 6. No style findings. Report only gaps that affect correctness or the contract.

@@ -71,10 +71,35 @@ deep check, not the default review path.
 
 ## C# / .NET work
 
-If the working tree contains a `.sln`/`.slnx` and the `roslynk` MCP server is
-available, call `open_solution` with its absolute path and use Roslynk for
-semantic questions before grep, file reads or `dotnet build`. Detail:
-`skills/roslynk-rules/SKILL.md`.
+Roslynk is configured globally and is assumed available. This rule does not
+depend on a repository naming it.
+
+Before the first C# read or edit, find the solution and open it:
+
+```sh
+git rev-parse --show-toplevel      # then look for *.sln / *.slnx at depth <= 2
+```
+
+Look in the toplevel, one level up, and in the nearest ancestor that holds one.
+Call `open_solution` with the absolute path; every other tool needs its
+`solutionId`. Load the `roslynk-rules` skill once per session before the first
+C# edit.
+
+Use Roslynk instead of the mechanical alternative:
+
+| Instead of | Use |
+| --- | --- |
+| grep for a symbol by name | `search_symbols`, `find_definition` |
+| reading a whole file to find a member | `get_members`, `get_symbol_body` |
+| grep for callers or implementers | `find_references`, `get_callers`, `find_implementations` |
+| `dotnet build` to check compile state | `get_diagnostics` |
+| hand-editing a rename or signature change | `rename_symbol`, `change_signature` |
+
+Read files only for context Roslynk cannot provide, and for non-C# files.
+
+If no solution exists (file-based apps such as `install.cs`, `.csproj`-only
+trees), say so in one line and use normal file reads. If `open_solution` fails,
+say so in one line and fall back. Never imply Roslynk answered when it did not.
 
 Read-only agents (`review-light`, `review-deep`, `plan-review-deep`,
 `second-opinion`) may use only the read-only Roslynk tools — never
@@ -82,4 +107,5 @@ Read-only agents (`review-light`, `review-deep`, `plan-review-deep`,
 `rename_parameter`, `change_signature`, `extract_method` or `remove_unused_usings`.
 
 `get_diagnostics` is a compile check, not a test run. Tests still go through the
-repo's test command.
+repo's test command, and a repo `AGENTS.md` may name a build command that must
+still be run.

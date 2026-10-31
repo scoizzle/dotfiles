@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Smoke-test the default OpenCode workflow.
 
-Creates a throwaway git repo under $OPENCODE_TMP, runs three prompts through the
+Creates a throwaway git repo under $OPENCODE_TMP, runs four prompts through the
 default agent, and checks:
   - the agent announces the expected tier;
   - it launches the expected fixed-model subagents;
   - it does not launch the wrong tier's agents;
   - the second-opinion prompt does not contain the review-deep report marker;
-  - the repo's test.sh passes and the expected output contract holds.
+  - the repo's test.sh passes and the expected output contract holds;
+  - on the C# repo, it opens the solution with Roslynk before editing, and uses
+    Roslynk navigation rather than grep for the rename.
+
+The C# case is the only one that needs the .NET SDK and the Roslynk MCP server.
+It runs against its own scratch repo (`smoke-workflow-cs`) and asserts tool
+choice, so it fails when the global Roslynk policy stops being followed. It
+forbids delegation because `opencode run --format json` reports only the main
+session's tool calls; a child session's Roslynk calls are invisible to it.
 
 Run it before the workflow change (it should fail) and after (it should pass).
 
@@ -43,6 +51,35 @@ T2 = (
     "(no comma, no exclamation). With `--upper`, produce `HELLO NAME`. "
     "Update caller.sh and test.sh. This is a public output contract change."
 )
+CS = (
+    "Rename `Greeter.Greet` to `Greeter.Say` everywhere in Smoke.slnx, keeping "
+    "behaviour identical. Update every caller, then confirm the solution compiles. "
+    "Do not delegate this edit to a subagent; make it yourself."
+)
+
+# Read-only Roslynk operations that demonstrate semantic navigation. `get_diagnostics`
+# is deliberately excluded: it proves the solution loaded but does not use symbol
+# information, so letting it satisfy the assertion would green-light an agent that
+# opened the solution and then hand-edited from grep.
+ROSLYNK_SEMANTIC = {
+    "roslynk_search_symbols",
+    "roslynk_find_definition",
+    "roslynk_find_references",
+    "roslynk_get_members",
+    "roslynk_get_symbol_body",
+    "roslynk_get_callers",
+    "roslynk_get_callees",
+    "roslynk_find_implementations",
+    "roslynk_get_expression_info",
+    "roslynk_multi_query",
+}
+ROSLYNK_WRITE = {"roslynk_rename_symbol", "roslynk_change_signature", "roslynk_apply_patch"}
+# A write through Roslynk is the ideal shape for this case (a semantic rename), so
+# it satisfies the semantic assertion too. Anything that modifies a file counts as
+# the edit that open_solution must precede.
+ROSLYNK_USED = ROSLYNK_SEMANTIC | ROSLYNK_WRITE
+EDITS = {"edit", "write", "patch", "multiedit"} | ROSLYNK_WRITE
+CS_SUFFIXES = (".cs", ".razor", ".cshtml", ".csproj", ".sln", ".slnx")
 
 
 def run(args: list[str], cwd: str | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
@@ -84,6 +121,78 @@ def setup_repo(root: str) -> None:
         0o755,
     )
     write(os.path.join(root, "AGENTS.md"), "# Smoke repo\n\n- Build: none\n- Test: ./test.sh\n")
+    for args in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "smoke@example.invalid"],
+        ["git", "config", "user.name", "Smoke"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", "baseline"],
+    ):
+        result = run(args, cwd=root)
+        if result.returncode != 0:
+            raise SystemExit(f"git failed: {' '.join(args)}\n{result.stderr}")
+
+
+def setup_cs_repo(root: str) -> None:
+    """Build a two-project C# solution so the Roslynk case has something to load."""
+    if os.path.exists(root):
+        shutil.rmtree(root)
+    os.makedirs(os.path.join(root, "Smoke"))
+    os.makedirs(os.path.join(root, "Smoke.App"))
+    write(
+        os.path.join(root, "Smoke.slnx"),
+        '<Solution>\n'
+        '  <Project Path="Smoke/Smoke.csproj" />\n'
+        '  <Project Path="Smoke.App/Smoke.App.csproj" />\n'
+        '</Solution>\n',
+    )
+    write(
+        os.path.join(root, "Smoke", "Smoke.csproj"),
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        '  <PropertyGroup>\n'
+        '    <TargetFramework>net10.0</TargetFramework>\n'
+        '    <Nullable>enable</Nullable>\n'
+        '    <ImplicitUsings>enable</ImplicitUsings>\n'
+        '  </PropertyGroup>\n'
+        '</Project>\n',
+    )
+    write(
+        os.path.join(root, "Smoke", "Greeter.cs"),
+        'namespace Smoke;\n\npublic sealed class Greeter\n{\n'
+        '    public string Greet(string name) => $"Hello, {name}!";\n}\n',
+    )
+    write(
+        os.path.join(root, "Smoke", "App.cs"),
+        'namespace Smoke;\n\npublic static class App\n{\n'
+        '    public static string Run(string name) => new Greeter().Greet(name);\n}\n',
+    )
+    write(
+        os.path.join(root, "Smoke.App", "Smoke.App.csproj"),
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        '  <PropertyGroup>\n'
+        '    <OutputType>Exe</OutputType>\n'
+        '    <TargetFramework>net10.0</TargetFramework>\n'
+        '    <Nullable>enable</Nullable>\n'
+        '    <ImplicitUsings>enable</ImplicitUsings>\n'
+        '  </PropertyGroup>\n'
+        '  <ItemGroup>\n'
+        '    <ProjectReference Include="../Smoke/Smoke.csproj" />\n'
+        '  </ItemGroup>\n'
+        '</Project>\n',
+    )
+    write(
+        os.path.join(root, "Smoke.App", "Program.cs"),
+        'using Smoke;\n\n'
+        'var actual = App.Run("World");\n'
+        'Console.WriteLine(actual);\n'
+        'return actual == "Hello, World!" ? 0 : 1;\n',
+    )
+    write(
+        os.path.join(root, "AGENTS.md"),
+        "# Smoke C# repo\n\n"
+        "- Build: dotnet build Smoke.slnx\n"
+        "- Test: dotnet run --project Smoke.App\n",
+    )
     for args in (
         ["git", "init", "-q"],
         ["git", "config", "user.email", "smoke@example.invalid"],
@@ -219,15 +328,81 @@ def check_t2(root: str) -> tuple[bool, str]:
     return True, "output contract ok"
 
 
+def check_cs(root: str) -> tuple[bool, str]:
+    """Assert the rename landed. The output contract is checked by the test command."""
+    source = open(os.path.join(root, "Smoke", "Greeter.cs")).read()
+    if "Greet(" in source:
+        return False, "Greeter.Greet was not renamed"
+    if "Say(" not in source:
+        return False, "renamed member is not Say"
+    return True, "renamed"
+
+
+def is_cs_edit(call: dict) -> bool:
+    """True when this call changes a C# source, project or solution file."""
+    if call.get("tool") in ROSLYNK_WRITE:
+        return True
+    if call.get("tool") not in EDITS:
+        return False
+    path = (call.get("input") or {}).get("filePath") or ""
+    return path.endswith(CS_SUFFIXES)
+
+
+def check_roslynk(calls: list[dict]) -> tuple[bool, str]:
+    """Assert every session that edited C# opened the solution first.
+
+    This is the only case that checks tool choice rather than a result: the
+    policy says C# work starts with open_solution.
+
+    The CS prompt forbids delegating because `opencode run --format json` emits
+    only the main session's tool_use events: a child session's calls never reach
+    the stream (verified by probe). Attribution is still per session so that a
+    future harness that does include children is judged correctly, and so that a
+    non-C# write (a plan, notes) is not mistaken for the C# edit.
+    """
+    tools = [call["tool"] for call in calls if call.get("tool")]
+    if "roslynk_open_solution" not in tools:
+        return False, f"never called roslynk_open_solution (tools: {sorted(set(tools))})"
+
+    editors: dict[object, list[dict]] = {}
+    for call in calls:
+        if is_cs_edit(call):
+            editors.setdefault(call.get("sessionID"), []).append(call)
+    if not editors:
+        return False, (
+            "no C# edit in the visible session stream; cannot judge tool choice "
+            f"(tools: {sorted(set(tools))})"
+        )
+    if None in editors:
+        return False, "C# edits carry no sessionID; cannot attribute tool choice"
+
+    used: set[str] = set()
+    for session, own in editors.items():
+        stream = [call for call in calls if call.get("sessionID") == session]
+        names = [call["tool"] for call in stream]
+        if "roslynk_open_solution" not in names:
+            return False, "a session edited C# without opening the solution"
+        first_edit = min(index for index, call in enumerate(stream) if call in own)
+        if names.index("roslynk_open_solution") > first_edit:
+            return False, "opened the solution after the first C# edit"
+        semantic = {name for name in names if name in ROSLYNK_USED}
+        if not semantic:
+            return False, "opened the solution but used no Roslynk operation for the C# edit"
+        used |= semantic
+    return True, f"roslynk: {', '.join(sorted(used))}"
+
+
 def check_case(
     root: str,
     name: str,
     prompt: str,
-    expected_tier: str,
+    expected_tier: str | None,
     expected_agents: list[str],
     forbidden_agents: list[str],
     extra_check,
     timeout: int,
+    test: list[str] | None = None,
+    calls_check=None,
 ) -> bool:
     reset_repo(root)
     result, text, calls, tier = run_prompt(root, prompt, timeout)
@@ -236,7 +411,7 @@ def check_case(
 
     if result.returncode != 0:
         problems.append(f"opencode exit {result.returncode}: {result.stderr.strip()[-500:]}")
-    if tier != expected_tier:
+    if expected_tier is not None and tier != expected_tier:
         problems.append(f"tier {tier!r} != {expected_tier!r}")
     for agent in expected_agents:
         if agent not in agents:
@@ -249,9 +424,15 @@ def check_case(
         if child["agent"] == "second-opinion" and REVIEW_DEEP_MARKER in child["prompt"]:
             problems.append("second-opinion prompt contains the review-deep report marker")
 
-    test = run(["./test.sh"], cwd=root)
-    if test.returncode != 0:
-        problems.append(f"test.sh failed: {(test.stdout + test.stderr).strip()[-500:]}")
+    tool_detail = "-"
+    if calls_check is not None:
+        tool_ok, tool_detail = calls_check(calls)
+        if not tool_ok:
+            problems.append(tool_detail)
+
+    check = run(test or ["./test.sh"], cwd=root, timeout=300)
+    if check.returncode != 0:
+        problems.append(f"{' '.join(test or ['./test.sh'])} failed: {(check.stdout + check.stderr).strip()[-500:]}")
     ok, detail = extra_check(root)
     if not ok:
         problems.append(detail)
@@ -259,8 +440,10 @@ def check_case(
     print(f"== {name} ==")
     print(f"   tier:   {tier!r} (expected {expected_tier!r})")
     print(f"   agents: {agents}")
-    print(f"   test:   {'ok' if test.returncode == 0 else 'FAIL'}")
+    print(f"   test:   {'ok' if check.returncode == 0 else 'FAIL'}")
     print(f"   extra:  {detail}")
+    if calls_check is not None:
+        print(f"   tools:  {tool_detail}")
     if problems:
         for problem in problems:
             print(f"   FAIL:   {problem}")
@@ -277,7 +460,7 @@ def main() -> int:
     parser.add_argument(
         "--case",
         action="append",
-        choices=["T0", "T1", "T2"],
+        choices=["T0", "T1", "T2", "CS"],
         help="run only the named case; repeatable",
     )
     parser.add_argument("--root", default=os.path.join(
@@ -299,25 +482,37 @@ def main() -> int:
     print(f"smoke repo: {args.root}")
     setup_repo(args.root)
     started = time.time()
-    selected = set(args.case or ["T0", "T1", "T2"])
+    selected = set(args.case or ["T0", "T1", "T2", "CS"])
+    cs_root = args.root + "-cs"
+    needs_dotnet = "CS" in selected
+    if needs_dotnet:
+        if not shutil.which("dotnet"):
+            print("dotnet is not on PATH (needed for the CS case)", file=sys.stderr)
+            return 2
+        print(f"smoke C# repo: {cs_root}")
+        setup_cs_repo(cs_root)
     cases = [
-        ("T0", T0, "T0", [], [
+        (args.root, "T0", T0, "T0", [], [
             "plan-review-deep", "review-light", "review-deep",
             "second-opinion", "implement-deep",
-        ], check_t0),
-        ("T1", T1, "T1", ["review-light"], [
+        ], check_t0, None),
+        (args.root, "T1", T1, "T1", ["review-light"], [
             "plan-review-deep", "review-deep", "second-opinion", "implement-deep",
-        ], check_t1),
-        ("T2", T2, "T2",
+        ], check_t1, None),
+        (args.root, "T2", T2, "T2",
          ["plan-review-deep", "implement-deep", "review-deep", "second-opinion"],
-         ["review-light"], check_t2),
+         ["review-light"], check_t2, None),
+        (cs_root, "CS", CS, None, [], [], check_cs, check_roslynk),
     ]
     results = [
         check_case(
-            args.root, name, prompt, expected_tier, expected_agents,
+            root, name, prompt, expected_tier, expected_agents,
             forbidden_agents, extra_check, args.timeout,
+            test=([ "dotnet", "run", "--project", "Smoke.App" ] if name == "CS" else None),
+            calls_check=calls_check,
         )
-        for name, prompt, expected_tier, expected_agents, forbidden_agents, extra_check in cases
+        for root, name, prompt, expected_tier, expected_agents, forbidden_agents,
+        extra_check, calls_check in cases
         if name in selected
     ]
     elapsed = int(time.time() - started)
