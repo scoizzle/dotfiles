@@ -5,7 +5,10 @@
         --red 1 --amber 2 --yellow 1 --green 0 --acted 2 --dismissed 0 \
         --cost 0.42 --latency 120 --pending
 
-    review-log --resolve <id> --acted 2 --dismissed 0
+    review-log --resolve <id> --acted 2 --dismissed 0 --unique 1
+
+`unique` counts findings only the second-opinion run caught and the user
+confirmed; it is the rate that justifies keeping that step.
 
 The ledger is JSONL at ~/.config/opencode/reviews.jsonl. `pending` lines are
 excluded from yield by scoreboard.py; resolve them after the user answers.
@@ -75,6 +78,8 @@ def main() -> int:
     parser.add_argument("--green", type=int, default=0)
     parser.add_argument("--acted", type=int, default=None)
     parser.add_argument("--dismissed", type=int, default=None)
+    parser.add_argument("--unique", type=int, default=None,
+                        help="findings only the second opinion caught, confirmed")
     parser.add_argument("--cost", type=float, default=0.0)
     parser.add_argument("--latency", type=int, default=0)
     parser.add_argument("--pending", action="store_true")
@@ -90,6 +95,8 @@ def main() -> int:
             if entry.get("id") == args.resolve:
                 entry["acted"] = args.acted
                 entry["dismissed"] = args.dismissed
+                if args.unique is not None:
+                    entry["unique"] = args.unique
                 entry["pending"] = False
                 entry["resolved_at"] = now()
                 save(path, entries, malformed)
@@ -114,6 +121,7 @@ def main() -> int:
         "green": args.green,
         "acted": args.acted or 0,
         "dismissed": args.dismissed or 0,
+        "unique": args.unique or 0,
         "cost": args.cost,
         "latency": args.latency,
         "pending": args.pending,
