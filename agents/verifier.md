@@ -1,7 +1,7 @@
 ---
 description: Skeptical verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Cannot edit. Use for T1/T2 changes and for plan contracts.
 mode: subagent
-model: xai/grok-4.7#high
+model: claude-agent/sonnet#medium
 color: "#ff6b6b"
 steps: 120
 permissions:

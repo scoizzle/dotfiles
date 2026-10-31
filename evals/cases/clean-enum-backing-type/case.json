@@ -1,0 +1,11 @@
+{
+  "id": "clean-enum-backing-type",
+  "tier": "T2",
+  "repo": "~/Projects/Poly/Poly",
+  "base": "d26c61fa",
+  "patch": "change.patch",
+  "claim": "An enum column uses the pack's integer backing type rather than the enum's own name.",
+  "must_pass": true,
+  "expected": [],
+  "notes": "A real merged fix (f887d880) replayed against its parent. Its tests discriminate: with StorageAnalyzer.cs restored to the base, SqlServerPackTests and SqlitePackTests each fail one test. So the oracle is real, unlike the first clean fixture tried (ad1db6aa), whose added tests passed with the fix reverted and which was withdrawn as a fixture."
+}

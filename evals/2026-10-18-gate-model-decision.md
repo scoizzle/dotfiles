@@ -70,3 +70,71 @@ enum change; both are T2 in this workflow, so it does not apply to T1 change
 review.
 
 
+## Phase 3 — verifier and second opinion (2026-10-31)
+
+Metered spend in the 14 days to 2026-10-31 was $438.73, from `session_v2` in
+`~/.local/share/opencode/opencode.db`. `claude-agent` and the `opencode` default
+provider report $0 there because they are flat rate, so these are metered
+dollars, not total cost.
+`xai/grok-4.7#high` accounted for $397.74 of it (91%). Shares below are of the
+$438.73 total: `verifier` $214.49 (49%), the `reviewer`/`review-deep` roles
+$120.01 (27%), `plan-review-deep` $30.52 (7%), and one `build` session $32.72
+(7%). The verifier is the most procedural role in the
+workflow — collect evidence, run the build and the changed-area tests, write the
+coverage block, grade against the contract — and it was consuming the largest
+share of the one metered provider.
+
+| Role | Before | After |
+| --- | --- | --- |
+| `verifier` | `xai/grok-4.7#high` | `claude-agent/sonnet#medium` (flat rate) |
+| `second-opinion` | `claude-agent/haiku#high` | `claude-agent/sonnet#medium` |
+
+The second-opinion swap is the decorrelation one: the step exists to catch what
+`review-deep` (grok) missed, and the cheapest Claude mostly agreed instead.
+
+### Gate — verifier, both directions
+
+| Case | Model | Result | Seconds |
+| --- | --- | --- | --- |
+| `concat-nonstring-operand` (seeded 🟠) | `claude-agent/sonnet#medium` | 1/1 recall | 29 |
+| `clean-enum-backing-type` (`must_pass`) | `claude-agent/sonnet#medium` | no 🔴/🟠 | 45 |
+| `concat-nonstring-operand` (seeded 🟠) | `xai/grok-4.7#high` | 1/1 recall | 828 |
+
+### Gate — second opinion
+
+| Case | Model | Result | Seconds |
+| --- | --- | --- | --- |
+| `storage-enum-backing-type` | `claude-agent/sonnet#medium` | 1/1 recall | 19 |
+
+No veto: both models recovered the only expected finding on the seeded case, and
+sonnet produced only 🟡/🟢 on the clean one. The difference is time — 29 s
+against 828 s on the same case — and provider. Sonnet also named a member-write
+receiver regression it claimed the change reintroduces; that is outside
+`expected`, was not independently verified, and is recorded here as its claim,
+not as a finding of this gate.
+
+The clean run's coverage block records `dotnet build` and three filters
+(`SqlServerPackTests` 14/14, `SqlitePackTests` 9/9, `*Golden*` 26/26), so its
+PASS is not a read-only verdict.
+
+### The clean fixture needed a real oracle
+
+`ad1db6aa` ("preserve scalar assignments when reordering") was the first clean
+candidate and was withdrawn. In that run's disposable copy the verifier restored
+`Poly/DomainModeling/Lowering/DomainToCSharpExporter.cs` from HEAD and ran
+`dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter
+"/*/*/DomainToCSharpExporterTests/*"` → total 143, failed 0. The added tests pass
+without the fix, so they do not discriminate it. That is a true finding about the
+merged change, not a false alarm, so the fixture was wrong, not the reviewer.
+
+`clean-enum-backing-type` replaces it. Probe, run 2026-10-31: clone at
+`f887d880`, restore `Poly/DomainModeling/Analysis/StorageAnalyzer.cs` from
+`d26c61fa`, then `SqlServerPackTests` → total 14, failed 1 and `SqlitePackTests`
+→ total 9, failed 1. With the fix present both pass, as the clean run records.
+
+### Limits
+
+Two verifier cases and one second-opinion case, one repository. `claude-agent`
+reports $0 in `opencode stats`, so the saving here is quota and latency, not a
+measured dollar figure. The clean fixture's ground truth is "no known blocking
+defect", which is weaker than an un-fixed real fix's ground truth.

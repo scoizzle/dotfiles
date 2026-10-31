@@ -14,6 +14,7 @@ Two artifacts are covered: a **change** (a diff, caught before it ships) and a
 ./run.sh --tier T1 -a review-light -m opencode-go/mimo-v2.6-flash
 ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
 ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
+./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
 ```
 
 `run.sh` prints a per-case line, then the model's cost and step delta for the run,
@@ -61,6 +62,7 @@ scoreboard.py                  standing view of the gates, from the session stor
 | `goal` | Plan cases: the goal the plan has to satisfy. |
 | `claim` | Change cases: what the author says the change does, so a misleading claim is part of the fixture. |
 | `expected[]` | One entry per true defect: `id`, `severity`, `files[]` (or a single `file`; omitted means patterns only), `require[]` (case-insensitive regexes that must all appear in the final report), `notes`. |
+| `must_pass` | `true` marks a clean fixture: `expected` is empty and the run fails if the report contains a 🔴 or 🟠. 🟡 and 🟢 are allowed. The marker counts anywhere on a line outside a fenced code block, so bolding or numbering a finding cannot hide it; a line that negates the marker before it ("no 🔴 or 🟠 findings") does not count. |
 
 ## Cases
 
@@ -74,10 +76,38 @@ scoreboard.py                  standing view of the gates, from the session stor
 | `concat-nonstring-operand` | change | inverse of `9838889a` | 🟠 concatenation with a non-string operand does not convert or box at the slot kind |
 | `for-zero-records-noop` | change | inverse of `0c321d5e` | 🟠 a `for` over zero records lowers to a failure instead of a no-op |
 | `plan-ide-storage-tab` | plan | hand-authored, then extended from a real run; every defect verified against `b09ffddd` | 🔴 the plan's premise is false — nothing in the repo emits SQL DDL; 🟠 a versioned `PackageReference` under CPM; 🟠 `dotnet test` instead of the repo's runner; 🟠 adding the MAUI head to the only solution file; 🟠 the new component's namespace is never imported; 🟠 the mode dependency is omitted |
+| `clean-enum-backing-type` | change | a real merged fix (`f887d880`) replayed at its parent | none — `must_pass`; any 🔴 or 🟠 is a false alarm |
 
 Tier assignment: `concat-nonstring-operand`, `for-zero-records-noop`, and
 `mcp-nav-rendering` are T1; the rest are T2. The enum case is deliberately T2,
 so `review-light` is never scored on it.
+
+## Verifier gate
+
+The verifier is scored in both directions, because a verifier that never finds a
+defect and one that finds a defect everywhere both cost the same:
+
+```sh
+./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
+./run.sh -a verifier -m claude-agent/sonnet#medium -c clean-enum-backing-type
+```
+
+The first is the seeded-🟠 change `review-light` already uses. The verifier has
+shell, so it is expected to run the repository's build and changed-area tests; a
+red test is the finding. The second is a real merged fix whose tests fail if the
+production change is reverted: `must_pass` makes any 🔴 or 🟠 a failure. The pair
+is what matters — the first catches a rubber stamp, the second catches invented
+findings, and a model that scores well on only one is not deployable.
+
+A clean fixture is only usable if its oracle is real. Before adding one, restore
+the production files to the base commit and run the changed-area tests: if they
+stay green, the change's own tests do not discriminate and the fixture is not
+clean, it is unproven. That check withdrew `ad1db6aa` as a candidate: the
+verifier found, correctly, that its added tests pass with the fix reverted.
+
+With `-a verifier`, `run.sh` leaves the diff out of the prompt. A pasted diff
+lets the verifier skip the build and the tests, which is the behaviour this gate
+measures.
 
 ## Three ways to add a case
 
@@ -144,7 +174,10 @@ Two caveats on the numbers it does produce:
 ## What this measures, and what it does not
 
 **Measures recall**: did the reviewer surface the defect the artifact introduced.
-That is the property the team depends on.
+That is the property the team depends on. A `must_pass` case measures the other
+direction — did it stay quiet on a clean change — but only for the verifier gate
+in practice, because a clean change gives it nothing to find and a reviewer has
+no way to earn credit.
 
 **Does not measure precision.** A finding about a file the diff never touched may
 be a legitimate cross-boundary catch rather than noise, so unmatched findings are

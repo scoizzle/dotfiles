@@ -12,7 +12,12 @@ artifact introduced". It deliberately does not score precision: a finding about 
 file the diff never touched may be a legitimate cross-boundary catch rather than
 noise, so unmatched findings are listed for a human to judge.
 
-Exit code is 1 when any expected finding was missed, so this can gate a change.
+The one exception is a case marked `"must_pass": true`, which has no expected
+defects and asserts the opposite direction: the reviewer must not report a 🔴 or
+🟠 on a change that is known clean. 🟡 and 🟢 stay unscored, as above.
+
+Exit code is 1 when any expected finding was missed, or when a `must_pass` case
+reports a blocking finding, so this can gate a change.
 """
 from __future__ import annotations
 
@@ -22,7 +27,10 @@ import re
 import sys
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-MARKER = re.compile(r"^>\s")
+# `opencode run` prints `> agent · model` before each message. Match the whole
+# line so a markdown blockquote that happens to contain ` · ` cannot truncate the
+# report and hide a finding.
+MARKER = re.compile(r"^>\s+\S+\s·\s+\S+\s*$")
 TRAILER = re.compile(r"^\[(?:eval|bakeoff\d?)\]")
 
 
@@ -83,6 +91,39 @@ def headings(report: str) -> list[str]:
     return out
 
 
+FENCE = re.compile(r"^\s*(?:```|~~~)")
+BLOCKING = ("🔴", "🟠")
+NEGATION = re.compile(r"\b(?:no|not|none|zero|without|nothing)\b", re.I)
+
+
+def blocking_findings(report: str) -> list[str]:
+    """Report lines, outside fenced code blocks, that name a blocking severity.
+
+    Fail-closed on formatting: the marker counts wherever it appears on the line,
+    not only at the start of a bullet. A bolded, numbered, or quoted finding is
+    still a finding, and a gate that misses one is worse than a gate that flags a
+    report which quotes the severity legend. Fenced blocks are skipped because
+    repro output is not a claim.
+
+    A line whose negation comes before its first marker ("no 🔴 or 🟠 findings")
+    is a statement of cleanliness, not a finding.
+    """
+    out, fenced = [], False
+    for line in ANSI.sub("", report).splitlines():
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        first = min((line.find(mark) for mark in BLOCKING if mark in line), default=-1)
+        if first < 0:
+            continue
+        if NEGATION.search(line[:first]):
+            continue
+        out.append(line.strip()[:200])
+    return out
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -105,6 +146,7 @@ def main() -> int:
 
     any_missed = False
     got = want = 0
+    clean_passed = clean_failed = 0
 
     for case in load_cases(cases_dir):
         case_dir = os.path.join(results, case["id"])
@@ -121,6 +163,28 @@ def main() -> int:
             if not name.endswith(".txt"):
                 continue
             report = final_report(open(os.path.join(case_dir, name), errors="replace").read())
+            if case.get("must_pass"):
+                flagged = blocking_findings(report)
+                print(f"== {case['id']}  (clean)  [{name[:-4]}]")
+                if case.get("expected"):
+                    print("   warning: must_pass ignores expected[]")
+                if not report.strip():
+                    clean_failed += 1
+                    print("   clean: FAIL (no report)")
+                    any_missed = True
+                elif flagged:
+                    clean_failed += 1
+                    print("   clean: FAIL")
+                    for line in flagged:
+                        print(f"     ❌ blocking finding on a clean change: {line}")
+                        any_missed = True
+                else:
+                    clean_passed += 1
+                    print("   clean: PASS")
+                for line in headings(report):
+                    print(f"     · {line}")
+                print()
+                continue
             found, missed = grade(case, report)
             total = len(case.get("expected", []))
             got += len(found)
@@ -140,6 +204,8 @@ def main() -> int:
 
     if want:
         print(f"TOTAL {got}/{want} expected findings recovered")
+    if clean_passed or clean_failed:
+        print(f"CLEAN {clean_passed} passed, {clean_failed} failed")
     return 1 if any_missed else 0
 
 

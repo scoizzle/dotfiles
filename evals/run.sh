@@ -6,6 +6,7 @@
 #   ./run.sh --tier T1 -a review-light -m opencode-go/mimo-v2.6-flash
 #   ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
 #   ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
+#   ./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
 #
 # `tier` is required on every case.json. `--tier` selects change cases only; a
 # plan case runs only with `-c` or `-a plan-review-deep`. `-m` is optional; when
@@ -224,22 +225,29 @@ $(cat "$dir$plan_file")
       continue
     fi
     git -C "$co" add -A
-    prompt="Review the uncommitted changes in this repository. The artifact is a CHANGE. The diff is provided below; you have no shell and cannot run git.
+    claim="$(field "$cfg" claim)"
+    if [ "$agent" = "verifier" ]; then
+      # The verifier owns its own evidence: it has shell, and a diff pasted into
+      # the prompt would let it skip the build and the changed-area tests.
+      prompt="Verify the uncommitted change in this repository. The artifact is a CHANGE. Collect the evidence yourself: run git status, git diff HEAD, and the repository's build and changed-area tests as its AGENTS.md names them. Do not run the full suite; the parent owns it at the pre-ship gate. Begin with the coverage block from your instructions."
+      if [ -n "$claim" ]; then prompt="$prompt The author describes it as: ${claim}"; fi
+    else
+      prompt="Review the uncommitted changes in this repository. The artifact is a CHANGE. The diff is provided below; you have no shell and cannot run git.
 
 --- STATUS ---
 $(git -C "$co" status --short)
 --- DIFF (staged + unstaged vs HEAD, including new files) ---
 $(git -C "$co" diff HEAD)
 --- END DIFF ---"
-    claim="$(field "$cfg" claim)"
-    if [ -n "$claim" ]; then prompt="$prompt The author describes it as: ${claim}"; fi
+      if [ -n "$claim" ]; then prompt="$prompt The author describes it as: ${claim}"; fi
+    fi
   else
     echo "unknown artifact: $artifact ($id)" >&2
     mark_failed "unknown artifact"
     continue
   fi
 
-  prompt="$prompt Do not launch subagents. Do not modify any file. Report your findings directly in your final message, in the severity format from your instructions, with file and line references."
+  prompt="$prompt Do not launch subagents. Do not modify any file in the repository. Report your findings directly in your final message, in the severity format from your instructions, with file and line references."
 
   mkdir -p "$WORK/results/$id"
   out="$WORK/results/$id/$(printf '%s' "${MODEL:-$agent}" | tr '#/' '__').txt"
