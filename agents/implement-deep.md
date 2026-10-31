@@ -1,7 +1,7 @@
 ---
 description: T2 implementer. Implements an approved plan with a red test first, then the smallest fix, green test, and changed-area tests. Use for T2 changes only.
 mode: subagent
-model: opencode-go/deepseek-v4-pro#high
+model: claude-agent/haiku#high
 steps: 80
 color: "#2a9d8f"
 permissions:
