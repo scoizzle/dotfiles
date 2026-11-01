@@ -26,6 +26,12 @@ for anything sensitive. Please do not open a public issue for it.
   `~/.config/opencode.bak-<stamp>/` before being replaced, and symlinks are
   created over it.
 - `--check` on both `bootstrap.sh` and `install.cs` performs no writes.
+- `opencode.json` denies `edit` on `memory/core/` (edit, write, and patch) for
+  relative paths and for absolute paths that contain `/memory/core/`. Shell
+  rules match the command text, so a redirection into core is forbidden by
+  the Memory section of `AGENTS.md` rather than by a path-shaped shell rule.
+- `bin/dream` appends only to `memory/learnings/YYYY-MM-DD.md`. It refuses a
+  path that resolves under `memory/core/`.
 - CI is required to pass before anything lands on `main`.
 
 ## Platform scope

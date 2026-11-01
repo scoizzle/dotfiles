@@ -1,0 +1,778 @@
+#!/usr/bin/env python3
+"""Out-of-band learning pass: recent opencode sessions become learnings constraints.
+
+    dream                         # last 24h, append today's learnings file
+    dream --since 48h             # duration, or an ISO date (UTC)
+    dream --sessions 10           # cap sessions inside the window
+    dream --dry-run               # print the proposed append, write nothing
+    dream --db PATH               # override the session store
+
+The session store is the one evals/scoreboard.py uses:
+~/.local/share/opencode/opencode.db, table session_v2, messages in
+session_message. A missing store prints that path and appends nothing.
+
+Drafting calls the local opencode binary. This script does not read API keys.
+The invocation is:
+
+    opencode run --standalone --format json --auto <prompt>
+
+Lessons are appended to ~/.config/opencode/memory/learnings/YYYY-MM-DD.md.
+memory/core/ is never written.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# Same default as evals/scoreboard.py. --db overrides it. Do not invent a
+# second location; XDG and OPENCODE_DB are opencode's own knobs, and the
+# scoreboard does not read them.
+DEFAULT_DB = "~/.local/share/opencode/opencode.db"
+DEFAULT_MEMORY = "~/.config/opencode/memory"
+DEFAULT_SINCE = "24h"
+DEFAULT_SESSIONS = 50
+OPENCODE_ARGV = ("run", "--standalone", "--format", "json", "--auto")
+DIGEST_LIMIT = 12000
+MESSAGE_CHARS = 1500
+RECORDED_LIMIT = 80
+
+CONSTRAINT = re.compile(
+    r"^\s*(?:[-*]\s*)?(never|known|derived):\s+(\S.*?)\s+\[(harness|loop|graph)\]\s*$",
+    re.IGNORECASE,
+)
+SINCE_DURATION = re.compile(r"^(\d+)([mhd])$", re.IGNORECASE)
+DATED_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+PATH_MARKERS = re.compile(
+    r"(?:No such file or directory|FileNotFoundError|ENOENT)"
+    r"(?::\s*|\s+)'?([^'\s\"]+)'?",
+    re.IGNORECASE,
+)
+
+PROMPT_HEAD = """DREAM-PASS
+You are updating durable memory for an opencode harness. Reply with markdown constraint lines only. Do not use tools. Do not edit files. Do not repeat a line that is already recorded.
+
+Lessons are constraints, not transcripts. One line each:
+- never: a dead approach. Do not retry it.
+- known: a durable fact.
+- derived: a rule that should change how the next piece of work is cut (the brief or the splitter), not advice stuffed into a worker prompt.
+
+End every line with the layer that owns it: [harness], [loop], or [graph].
+- harness: config, tools, installer, memory layout.
+- loop: a repeated step inside one task (fix, test, retry).
+- graph: how work is split across agents or review gates.
+
+Skip one-offs. If the digest has no durable lesson, reply with exactly: (none)
+
+Digest:
+"""
+
+
+def now_utc() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def parse_since(value: str, now: datetime.datetime) -> int:
+    """Return a UTC epoch-millisecond lower bound. Matches scoreboard's time_created unit."""
+    match = SINCE_DURATION.fullmatch(value.strip())
+    if match:
+        count = int(match.group(1))
+        unit = match.group(2).lower()
+        seconds = {"m": 60, "h": 3600, "d": 86400}[unit] * count
+        return int((now.timestamp() - seconds) * 1000)
+
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        raise SystemExit(
+            f"--since {value!r} is not a duration (30m, 24h, 7d) or an ISO-8601 date"
+        ) from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+def sha256_file(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def connect_ro(path: str) -> sqlite3.Connection:
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    try:
+        return sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as error:
+        raise SystemExit(f"cannot read session store at {path}: {error}") from None
+
+
+def tables(connection: sqlite3.Connection) -> set[str]:
+    rows = connection.execute(
+        "select name from sqlite_master where type = 'table'"
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def columns(connection: sqlite3.Connection, table: str) -> list[str]:
+    rows = connection.execute(f"pragma table_info({table})").fetchall()
+    return [row[1] for row in rows]
+
+
+def load_sessions(
+    connection: sqlite3.Connection, since_ms: int, limit: int
+) -> tuple[str, list[dict]]:
+    """Return (schema, sessions). schema is session_v2 or the legacy session table."""
+    present = tables(connection)
+    if "session_v2" in present:
+        table = "session_v2"
+    elif "session" in present:
+        table = "session"
+    else:
+        raise SystemExit(
+            "session store has neither session_v2 nor session. "
+            f"Expected the schema evals/scoreboard.py reads ({DEFAULT_DB})."
+        )
+
+    available = columns(connection, table)
+    if "id" not in available or "time_created" not in available:
+        raise SystemExit(f"{table} is missing id or time_created")
+
+    wanted = [
+        "id",
+        "title",
+        "directory",
+        "agent",
+        "time_created",
+        "time_updated",
+        "idle_outcome",
+        "parent_id",
+        "cost",
+    ]
+    selected = [name for name in wanted if name in available]
+    sql = (
+        f"select {', '.join(selected)} from {table} "
+        "where time_created >= ? order by time_created desc limit ?"
+    )
+    try:
+        rows = connection.execute(sql, (since_ms, limit)).fetchall()
+    except sqlite3.Error as error:
+        raise SystemExit(f"query failed on {table}: {error}") from None
+
+    sessions = []
+    for row in rows:
+        item = dict(zip(selected, row))
+        item["schema"] = table
+        sessions.append(item)
+    return table, sessions
+
+
+def message_rows(connection: sqlite3.Connection, session_id: str, schema: str) -> list[dict]:
+    present = tables(connection)
+    if schema == "session_v2" and "session_message" in present:
+        return _rows(
+            connection,
+            "session_message",
+            "session_id",
+            session_id,
+            order_candidates=("seq", "time_created", "id"),
+        )
+    if "message" in present:
+        return _rows(
+            connection,
+            "message",
+            "session_id",
+            session_id,
+            order_candidates=("time_created", "id"),
+        )
+    return []
+
+
+def _rows(
+    connection: sqlite3.Connection,
+    table: str,
+    key: str,
+    value: str,
+    order_candidates: tuple[str, ...],
+) -> list[dict]:
+    available = columns(connection, table)
+    if key not in available or "data" not in available:
+        return []
+    order = next((name for name in order_candidates if name in available), None)
+    wanted = [name for name in ("id", "type", "data") if name in available]
+    if "data" not in wanted:
+        return []
+    sql = f"select {', '.join(wanted)} from {table} where {key} = ?"
+    if order:
+        sql += f" order by {order}"
+    try:
+        fetched = connection.execute(sql, (value,)).fetchall()
+    except sqlite3.Error:
+        return []
+    return [dict(zip(wanted, row)) for row in fetched]
+
+
+def part_rows(connection: sqlite3.Connection, message_id: str) -> list[dict]:
+    present = tables(connection)
+    table = "session_part" if "session_part" in present else "part" if "part" in present else ""
+    if not table:
+        return []
+    return _rows(
+        connection,
+        table,
+        "message_id",
+        message_id,
+        order_candidates=("ordinal", "time_created", "id"),
+    )
+
+
+def parse_data(raw: object) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def error_text(error: object) -> str:
+    if error is None:
+        return ""
+    if isinstance(error, str):
+        return error.strip()
+    if isinstance(error, dict):
+        for key in ("message", "reason"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        data = error.get("data")
+        if isinstance(data, dict):
+            message = data.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        name = error.get("name") or error.get("type")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return ""
+
+
+def command_of(state: dict) -> str:
+    raw = state.get("input")
+    if isinstance(raw, str):
+        return " ".join(raw.split())
+    if isinstance(raw, dict):
+        for key in ("command", "cmd"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                return " ".join(value.split())
+    return ""
+
+
+def tool_events(payload: dict) -> list[dict]:
+    content = payload.get("content")
+    items = content if isinstance(content, list) else []
+    events = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") not in (None, "tool"):
+            continue
+        if item.get("type") != "tool" and "state" not in item:
+            continue
+        state = item.get("state") if isinstance(item.get("state"), dict) else {}
+        name = item.get("name") or item.get("tool") or "tool"
+        if not isinstance(name, str):
+            name = "tool"
+        events.append(
+            {
+                "name": name,
+                "status": str(state.get("status") or ""),
+                "error": error_text(state.get("error")) or error_text(item.get("error")),
+                "command": command_of(state),
+            }
+        )
+    return events
+
+
+def text_bits(payload: dict) -> list[str]:
+    bits = []
+    if isinstance(payload.get("text"), str):
+        bits.append(payload["text"])
+    content = payload.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                bits.append(item["text"])
+    summary = payload.get("summary")
+    if isinstance(summary, str):
+        bits.append(summary)
+    err = error_text(payload.get("error"))
+    if err:
+        bits.append(err)
+    return bits
+
+
+def session_blob(connection: sqlite3.Connection, session: dict) -> tuple[str, list[dict], bool]:
+    """Plain text, tool events, and whether this session is itself a dream pass."""
+    texts: list[str] = []
+    events: list[dict] = []
+    for message in message_rows(connection, str(session["id"]), session["schema"]):
+        payload = parse_data(message.get("data"))
+        kind = message.get("type") or payload.get("role") or ""
+        bits = text_bits(payload)
+        found = tool_events(payload)
+        if not bits and not found and message.get("id"):
+            for part in part_rows(connection, str(message["id"])):
+                part_payload = parse_data(part.get("data"))
+                bits.extend(text_bits(part_payload))
+                found.extend(tool_events({"content": [part_payload]}))
+        blob = "\n".join(bits)
+        if "DREAM-PASS" in blob:
+            return "", [], True
+        if blob:
+            texts.append(f"{kind}: {blob[:MESSAGE_CHARS]}")
+        events.extend(found)
+    joined = "\n".join(texts)
+    if "DREAM-PASS" in joined:
+        return "", [], True
+    return joined[: MESSAGE_CHARS * 4], events, False
+
+
+def normalize_sig(text: str) -> str:
+    collapsed = " ".join(text.split())
+    return collapsed[:180]
+
+
+def note_path(paths: dict[str, int], found: str) -> None:
+    cleaned = found.strip().rstrip(".,);")
+    if cleaned and cleaned not in (".", "..") and not cleaned.startswith("-"):
+        paths[cleaned] = paths.get(cleaned, 0) + 1
+
+
+def collect_patterns(sessions: list[dict], details: list[tuple[dict, str, list[dict]]]) -> dict:
+    failures: dict[str, int] = {}
+    commands: dict[str, dict[str, int]] = {}
+    paths: dict[str, int] = {}
+    workarounds: list[str] = []
+    failed_idle: list[str] = []
+    singles_seen: dict[str, int] = {}
+
+    for session, _text, events in details:
+        saw_shell_error = False
+        saw_shell_ok_after = False
+        failed_cmd = ""
+        for event in events:
+            signature = normalize_sig(
+                f"{event['name']}: {event['error'] or event['command'] or event['status']}"
+            )
+            status = event["status"].lower()
+            errored = status == "error" or bool(event["error"])
+            if errored and signature.strip():
+                failures[signature] = failures.get(signature, 0) + 1
+                singles_seen[signature] = singles_seen.get(signature, 0) + 1
+            command = event["command"]
+            if command:
+                bucket = commands.setdefault(command[:180], {"error": 0, "ok": 0})
+                if errored:
+                    bucket["error"] += 1
+                elif status in ("completed", "ok", "success"):
+                    bucket["ok"] += 1
+            for found in PATH_MARKERS.findall(f"{event['error']} {event['command']}"):
+                note_path(paths, found)
+            if event["name"] in ("shell", "bash") and errored:
+                saw_shell_error = True
+                failed_cmd = command or event["error"]
+            elif (
+                event["name"] in ("shell", "bash")
+                and status in ("completed", "ok", "success")
+                and saw_shell_error
+            ):
+                saw_shell_ok_after = True
+        for found in PATH_MARKERS.findall(_text):
+            note_path(paths, found)
+        if saw_shell_error and saw_shell_ok_after:
+            title = session.get("title") or session.get("id")
+            workarounds.append(
+                f"{session.get('id')}: shell failed ({normalize_sig(failed_cmd) or 'unknown'}), a later shell completed ({title})"
+            )
+        if session.get("idle_outcome") == "failed":
+            failed_idle.append(
+                f"{session.get('id')} agent={session.get('agent') or '(none)'} title={session.get('title') or ''}"
+            )
+
+    repeated = sorted(
+        ((count, sig) for sig, count in failures.items() if count >= 2),
+        reverse=True,
+    )
+    flaky = sorted(
+        (
+            f"{cmd}  failed {counts['error']}, completed {counts['ok']}"
+            for cmd, counts in commands.items()
+            if counts["error"] and counts["ok"]
+        )
+    )
+    single = sorted(
+        ((count, sig) for sig, count in singles_seen.items() if count == 1),
+        reverse=True,
+    )
+    return {
+        "repeated": [f"{count}× {sig}" for count, sig in repeated[:12]],
+        "flaky": flaky[:8],
+        "paths": [f"{path} ({count})" for path, count in sorted(paths.items(), key=lambda item: -item[1])[:12]],
+        "workarounds": workarounds[:8],
+        "failed_idle": failed_idle[:12],
+        "single": [sig for _count, sig in single[:8]],
+    }
+
+
+def digest_lines(
+    store: str,
+    since_ms: int,
+    schema: str,
+    sessions: list[dict],
+    patterns: dict,
+    recorded: list[str],
+) -> str:
+    since = datetime.datetime.fromtimestamp(since_ms / 1000, datetime.timezone.utc).isoformat()
+    lines = [
+        f"store: {store}",
+        f"schema: {schema}",
+        f"since: {since}",
+        f"sessions: {len(sessions)}",
+        "",
+        "repeated failures:",
+    ]
+    lines.extend(f"- {item}" for item in patterns["repeated"] or ["(none)"])
+    lines.append("")
+    lines.append("flaky commands:")
+    lines.extend(f"- {item}" for item in patterns["flaky"] or ["(none)"])
+    lines.append("")
+    lines.append("missing paths:")
+    lines.extend(f"- {item}" for item in patterns["paths"] or ["(none)"])
+    lines.append("")
+    lines.append("possible workarounds (shell failed, a later shell completed):")
+    lines.extend(f"- {item}" for item in patterns["workarounds"] or ["(none)"])
+    lines.append("")
+    lines.append("sessions that ended failed:")
+    lines.extend(f"- {item}" for item in patterns["failed_idle"] or ["(none)"])
+    lines.append("")
+    lines.append("single failures (usually skip):")
+    lines.extend(f"- {item}" for item in patterns["single"] or ["(none)"])
+    if recorded:
+        lines.append("")
+        lines.append("already recorded:")
+        lines.extend(recorded[-RECORDED_LIMIT:])
+    text = "\n".join(lines)
+    if len(text) > DIGEST_LIMIT:
+        text = text[:DIGEST_LIMIT] + "\n...(digest truncated)"
+    return text
+
+
+def has_signal(patterns: dict) -> bool:
+    # A one-off tool error is listed in the digest when something else already
+    # qualifies. On its own it is not worth a draft.
+    return any(patterns[key] for key in ("repeated", "flaky", "paths", "workarounds", "failed_idle"))
+
+
+def recorded_lines(learnings: Path) -> list[str]:
+    if not learnings.is_dir():
+        return []
+    found: list[str] = []
+    for path in sorted(learnings.glob("*.md")):
+        if path.name in ("README.md",):
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            match = CONSTRAINT.match(line)
+            if match:
+                found.append(format_constraint(match))
+    return found
+
+
+def format_constraint(match: re.Match[str]) -> str:
+    kind, body, layer = match.group(1).lower(), match.group(2).strip(), match.group(3).lower()
+    return f"- {kind}: {body} [{layer}]"
+
+
+def constraint_lines(text: str) -> list[str]:
+    lines = []
+    for raw in text.splitlines():
+        match = CONSTRAINT.match(raw)
+        if match:
+            lines.append(format_constraint(match))
+    # Keep order, drop duplicates.
+    seen = set()
+    unique = []
+    for line in lines:
+        if line not in seen:
+            seen.add(line)
+            unique.append(line)
+    return unique
+
+
+def model_text(stdout: str) -> str:
+    texts: list[str] = []
+    parsed = False
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        parsed = True
+        if isinstance(event, dict) and event.get("type") == "text":
+            part = event.get("part") or {}
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                texts.append(part["text"])
+    if texts:
+        return "\n".join(texts)
+    if parsed:
+        return ""
+    return stdout
+
+
+def source_line(sessions: list[dict], since_ms: int) -> str:
+    since = datetime.datetime.fromtimestamp(since_ms / 1000, datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    ids = [str(session.get("id")) for session in sessions if session.get("id")]
+    shown = ids[:8]
+    extra = len(ids) - len(shown)
+    listed = ", ".join(shown)
+    if extra > 0:
+        listed = f"{listed}, and {extra} more"
+    return f"source: {len(sessions)} sessions since {since} ({listed})"
+
+
+def format_block(lines: list[str], sessions: list[dict], since_ms: int, when: datetime.datetime) -> str:
+    stamp = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+    header = f"## {stamp} · agent · dream\n{source_line(sessions, since_ms)}"
+    return header + "\n\n" + "\n".join(lines) + "\n"
+
+
+def run_opencode(binary: str, prompt: str, timeout: int) -> str:
+    with tempfile.TemporaryDirectory(prefix="opencode-dream-") as folder:
+        try:
+            result = subprocess.run(
+                [binary, *OPENCODE_ARGV, prompt],
+                cwd=folder,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise SystemExit(f"opencode run timed out after {timeout}s") from None
+        except OSError as error:
+            raise SystemExit(f"failed to run {binary}: {error}") from None
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise SystemExit(f"opencode run exited {result.returncode}\n{detail}")
+    return model_text(result.stdout)
+
+
+def missing_opencode_hint() -> SystemExit:
+    argv = " ".join(OPENCODE_ARGV)
+    return SystemExit(
+        "opencode is not on PATH, so dream cannot draft lessons.\n"
+        f"invocation: opencode {argv} <prompt>\n"
+        "Install opencode and re-run. This script does not read API keys."
+    )
+
+
+def assert_learnings_target(memory: Path, target: Path) -> Path:
+    """Refuse anything that is not a dated file inside learnings. Never touch core."""
+    if not memory.is_dir():
+        raise SystemExit(
+            f"memory is not installed at {memory}\n"
+            "run ./install.cs so memory/ is linked to ~/.config/opencode/memory"
+        )
+    learnings = memory / "learnings"
+    core = memory / "core"
+    if not learnings.is_dir():
+        raise SystemExit(f"missing {learnings}")
+    if not DATED_NAME.fullmatch(target.name):
+        raise SystemExit(f"refusing to write {target.name}; learnings files are YYYY-MM-DD.md")
+    if target.name in ("README.md", ".gitkeep"):
+        raise SystemExit(f"refusing to overwrite {target.name}")
+
+    learnings_resolved = learnings.resolve()
+    core_resolved = core.resolve() if core.exists() else None
+    target_resolved = target.resolve()
+    if core_resolved is not None and (
+        target_resolved == core_resolved or core_resolved in target_resolved.parents
+    ):
+        raise SystemExit(f"refusing to write memory/core ({target_resolved})")
+    if learnings_resolved not in target_resolved.parents:
+        raise SystemExit(f"refusing to write outside {learnings_resolved} ({target_resolved})")
+    return target_resolved
+
+
+def append_if_same(path: Path, prior: str | None, block: str) -> bool:
+    """Append block if the file's hash is still prior. prior None means the file was absent."""
+    existed = path.exists()
+    if prior is None and existed and path.stat().st_size > 0:
+        return False
+    flags = os.O_RDWR | (0 if existed else os.O_CREAT)
+    try:
+        fd = os.open(path, flags, 0o644)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise SystemExit(f"cannot open {path}: {error}") from None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.lseek(fd, 0, os.SEEK_SET)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        # An empty file that already existed hashes to sha256(b""). None means
+        # the file was absent. A file we just created is still absent until the
+        # append below, so keep that as None. An empty file someone else
+        # created before this lock is a real hash and must not match None.
+        if not existed and data == b"":
+            current = None
+        else:
+            current = hashlib.sha256(data).hexdigest()
+        if current != prior:
+            return False
+        prefix = ""
+        if data and not data.endswith(b"\n"):
+            prefix += "\n"
+        if data and not data.endswith(b"\n\n"):
+            prefix += "\n"
+        payload = (prefix + block.rstrip() + "\n").encode()
+        os.lseek(fd, 0, os.SEEK_END)
+        os.write(fd, payload)
+        return True
+    finally:
+        os.close(fd)
+
+
+def draft(
+    binary: str | None,
+    prompt: str,
+    timeout: int,
+) -> list[str]:
+    if binary is None:
+        raise missing_opencode_hint()
+    text = run_opencode(binary, prompt, timeout).strip()
+    if not text or text == "(none)":
+        return []
+    lines = constraint_lines(text)
+    if not lines:
+        print("model reply had no constraint lines", file=sys.stderr)
+        print(text[:2000], file=sys.stderr)
+        raise SystemExit(1)
+    return lines
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--since", default=DEFAULT_SINCE, help="window: 30m, 24h, 7d, or an ISO date (default 24h)")
+    parser.add_argument("--sessions", type=int, default=DEFAULT_SESSIONS, help="max sessions in the window (default 50)")
+    parser.add_argument("--dry-run", action="store_true", help="print the proposed append and write nothing")
+    parser.add_argument("--db", default=DEFAULT_DB, help=f"session store (default {DEFAULT_DB})")
+    parser.add_argument("--memory", default=DEFAULT_MEMORY, help=f"memory root (default {DEFAULT_MEMORY})")
+    parser.add_argument("--timeout", type=int, default=180, help="seconds to wait for opencode run")
+    args = parser.parse_args(argv)
+
+    if args.sessions < 1:
+        parser.error("--sessions must be >= 1")
+
+    moment = now_utc()
+    since_ms = parse_since(args.since, moment)
+    db_path = os.path.expanduser(args.db)
+    memory = Path(os.path.expanduser(args.memory))
+    target = memory / "learnings" / f"{moment.strftime('%Y-%m-%d')}.md"
+
+    if not os.path.exists(db_path):
+        print(f"no session store at {db_path}")
+        print(f"expected location matches evals/scoreboard.py: {DEFAULT_DB}")
+        print("nothing to append")
+        return 0
+
+    connection = connect_ro(db_path)
+    try:
+        schema, sessions = load_sessions(connection, since_ms, args.sessions)
+        details = []
+        kept = []
+        for session in sessions:
+            text, events, is_dream = session_blob(connection, session)
+            if is_dream:
+                continue
+            details.append((session, text, events))
+            kept.append(session)
+    finally:
+        connection.close()
+
+    sessions = kept
+    if not sessions:
+        print(f"no sessions since {args.since} in {db_path}")
+        print("nothing to append")
+        return 0
+
+    patterns = collect_patterns(sessions, details)
+    if not has_signal(patterns):
+        print(f"{len(sessions)} sessions in {db_path}, no failures, flaky commands, or missing paths")
+        print("nothing to append")
+        return 0
+
+    binary = shutil.which("opencode")
+    learnings = memory / "learnings"
+
+    for attempt in (1, 2):
+        prior = sha256_file(target) if learnings.is_dir() else None
+        recorded = recorded_lines(learnings)
+        digest = digest_lines(
+            db_path, since_ms, schema, sessions, patterns, recorded[-RECORDED_LIMIT:]
+        )
+        prompt = PROMPT_HEAD + digest + "\n"
+        lines = draft(binary, prompt, args.timeout)
+        fresh = [line for line in lines if line not in set(recorded)]
+        if not fresh:
+            print("no durable lessons")
+            return 0
+        block = format_block(fresh, sessions, since_ms, now_utc())
+        if args.dry_run:
+            sys.stdout.write(block)
+            return 0
+        assert_learnings_target(memory, target)
+        if append_if_same(target, prior, block):
+            print(target)
+            return 0
+        if attempt == 1:
+            print(f"{target} changed while drafting; retrying", file=sys.stderr)
+            continue
+        print(f"refusing to append to {target}; it changed again before the write", file=sys.stderr)
+        return 1
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

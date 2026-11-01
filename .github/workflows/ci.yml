@@ -93,11 +93,15 @@ jobs:
       - name: managed paths are symlinks that resolve
         run: |
           set -eu
-          for p in AGENTS.md opencode.json agents commands skills bin evals; do
+          for p in AGENTS.md opencode.json agents commands skills memory bin evals; do
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
           test -f "$HOME/.config/opencode/skills/roslynk-rules/SKILL.md"
+          test -f "$HOME/.config/opencode/memory/INDEX.md"
+          test -f "$HOME/.config/opencode/memory/core/conventions.md"
+          test -f "$HOME/.config/opencode/memory/core/safety.md"
+          test -f "$HOME/.config/opencode/memory/learnings/README.md"
 
       # A wrong skill header fails silently in opencode, so assert the contract:
       # name matches the directory and is a valid slug, description within bounds.
@@ -126,7 +130,7 @@ jobs:
           PY
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream evals/cost.py evals/score.py evals/scoreboard.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke
@@ -148,3 +152,159 @@ jobs:
           ./bin/review-bundle /tmp >/dev/null 2>&1; rc=$?
           [ "$rc" -eq 2 ] || { echo "non-git should be 2, got $rc"; exit 1; }
           echo "exit codes ok"
+
+      # Bookshelf plus dream with no session store. dream must exit 0 and name
+      # the scoreboard path. A later step drives a fixture database.
+      - name: memory bookshelf and dream empty
+        run: |
+          set -eu
+          test -f memory/INDEX.md
+          grep -q 'core/conventions.md' memory/INDEX.md
+          grep -q 'core/safety.md' memory/INDEX.md
+          grep -q 'learnings/README.md' memory/INDEX.md
+          grep -q 'YYYY-MM-DD.md' memory/INDEX.md
+          ./bin/dream --help >/dev/null
+          out="$(./bin/dream --dry-run --db "${RUNNER_TEMP:-/tmp}/no-such-opencode.db")"
+          echo "$out"
+          echo "$out" | grep -q 'nothing to append'
+          echo "$out" | grep -q 'opencode.db'
+          git check-ignore -q memory/learnings/2099-01-01.md
+          if git check-ignore -q memory/learnings/README.md; then
+            echo "README.md should stay tracked"
+            exit 1
+          fi
+          if git check-ignore -q memory/learnings/.gitkeep; then
+            echo ".gitkeep should stay tracked"
+            exit 1
+          fi
+
+      # Fixture session store plus a stub `opencode` on PATH. Checks the append,
+      # a dry run that does not write, duplicate suppression, and a hash mismatch
+      # that refuses the write. Core stays empty.
+      - name: dream fixture
+        run: |
+          set -eu
+          root="$(mktemp -d)"
+          db="$root/opencode.db"
+          memory="$root/memory"
+          mkdir -p "$memory/learnings" "$memory/core" "$root/bin"
+          python3 - "$db" << 'PY'
+          import json, sqlite3, sys, time
+          db = sqlite3.connect(sys.argv[1])
+          db.execute("""create table session_v2 (
+            id text, title text, directory text, agent text,
+            time_created integer, time_updated integer, idle_outcome text,
+            parent_id text, cost real
+          )""")
+          db.execute("""create table session_message (
+            id text, session_id text, type text, seq integer, data text
+          )""")
+          now = int(time.time() * 1000)
+          db.execute(
+              "insert into session_v2 values (?,?,?,?,?,?,?,?,?)",
+              ("ses_test", "fix path", "/tmp/work", "build", now, now, "failed", None, 0.0),
+          )
+          for i in (1, 2):
+              data = json.dumps({
+                  "content": [{
+                      "type": "tool",
+                      "name": "shell",
+                      "state": {
+                          "status": "error",
+                          "input": {"command": "cat missing/file.txt"},
+                          "error": {"message": "No such file or directory: missing/file.txt"},
+                      },
+                  }]
+              })
+              db.execute(
+                  "insert into session_message values (?,?,?,?,?)",
+                  (f"msg_{i}", "ses_test", "assistant", i, data),
+              )
+          db.commit()
+          PY
+          cat > "$root/bin/opencode" << 'EOF'
+          #!/usr/bin/env python3
+          import json, os, pathlib, sys
+          target = os.environ.get("DREAM_TAMPER")
+          mark = os.environ.get("DREAM_TAMPER_MARK")
+          if target:
+              do = True
+              if mark:
+                  flag = pathlib.Path(mark)
+                  if flag.exists():
+                      do = False
+                  else:
+                      flag.write_text("once\n")
+              if do:
+                  path = pathlib.Path(target)
+                  path.parent.mkdir(parents=True, exist_ok=True)
+                  with path.open("a") as handle:
+                      handle.write("\n## tampered\n- known: tampered during draft [harness]\n")
+          text = "- known: missing/file.txt is not in the tree [harness]\n- never: cat missing/file.txt [loop]\nignore this prose\n"
+          sys.stdout.write(json.dumps({"type": "text", "part": {"text": text}}) + "\n")
+          EOF
+          chmod 755 "$root/bin/opencode"
+          day="$(python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"))')"
+          target="$memory/learnings/$day.md"
+
+          set +e
+          PATH="/usr/bin:/bin" ./bin/dream --db "$db" --memory "$memory" --dry-run >"$root/no-opencode.txt" 2>&1
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          grep -q 'opencode is not on PATH' "$root/no-opencode.txt"
+          test ! -e "$target"
+
+          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" --dry-run >"$root/dry.txt"
+          test ! -e "$target"
+          grep -q 'known: missing/file.txt is not in the tree \[harness\]' "$root/dry.txt"
+          grep -q 'never: cat missing/file.txt \[loop\]' "$root/dry.txt"
+          test -z "$(find "$memory/core" -type f -print)"
+
+          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/write.txt"
+          grep -q "$target" "$root/write.txt"
+          test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
+          test -z "$(find "$memory/core" -type f -print)"
+
+          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/second.txt"
+          grep -q 'no durable lessons' "$root/second.txt"
+          test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
+
+          # An existing empty file must hash as sha256(b""), not as "absent".
+          rm -f "$target"
+          : > "$target"
+          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/empty.txt"
+          test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
+
+          python3 - "$memory" << 'PY'
+          import importlib.machinery, importlib.util, sys
+          from pathlib import Path
+          loader = importlib.machinery.SourceFileLoader("dreammod", "bin/dream")
+          spec = importlib.util.spec_from_loader(loader.name, loader)
+          mod = importlib.util.module_from_spec(spec)
+          loader.exec_module(mod)
+          memory = Path(sys.argv[1])
+          try:
+              mod.assert_learnings_target(memory, memory / "core" / "2099-01-01.md")
+          except SystemExit as exc:
+              if "memory/core" not in str(exc):
+                  raise SystemExit(f"unexpected refusal: {exc}")
+          else:
+              raise SystemExit("core write was allowed")
+          PY
+
+          rm -f "$target"
+          DREAM_TAMPER="$target" DREAM_TAMPER_MARK="$root/once" \
+            PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/retry.txt"
+          grep -q 'missing/file.txt is not in the tree' "$target"
+          grep -q 'tampered during draft' "$target"
+
+          rm -f "$target"
+          set +e
+          DREAM_TAMPER="$target" PATH="$root/bin:$PATH" \
+            ./bin/dream --db "$db" --memory "$memory" >"$root/refuse.txt" 2>&1
+          rc=$?
+          set -e
+          test "$rc" -eq 1
+          grep -q 'refusing to append' "$root/refuse.txt"
+          test "$(grep -c 'missing/file.txt is not in the tree' "$target" || true)" = "0"

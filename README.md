@@ -63,8 +63,12 @@ back here.
 | `agents/`       | subagent prompts                                   |
 | `commands/`     | slash commands                                     |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   |
-| `bin/`          | `review-bundle`, `review-log`, `smoke-workflow`     |
+| `memory/`       | bookshelf, read-only core, learnings format         |
+| `bin/`          | `review-bundle`, `review-log`, `smoke-workflow`, `dream` |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      |
+
+How the bookshelf and the out-of-band dream pass fit together is in
+[`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
 
 ## What it deliberately does not manage
 
@@ -75,6 +79,11 @@ Left in `~/.config/opencode`, untracked, per machine:
   add it to `entries` in `install.cs` with `--copy` if you want it to travel.
 - `reviews.jsonl` — append-only log of review runs.
 - `evals/canary-*/` — recorded model output from past eval runs.
+
+`memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored. With
+the default symlink, `bin/dream` writes those files into this checkout: they
+are on disk here, and `git clone` does not carry them to another machine. A
+`--copy` install keeps them only under `~/.config/opencode/memory/learnings/`.
 
 Outside `~/.config/opencode`, also untracked on purpose:
 

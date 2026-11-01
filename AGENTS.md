@@ -58,6 +58,16 @@ Never ask the user to choose a tier or model.
 - Use `explore` for broad searches; do not read the whole repo in the main
   context. `explore` stays on its cheap pin (Model routing).
 
+### Undo
+
+Classify a ship-or-ask step by undo cost. A one-click revert (docs, tests, an
+isolated change) can proceed. Work that needs cleanup (shared state, auth) gets
+named before it lands. Work with no undo (migrations, deletes, money) waits for
+a person.
+
+On a fix round, return the failed unit and a fence around the files in scope.
+The same failure twice is an escalation; the remaining fix budget stays unspent.
+
 ### Ledger
 
 After the user answers the findings, run
@@ -123,6 +133,31 @@ The advisor pin is spent at three moments only:
    `second-opinion` in parallel on its mid-tier pin; that pass is not the
    advisor. T1 sign-off is `review-light`. `verifier` is the manual shell
    check, not an advisor moment and not the default gate.
+## Memory
+
+Durable memory is `~/.config/opencode/memory/` (this repo's `memory/`, linked
+by `install.cs`).
+
+Before heavy work, read `~/.config/opencode/memory/INDEX.md`. It is the
+bookshelf: a short blurb per file. Load a full memory file only when its blurb
+matches the task. Dated files under `memory/learnings/` are local, so the index
+names the pattern rather than each day. When that blurb matches, read the
+newest `learnings/YYYY-MM-DD.md` files. The match is a task that could repeat
+an earlier failure, command, or path.
+
+Never edit `memory/core/**`. Those files are conventions and safety.
+`opencode.json` denies `edit` on that tree, which covers edit, write, and
+patch. A shell command is matched as text, not as a path, so this rule is what
+forbids a redirection into core.
+
+Durable discoveries go to `memory/learnings/` as short constraints (`never`,
+`known`, `derived`, with a `harness`, `loop`, or `graph` tag) under the version
+header in `memory/learnings/README.md`: who, when in UTC, session or context
+id, and source.
+
+Do not rewrite memory in the middle of a task as a substitute for finishing
+the work. Curriculum updates are the out-of-band dream pass,
+`~/.config/opencode/bin/dream`. See `docs/memory-and-dreaming.md`.
 
 ## C# / .NET work
 

@@ -1,0 +1,43 @@
+# Learnings
+
+Append-only memory. Agents may add dated files in this directory. They do not edit `memory/core/`, and they do not rewrite this README.
+
+Lessons are constraints, not transcripts. A line is one fact the next session can apply. Do not paste session logs, diffs, or command output.
+
+Installed path: `~/.config/opencode/memory/learnings/`. The installer symlinks `memory/` from this repo, so a local dream writes into the checkout. Dated files are gitignored. `README.md` and `.gitkeep` stay tracked.
+
+## Version header
+
+Every write starts with a header, then the constraint lines:
+
+```markdown
+## 2026-10-31T03:15:00+00:00 · agent · dream
+source: 4 sessions since 2026-10-30T03:15:00+00:00 (ses_a, ses_b)
+
+- never: raise the global.json SDK floor to chase a newer compiler [harness]
+- known: session rows are in session_v2 of ~/.local/share/opencode/opencode.db [harness]
+- derived: a second identical failure escalates instead of another fix round [loop]
+```
+
+- **who** — `human` or `agent`. Add the agent name when you have it (`agent:build`).
+- **when** — UTC timestamp.
+- **session or context id** — the opencode session the note came from, or `dream` for the out-of-band pass.
+- **source** — what was read: session ids and the window, a person, or a path.
+
+`bin/dream` writes the header itself and appends to `YYYY-MM-DD.md` (UTC date). Create that file when it is missing.
+
+## Entries
+
+One constraint per line. The prefix says what kind of constraint it is:
+
+- `never:` a dead approach. Do not retry it.
+- `known:` a durable fact.
+- `derived:` a rule that should change how the next piece of work is cut (the brief or the splitter), not a reminder stuffed into a worker prompt.
+
+End the line with the layer that owns it: `[harness]`, `[loop]`, or `[graph]`.
+
+- `harness` — config, tools, installer, memory layout.
+- `loop` — a repeated step inside one task (fix, test, retry).
+- `graph` — how work is split across agents or review gates.
+
+A "do not retry X" line names the layer. It does not become a vague sentence in a prompt. Skip one-off noise. Curriculum updates belong in the dream pass, not in the middle of a task.
