@@ -52,35 +52,35 @@ permissions:
     effect: deny
   - { action: shell, resource: "*", effect: allow }
   - { action: shell, resource: "git push*", effect: deny }
-  - { action: shell, resource: "git * push*", effect: deny }
+  - { action: shell, resource: "git -* push*", effect: deny }
   - { action: shell, resource: "git commit*", effect: deny }
-  - { action: shell, resource: "git * commit*", effect: deny }
+  - { action: shell, resource: "git -* commit*", effect: deny }
   - { action: shell, resource: "git add*", effect: deny }
-  - { action: shell, resource: "git * add*", effect: deny }
+  - { action: shell, resource: "git -* add*", effect: deny }
   - { action: shell, resource: "git reset*", effect: deny }
-  - { action: shell, resource: "git * reset*", effect: deny }
+  - { action: shell, resource: "git -* reset*", effect: deny }
   - { action: shell, resource: "git checkout*", effect: deny }
-  - { action: shell, resource: "git * checkout*", effect: deny }
+  - { action: shell, resource: "git -* checkout*", effect: deny }
   - { action: shell, resource: "git switch*", effect: deny }
-  - { action: shell, resource: "git * switch*", effect: deny }
+  - { action: shell, resource: "git -* switch*", effect: deny }
   - { action: shell, resource: "git stash*", effect: deny }
-  - { action: shell, resource: "git * stash*", effect: deny }
+  - { action: shell, resource: "git -* stash*", effect: deny }
   - { action: shell, resource: "git clean*", effect: deny }
-  - { action: shell, resource: "git * clean*", effect: deny }
+  - { action: shell, resource: "git -* clean*", effect: deny }
   - { action: shell, resource: "git restore*", effect: deny }
-  - { action: shell, resource: "git * restore*", effect: deny }
+  - { action: shell, resource: "git -* restore*", effect: deny }
   - { action: shell, resource: "git worktree*", effect: deny }
-  - { action: shell, resource: "git * worktree*", effect: deny }
+  - { action: shell, resource: "git -* worktree*", effect: deny }
   - { action: shell, resource: "git config*", effect: deny }
-  - { action: shell, resource: "git * config*", effect: deny }
+  - { action: shell, resource: "git -* config*", effect: deny }
   - { action: shell, resource: "git rebase*", effect: deny }
-  - { action: shell, resource: "git * rebase*", effect: deny }
+  - { action: shell, resource: "git -* rebase*", effect: deny }
   - { action: shell, resource: "git merge*", effect: deny }
-  - { action: shell, resource: "git * merge*", effect: deny }
+  - { action: shell, resource: "git -* merge*", effect: deny }
   - { action: shell, resource: "git *--output*", effect: deny }
   - { action: shell, resource: "sudo *", effect: deny }
-  # `shell *: allow` above would erase the global shell rules (last match wins), so
-  # they are restated here. bin/lint-config fails if this list drifts from opencode.json.
+  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block.
+  # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here.
   - { action: shell, resource: "*git push*", effect: ask }
   - { action: shell, resource: "*git -* push*", effect: ask }
   - { action: shell, resource: "*git push*--force*", effect: deny }
@@ -93,8 +93,10 @@ permissions:
   - { action: shell, resource: "*git -* push*--delete*", effect: deny }
   - { action: shell, resource: "*git push*--mirror*", effect: deny }
   - { action: shell, resource: "*git -* push*--mirror*", effect: deny }
-  - { action: shell, resource: "*git*reset*--hard*", effect: deny }
-  - { action: shell, resource: "*git*clean*", effect: deny }
+  - { action: shell, resource: "*git reset*--hard*", effect: deny }
+  - { action: shell, resource: "*git -* reset*--hard*", effect: deny }
+  - { action: shell, resource: "*git clean*", effect: deny }
+  - { action: shell, resource: "*git -* clean*", effect: deny }
   - { action: shell, resource: "*rm -rf*", effect: deny }
   - { action: shell, resource: "*rm -fr*", effect: deny }
   - { action: shell, resource: "*rm -r -f*", effect: deny }
@@ -104,13 +106,23 @@ permissions:
   - { action: shell, resource: "*/.ssh/*", effect: deny }
   - { action: shell, resource: "*~/.ssh*", effect: deny }
   - { action: shell, resource: "*/.aws/*", effect: deny }
+  - { action: shell, resource: "*~/.aws*", effect: deny }
   - { action: shell, resource: "*/.gnupg/*", effect: deny }
-  - { action: shell, resource: "*/.netrc*", effect: deny }
+  - { action: shell, resource: "*~/.gnupg*", effect: deny }
   - { action: shell, resource: "*/.config/gh/*", effect: deny }
-  - { action: shell, resource: "*/.claude/*", effect: deny }
+  - { action: shell, resource: "*~/.config/gh*", effect: deny }
+  - { action: shell, resource: "*/.netrc*", effect: deny }
+  - { action: shell, resource: "*/.claude/.credentials.json*", effect: deny }
+  - { action: shell, resource: "*/.claude.json*", effect: deny }
+  - { action: shell, resource: "*/.grok/auth.json*", effect: deny }
+  - { action: shell, resource: "*/.grok/config.toml*", effect: deny }
+  - { action: shell, resource: "*/.local/share/opencode/auth.json*", effect: deny }
   - { action: shell, resource: "*/.t3/userdata/statev2*", effect: deny }
-  - { action: shell, resource: "*auth.json*", effect: deny }
+  - { action: shell, resource: "*/.claude/*", effect: deny }
   - { action: shell, resource: "*service.json*", effect: deny }
+  - { action: shell, resource: "*auth.json*", effect: deny }
+  - { action: shell, resource: "*.netrc*", effect: deny }
+  # END managed by bin/sync-harness
 ---
 
 You verify one artifact — a **change** or a **plan** — and report its defects.

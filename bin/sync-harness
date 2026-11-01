@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Render policy/permissions.json into the native config of every harness.
+
+    sync-harness                      # --check: show drift, change nothing (exit 1 if any)
+    sync-harness --apply              # write it
+    sync-harness --scope repo|home|all
+    sync-harness --home DIR           # act on DIR instead of $HOME (tests)
+
+Targets:
+
+  repo   opencode.json `permissions`, and the managed block in agents/verifier.md
+         (its `shell *: allow` would otherwise erase the global shell rules).
+  home   ~/.claude/settings.json: `permissions.deny/ask` rules and a PreToolUse
+         hook running bin/harness-guard. Claude Code reads that file, and so does
+         Grok Build (it scans Claude settings for both rules and hooks), so this
+         one write covers both. ~/.grok/config.toml is never touched.
+
+The home merge is additive and idempotent: it adds missing rules, replaces its own
+hook entry (found by the `harness-guard` command name), and keeps everything else.
+It backs the file up before writing. Retired rules are not removed automatically.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import difflib
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+HOOK_MATCHER = (
+    "Bash|Read|Grep|Glob|LS|Edit|Write|MultiEdit|NotebookEdit|"
+    "run_terminal_command|read_file|grep|list_dir|search_replace|hashline_edit|write"
+)
+BEGIN = "  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block."
+END = "  # END managed by bin/sync-harness"
+
+
+def rule(action: str, resource: str, effect: str) -> dict:
+    return {"action": action, "resource": resource, "effect": effect}
+
+
+def render_opencode(policy: dict) -> list[dict]:
+    out = [rule("skill", s, "deny") for s in policy["opencode"]["skill_deny"]]
+    out += shell_rules(policy)
+    prot = policy["protected"]
+    for entry in prot["paths"]:
+        rel = entry[2:]
+        if entry.endswith("/"):
+            out += [rule("shell", f"*/{rel}*", "deny"), rule("shell", f"*~/{rel.rstrip('/')}*", "deny")]
+            out.append(rule("read", entry + "*", "deny"))
+        else:
+            out += [rule("shell", f"*/{rel}" + ("" if rel.endswith("*") else "*"), "deny"), rule("read", entry, "deny")]
+    out += [rule("shell", g, "deny") for g in policy["opencode"].get("shell_deny_extra", [])]
+    for name in prot["names"]:
+        out += [rule("shell", f"*{name}*", "deny"), rule("read", f"**/{name}", "deny")]
+    for glob in prot["name_globs"]:
+        out += [rule("read", f"**/{glob}", "deny"), rule("read", glob, "deny")]
+    out += [rule("read", g, "deny") for g in policy["opencode"]["read_deny_extra"]]
+    for allowed in prot["name_allow"]:
+        out += [rule("read", f"**/{allowed}", "allow"), rule("read", allowed, "allow")]
+    for d in policy["no_edit"]:
+        out += [rule("edit", f"{d}/*", "deny"), rule("edit", f"*/{d}/*", "deny")]
+    return dedupe(out)
+
+
+def shell_rules(policy: dict) -> list[dict]:
+    out: list[dict] = []
+    for kind in ("ask", "deny"):
+        for r in policy["shell"][kind]:
+            out += [rule("shell", g, kind) for g in r["opencode"]]
+    return out
+
+
+def dedupe(rules: list[dict]) -> list[dict]:
+    seen, out = set(), []
+    for r in rules:
+        key = (r["action"], r["resource"], r["effect"])
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
+def render_native(policy: dict) -> dict:
+    ask = [n for r in policy["shell"]["ask"] for n in r["native"]]
+    deny = [n for r in policy["shell"]["deny"] for n in r["native"]]
+    prot = policy["protected"]
+    for entry in prot["paths"]:
+        deny.append(f"Read({entry}**)" if entry.endswith("/") else f"Read({entry})")
+    deny += [f"Read(**/{n})" for n in prot["names"]]
+    deny += [f"Read(**/{n})" for n in prot["native_env_files"]]
+    for d in policy["no_edit"]:
+        deny += [f"Edit(**/{d}/**)", f"Write(**/{d}/**)"]
+    return {"deny": list(dict.fromkeys(deny)), "ask": list(dict.fromkeys(ask))}
+
+
+def dump_opencode(config: dict) -> str:
+    text = json.dumps(config, indent=2, ensure_ascii=False)
+    text = re.sub(
+        r'\{\s*"action": ("[^"]*"),\s*"resource": ("[^"]*"),\s*"effect": ("[^"]*")\s*\}',
+        r'{ "action": \1, "resource": \2, "effect": \3 }',
+        text,
+    )
+    return text + "\n"
+
+
+def verifier_block(policy: dict) -> str:
+    lines = [BEGIN, "  # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here."]
+    shell = [r for r in render_opencode(policy) if r["action"] == "shell"]
+    lines += [f'  - {{ action: shell, resource: "{r["resource"]}", effect: {r["effect"]} }}' for r in shell]
+    lines.append(END)
+    return "\n".join(lines)
+
+
+def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
+    config_path = repo / "opencode.json"
+    config = json.loads(config_path.read_text())
+    config["permissions"] = render_opencode(policy)
+    targets = {config_path: dump_opencode(config)}
+
+    agent = repo / "agents" / "verifier.md"
+    text = agent.read_text()
+    block = verifier_block(policy)
+    if BEGIN in text:
+        text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _m: block, text, flags=re.S)
+    else:
+        marker = '  - { action: shell, resource: "sudo *", effect: deny }'
+        old = re.search(r"  # `shell \*: allow` above.*?(?=\n---\n)", text, flags=re.S)
+        if old:
+            text = text[: old.start()] + block + text[old.end():]
+        elif marker in text:
+            text = text.replace(marker, marker + "\n" + block, 1)
+        else:
+            raise SystemExit("agents/verifier.md: no place to put the managed block")
+    targets[agent] = text
+    return targets
+
+
+def home_target(policy: dict, home: Path) -> tuple[Path, str, list[str]]:
+    path = home / ".claude" / "settings.json"
+    settings = json.loads(path.read_text()) if path.exists() else {}
+    native = render_native(policy)
+    notes: list[str] = []
+    perms = settings.setdefault("permissions", {})
+    for kind in ("deny", "ask"):
+        have = perms.setdefault(kind, [])
+        added = [r for r in native[kind] if r not in have]
+        have.extend(added)
+        if added:
+            notes.append(f"permissions.{kind}: +{len(added)} rule(s)")
+    guard = str(home / ".config" / "opencode" / "bin" / "harness-guard")
+    entry = {"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": guard, "timeout": 10}]}
+    hooks = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    index = next((i for i, h in enumerate(hooks) if any(str(x.get("command", "")).endswith("harness-guard") for x in h.get("hooks", []))), None)
+    if index is None:
+        hooks.append(entry)
+        notes.append("hooks.PreToolUse: +harness-guard")
+    elif hooks[index] != entry:
+        hooks[index] = entry
+        notes.append("hooks.PreToolUse: harness-guard entry updated")
+    return path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n", notes
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--apply", action="store_true", help="write the changes (default: only report drift)")
+    parser.add_argument("--check", action="store_true", help="report drift (the default)")
+    parser.add_argument("--scope", choices=("repo", "home", "all"), default="all")
+    parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
+    parser.add_argument("--repo", default=str(ROOT), help="repo to act on (default this repo)")
+    args = parser.parse_args()
+    repo, home = Path(args.repo), Path(args.home)
+    policy = json.loads((repo / "policy" / "permissions.json").read_text())
+
+    drift = False
+    if args.scope in ("repo", "all"):
+        for path, want in repo_targets(policy, repo).items():
+            have = path.read_text()
+            if have == want:
+                print(f"ok      {path.relative_to(repo)}")
+                continue
+            drift = True
+            print(f"drift   {path.relative_to(repo)}")
+            sys.stdout.writelines(list(difflib.unified_diff(have.splitlines(True), want.splitlines(True), "current", "policy", n=0))[:60])
+            if args.apply:
+                path.write_text(want)
+    if args.scope in ("home", "all"):
+        path, want, notes = home_target(policy, home)
+        if not notes:
+            print(f"ok      {path}")
+        else:
+            drift = True
+            print(f"drift   {path}")
+            for note in notes:
+                print(f"        {note}")
+            if args.apply:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if path.exists():
+                    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                    backup = path.with_name(f"{path.name}.bak-{stamp}")
+                    shutil.copy2(path, backup)
+                    print(f"        backup {backup}")
+                path.write_text(want)
+    if drift and args.apply:
+        print("applied")
+        return 0
+    return 1 if drift else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

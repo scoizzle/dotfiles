@@ -26,6 +26,41 @@ that every later session trusts).
 agent's effective rules. It exists because a rule order bug is invisible by reading:
 the `verifier`'s `shell *: allow` used to erase every global shell deny.
 
+## One policy, three harnesses
+
+`policy/permissions.json` is the single source. `policy/vectors.json` holds the
+expected decision for each sample command and path. `bin/lint-config` runs those
+vectors through every engine in CI, so the three cannot disagree unnoticed.
+
+| Harness | How the policy reaches it | Strength |
+| --- | --- | --- |
+| opencode | `bin/sync-harness` renders `opencode.json` `permissions` and the `verifier` block | Text globs |
+| Claude Code | `bin/sync-harness` writes `permissions.deny/ask` and a `PreToolUse` hook (`bin/harness-guard`) into `~/.claude/settings.json` | Parsed command checks plus native rules |
+| Grok Build | Reads the same `~/.claude/settings.json` for rules and hooks (its Claude compatibility is on by default). `~/.grok/config.toml` is never touched; it holds an MCP bearer token | Same as Claude Code, and `ask` forces a prompt even in always-approve |
+
+`harness-guard` parses the command (quoting, `&&`/`;`/pipes, `$(...)`, `sh -c`,
+`env`/`command` wrappers, `git -C x push`, clustered flags like `-fu`, heredoc
+bodies), which text globs cannot. It denies with exit 2 and a reason, asks with a
+JSON `ask`, and never prints `allow`. Both harnesses fail open when a hook
+crashes, so the guard denies on any error and on truncated input.
+
+Apply it with `~/.config/opencode/bin/sync-harness` (report drift) and
+`--apply` (write; the settings file is backed up first, existing rules and hooks
+are kept, and retired rules are not removed automatically).
+
+Limits specific to this layer:
+
+- Global hooks run only after Grok's folder trust, and a hook missing from disk
+  fails open. The native deny rules are the fallback for both cases.
+- The hook does not understand `python -c`, base64, or paths built at run time.
+- The user owns `~/.claude/settings.json` and can edit the hook out. Grok's docs
+  call config hooks "convenience distribution, not an enforcement boundary". For
+  an enforced Grok policy, deploy the same hook through root-owned
+  `/etc/grok/requirements.toml`.
+- Instructions (`AGENTS.md`) are not shared with Claude Code or Grok Build; only
+  permissions are. Grok reads `~/.grok/AGENTS.md` capped at 10,000 characters,
+  and Claude Code reads `CLAUDE.md`, so wiring those is a separate step.
+
 ## What is only discouraged
 
 Shell command denies are **text patterns, not a boundary**. `rm -rf` has dozens of

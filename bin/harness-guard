@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""PreToolUse guard shared by Claude Code and Grok Build.
+
+Reads one hook event as JSON on stdin and enforces policy/permissions.json:
+
+    deny  -> exit 2, reason on stderr, and a JSON deny on stdout
+    ask   -> exit 0 with a JSON "ask" (both harnesses show a prompt, even in
+             Grok's always-approve mode)
+    other -> exit 0 and no output (no opinion; the harness's own flow decides)
+
+It never prints "allow": allowing would skip the harness's own prompts.
+
+Unlike the text globs in opencode.json, this parses the command: quoting,
+`&&`/`;`/`|` chains, `$(...)`, `sh -c "..."`, `env`/`command` wrappers, git's
+global options (`git -C x push`), heredoc bodies, and clustered short flags
+(`-fu`). It is still best effort. It does not understand `python -c`, base64, or
+variables built at run time, and it is a convenience layer, not a sandbox: the
+user owns the file that registers it. See docs/security-model.md.
+
+Both harnesses fail open when a hook crashes or times out, so every code path in
+here that can raise ends in a deny rather than a silent allow.
+
+    harness-guard --explain '<command>'   # print the decision for a command
+"""
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import shlex
+import sys
+from pathlib import Path
+
+POLICY = Path(os.environ.get("HARNESS_POLICY") or Path(__file__).resolve().parent.parent / "policy" / "permissions.json")
+HOME = os.environ.get("HARNESS_HOME") or os.path.expanduser("~")
+
+SHELL_TOOLS = {"bash", "run_terminal_command", "shell"}
+READ_TOOLS = {"read", "read_file", "grep", "glob", "ls", "list_dir", "notebookread"}
+WRITE_TOOLS = {"edit", "write", "multiedit", "notebookedit", "search_replace", "hashline_edit", "strreplace", "editnotebook"}
+# Values under these keys are file contents, not paths.
+CONTENT_KEYS = {"content", "contents", "new_string", "old_string", "text", "new_source", "old_str", "new_str", "edits"}
+# Programs whose bare file-name argument is read as a file. grep/sed/awk/jq are left out:
+# their first argument is a pattern, and `grep auth.json src` must keep working.
+READERS = {"cat", "less", "more", "head", "tail", "bat", "cp", "mv", "scp", "rsync", "base64", "xxd", "strings", "od",
+           "open", "source", ".", "cut", "tee", "nl", "tac", "zcat"}
+WRITERS = {"tee", "cp", "mv", "rm", "touch", "truncate", "install", "ln", "chmod", "chown", "dd", "rsync", "mkdir", "rmdir"}
+WRAPPERS = {"env", "command", "exec", "nohup", "time", "builtin", "nice", "stdbuf", "setsid", "caffeinate"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+SEPARATORS = set(";&|()\n")
+GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"}
+NESTED = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+MAX_DEPTH = 5
+
+
+class Decision:
+    def __init__(self, kind: str, rule: str, reason: str):
+        self.kind, self.rule, self.reason = kind, rule, reason
+
+    def __repr__(self) -> str:
+        return f"{self.kind}:{self.rule}"
+
+
+def load_policy() -> dict:
+    return json.loads(POLICY.read_text())
+
+
+def expand(token: str) -> str:
+    token = token.replace("${HOME}", HOME).replace("$HOME", HOME)
+    if token == "~" or token.startswith("~/"):
+        token = HOME + token[1:]
+    return os.path.normpath(token) if token.startswith("/") else token
+
+
+def strip_heredocs(text: str) -> str:
+    out, tag = [], None
+    for line in text.split("\n"):
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+            continue
+        out.append(line)
+        match = HEREDOC.search(line)
+        if match:
+            tag = match.group(2)
+    return "\n".join(out)
+
+
+def tokenize(text: str) -> list[str]:
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=";&|()\n<>")
+    lexer.whitespace, lexer.whitespace_split = " \t\r", True
+    try:
+        return list(lexer)
+    except ValueError:  # unbalanced quote: fall back rather than skip the command
+        return text.replace("\n", " ; ").split()
+
+
+def segments(command: str, depth: int = 0) -> list[list[str]]:
+    """Every simple command in `command`, including nested ones, as token lists."""
+    if depth > MAX_DEPTH:
+        return []
+    result: list[list[str]] = []
+    current: list[str] = []
+    for token in tokenize(strip_heredocs(command)):
+        if token and set(token) <= SEPARATORS:
+            if current:
+                result.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        result.append(current)
+
+    expanded: list[list[str]] = []
+    for seg in result:
+        seg = unwrap(seg)
+        if not seg:
+            continue
+        expanded.append(seg)
+        prog = os.path.basename(seg[0])
+        if prog in SHELLS:
+            for i, tok in enumerate(seg[1:], 1):
+                if tok.startswith("-") and not tok.startswith("--") and "c" in tok and i + 1 < len(seg):
+                    expanded.extend(segments(seg[i + 1], depth + 1))
+                    break
+        elif prog == "eval":
+            expanded.extend(segments(" ".join(seg[1:]), depth + 1))
+        for tok in seg:
+            for match in NESTED.finditer(tok):
+                expanded.extend(segments(match.group(1) or match.group(2), depth + 1))
+    return expanded
+
+
+def unwrap(seg: list[str]) -> list[str]:
+    """Drop leading VAR=value assignments and transparent wrappers."""
+    i = 0
+    while i < len(seg):
+        tok = seg[i]
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tok):
+            i += 1
+        elif os.path.basename(tok) in WRAPPERS:
+            i += 1
+            while i < len(seg) and (seg[i].startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", seg[i])):
+                i += 1
+        else:
+            break
+    return seg[i:]
+
+
+def git_parts(args: list[str]) -> tuple[str | None, list[str]]:
+    i = 0
+    while i < len(args):
+        if args[i] in GIT_VALUE_OPTIONS:
+            i += 2
+        elif args[i].startswith("-"):
+            i += 1
+        else:
+            return args[i], args[i + 1 :]
+    return None, []
+
+
+def rule_matches(rule: dict, seg: list[str]) -> bool:
+    prog = os.path.basename(seg[0])
+    if "git" in rule:
+        if prog != "git":
+            return False
+        sub, rest = git_parts(seg[1:])
+        if sub != rule["git"]:
+            return False
+        if not any(k in rule for k in ("flags", "short", "refspec")):
+            return True
+        for tok in rest:
+            if tok == "--":
+                break
+            if any(tok == f or tok.startswith(f + "=") for f in rule.get("flags", [])):
+                return True
+            if rule.get("short") and re.fullmatch(r"-[A-Za-z]+", tok) and any(c in rule["short"] for c in tok[1:]):
+                return True
+            if rule.get("refspec") and (tok.startswith("+") or (tok.startswith(":") and len(tok) > 1)):
+                return True
+        return False
+    programs = rule.get("program")
+    if programs is None:
+        return False
+    if prog not in ([programs] if isinstance(programs, str) else programs):
+        return False
+    if "all_of" in rule:
+        shorts: set[str] = set()
+        longs: set[str] = set()
+        for tok in seg[1:]:
+            if tok == "--":
+                break
+            if tok.startswith("--"):
+                longs.add(tok.split("=", 1)[0])
+            elif re.fullmatch(r"-[A-Za-z]+", tok):
+                shorts.update(tok[1:])
+        return all((shorts & set(g.get("short", ""))) or (longs & set(g.get("long", []))) for g in rule["all_of"])
+    return True
+
+
+def protected_path(policy: dict, raw: str) -> str | None:
+    """The protected entry `raw` points at, or None."""
+    for candidate in {raw, raw.split("=", 1)[-1]}:
+        path = expand(candidate)
+        if not path:
+            continue
+        try:
+            real = os.path.realpath(path) if os.path.isabs(path) else path
+        except OSError:
+            real = path
+        for entry in policy["protected"]["paths"]:
+            target = expand(entry)
+            if entry.endswith("/"):  # decided on the raw entry: expand() normalizes the slash away
+                base = target.rstrip("/")
+                if any(p == base or p.startswith(base + "/") for p in (path, real)):
+                    return entry
+            elif "*" in target:
+                if any(fnmatch.fnmatchcase(p, target) for p in (path, real)):
+                    return entry
+            elif path == target or real == os.path.realpath(target):
+                return entry
+    return None
+
+
+def protected_name(policy: dict, raw: str, path_like_only: bool) -> str | None:
+    prot = policy["protected"]
+    base = os.path.basename(expand(raw.split("=", 1)[-1]).rstrip("/"))
+    if not base or base in prot["name_allow"]:
+        return None
+    if path_like_only and not ("/" in raw or raw.startswith((".", "~"))):
+        return None
+    if base in prot["names"] or any(fnmatch.fnmatchcase(base, g) for g in prot["name_globs"]):
+        return base
+    return None
+
+
+def in_no_edit(policy: dict, raw: str) -> bool:
+    norm = expand(raw.split("=", 1)[-1])
+    return any(norm == d or norm.startswith(d + "/") or f"/{d}/" in norm + "/" for d in policy["no_edit"])
+
+
+def writes(seg: list[str]) -> bool:
+    prog = os.path.basename(seg[0])
+    if prog == "sed":
+        return any(t == "--in-place" or (t.startswith("-i") and not t.startswith("--")) for t in seg[1:])
+    return prog in WRITERS
+
+
+def check_shell(policy: dict, command: str) -> list[Decision]:
+    found: list[Decision] = []
+    for seg in segments(command):
+        prog = os.path.basename(seg[0])
+        for kind in ("deny", "ask"):
+            for rule in policy["shell"][kind]:
+                if rule_matches(rule, seg):
+                    found.append(Decision(kind, rule["id"], f"{rule['id']}: `{' '.join(seg)[:120]}`"))
+        for i, tok in enumerate(seg):
+            hit = protected_path(policy, tok) or protected_name(policy, tok, path_like_only=prog not in READERS)
+            if hit:
+                found.append(Decision("deny", "protected-path", f"protected-path: `{hit}` named in `{' '.join(seg)[:100]}`"))
+            if in_no_edit(policy, tok) and (writes(seg) or (i > 0 and seg[i - 1] in (">", ">>"))):
+                found.append(Decision("deny", "no-edit", f"no-edit: `{tok}` is read-only for agents"))
+    return found
+
+
+def path_values(value, key: str = "") -> list[str]:
+    if key in CONTENT_KEYS:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [v for k, item in value.items() for v in path_values(item, k)]
+    if isinstance(value, list):
+        return [v for item in value for v in path_values(item, key)]
+    return []
+
+
+def check_paths(policy: dict, tool_input, writing: bool) -> list[Decision]:
+    found: list[Decision] = []
+    for raw in path_values(tool_input):
+        hit = protected_path(policy, raw) or protected_name(policy, raw, path_like_only=True)
+        if hit:
+            found.append(Decision("deny", "protected-path", f"protected-path: `{hit}` ({raw[:80]})"))
+        if writing and in_no_edit(policy, raw):
+            found.append(Decision("deny", "no-edit", f"no-edit: `{raw[:80]}` is read-only for agents"))
+    return found
+
+
+def decide(event: dict) -> list[Decision]:
+    policy = load_policy()
+    tool = str(event.get("tool_name") or event.get("toolName") or "").lower()
+    tool_input = event.get("tool_input") if event.get("tool_input") is not None else event.get("toolInput") or {}
+    if tool in SHELL_TOOLS:
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        return check_shell(policy, command) if isinstance(command, str) else []
+    if tool in READ_TOOLS:
+        return check_paths(policy, tool_input, writing=False)
+    if tool in WRITE_TOOLS:
+        return check_paths(policy, tool_input, writing=True)
+    return []
+
+
+def emit(kind: str, reason: str) -> None:
+    reply = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": kind, "permissionDecisionReason": reason}}
+    sys.stdout.write(json.dumps(reply) + "\n")
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[0] == "--explain":
+        found = check_shell(load_policy(), argv[1])
+        print(", ".join(repr(d) for d in found) or "allow")
+        return 0
+    try:
+        event = json.loads(sys.stdin.read())
+        if event.get("toolInputTruncated"):
+            raise ValueError("tool input was truncated, so it cannot be checked")
+        found = decide(event)
+    except Exception as error:  # fail closed: the harnesses fail open on a crash
+        reason = f"harness-guard could not check this call ({type(error).__name__}: {error}); denied"
+        sys.stderr.write(reason + "\n")
+        emit("deny", reason)
+        return 2
+    denies = [d for d in found if d.kind == "deny"]
+    if denies:
+        reason = "; ".join(dict.fromkeys(d.reason for d in denies))
+        sys.stderr.write(f"blocked by harness-guard: {reason}\n")
+        emit("deny", reason)
+        return 2
+    if found:
+        emit("ask", "; ".join(dict.fromkeys(d.reason for d in found)) + " (confirm)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

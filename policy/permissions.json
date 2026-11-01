@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "doc": "Single source for the permission policy of every harness (opencode, Claude Code, Grok Build). bin/sync-harness renders it; bin/harness-guard enforces it; bin/lint-config proves they agree on policy/vectors.json.",
+  "shell": {
+    "ask": [
+      {
+        "id": "git-push",
+        "git": "push",
+        "opencode": [
+          "*git push*",
+          "*git -* push*"
+        ],
+        "native": [
+          "Bash(git push:*)"
+        ]
+      }
+    ],
+    "deny": [
+      {
+        "id": "git-push-destructive",
+        "git": "push",
+        "flags": [
+          "--force",
+          "--force-with-lease",
+          "--force-if-includes",
+          "--delete",
+          "--mirror",
+          "--prune"
+        ],
+        "short": "fd",
+        "refspec": true,
+        "opencode": [
+          "*git push*--force*",
+          "*git -* push*--force*",
+          "*git push* -f*",
+          "*git -* push* -f*",
+          "*git push* +*",
+          "*git -* push* +*",
+          "*git push*--delete*",
+          "*git -* push*--delete*",
+          "*git push*--mirror*",
+          "*git -* push*--mirror*"
+        ],
+        "native": [
+          "Bash(git push --force:*)",
+          "Bash(git push -f:*)",
+          "Bash(git push --delete:*)",
+          "Bash(git push --mirror:*)",
+          "Bash(git push * --force*)",
+          "Bash(git push * -f*)",
+          "Bash(git push * +*)",
+          "Bash(git push * --delete*)",
+          "Bash(git push * --mirror*)"
+        ]
+      },
+      {
+        "id": "git-reset-hard",
+        "git": "reset",
+        "flags": [
+          "--hard"
+        ],
+        "opencode": [
+          "*git reset*--hard*",
+          "*git -* reset*--hard*"
+        ],
+        "native": [
+          "Bash(git reset --hard:*)",
+          "Bash(git reset * --hard*)"
+        ]
+      },
+      {
+        "id": "git-clean",
+        "git": "clean",
+        "opencode": [
+          "*git clean*",
+          "*git -* clean*"
+        ],
+        "native": [
+          "Bash(git clean:*)"
+        ]
+      },
+      {
+        "id": "rm-recursive-force",
+        "program": "rm",
+        "all_of": [
+          {
+            "short": "rR",
+            "long": [
+              "--recursive"
+            ]
+          },
+          {
+            "short": "f",
+            "long": [
+              "--force"
+            ]
+          }
+        ],
+        "opencode": [
+          "*rm -rf*",
+          "*rm -fr*",
+          "*rm -r -f*",
+          "*rm -f -r*",
+          "*rm --recursive*"
+        ],
+        "native": [
+          "Bash(rm -rf:*)",
+          "Bash(rm -fr:*)",
+          "Bash(rm -r -f:*)",
+          "Bash(rm -f -r:*)",
+          "Bash(rm --recursive:*)"
+        ]
+      },
+      {
+        "id": "privilege-escalation",
+        "program": [
+          "sudo",
+          "doas"
+        ],
+        "opencode": [
+          "*sudo *"
+        ],
+        "native": [
+          "Bash(sudo:*)",
+          "Bash(doas:*)"
+        ]
+      }
+    ]
+  },
+  "protected": {
+    "doc": "Credential stores. A trailing slash is a directory. Never listed: a harness's own working state (for example ~/.claude/projects), which that harness must be able to read.",
+    "paths": [
+      "~/.ssh/",
+      "~/.aws/",
+      "~/.gnupg/",
+      "~/.config/gh/",
+      "~/.netrc",
+      "~/.claude/.credentials.json",
+      "~/.claude.json",
+      "~/.grok/auth.json",
+      "~/.grok/config.toml",
+      "~/.local/share/opencode/auth.json",
+      "~/.t3/userdata/statev2*"
+    ],
+    "names": [
+      "service.json",
+      "auth.json",
+      ".netrc"
+    ],
+    "name_globs": [
+      ".env",
+      ".env.*"
+    ],
+    "name_allow": [
+      ".env.example"
+    ],
+    "native_env_files": [
+      ".env",
+      ".env.local",
+      ".env.development",
+      ".env.production",
+      ".env.test",
+      ".env.staging"
+    ]
+  },
+  "no_edit": [
+    "memory/core"
+  ],
+  "opencode": {
+    "skill_deny": [
+      "antigravity2.0",
+      "pre-ship-review"
+    ],
+    "read_deny_extra": [
+      "~/.claude/*",
+      "~/.grok/*",
+      "~/.cursor/*",
+      "~/.copilot/*"
+    ],
+    "shell_deny_extra": [
+      "*/.claude/*"
+    ]
+  }
+}

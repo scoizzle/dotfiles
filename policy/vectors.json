@@ -1,0 +1,488 @@
+{
+ "doc": "Expected decisions per engine. engines defaults to guard+opencode; guard-only vectors need real parsing (heredocs, nesting, wrappers) that text globs cannot do. Every allow vector must also not be blocked by the native Claude/Grok rules.",
+ "vectors": [
+  {
+   "kind": "shell",
+   "input": "git push --force",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin main --force",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push -f",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin main -f",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push -u origin main -f",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin +main",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin --delete main",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --mirror",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --force-with-lease",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git -C . push --force",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git --no-pager push origin +main",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git reset --hard",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git reset --hard HEAD~1",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git clean -fd",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git -C x clean -n",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "rm -rf x",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "rm -fr x",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "rm -r -f x",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "rm -f -r x",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "sudo ls",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.ssh/id_rsa",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.aws/credentials",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.claude/.credentials.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.local/share/opencode/auth.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.config/gh/hosts.yml",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.grok/config.toml",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat auth.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "cat service.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "sh -c \"git push --force\"",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "echo $(git push -f)",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "env FOO=1 git push origin +main",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "/usr/bin/git push -f",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push -fu origin x",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin :main",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "rm -Rf x",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "rm -rf -- x",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cd ~/.ssh && ls",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat .env",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat /work/.env.local",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "echo hi > memory/core/x.md",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "tee memory/core/x.md",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cp a memory/core/x.md",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "sed -i s/a/b/ memory/core/safety.md",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "true && git push origin main --force",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push",
+   "expect": "ask"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin feature",
+   "expect": "ask"
+  },
+  {
+   "kind": "shell",
+   "input": "git -C . push origin x",
+   "expect": "ask"
+  },
+  {
+   "kind": "shell",
+   "input": "git push -u origin feature",
+   "expect": "ask"
+  },
+  {
+   "kind": "shell",
+   "input": "git status",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "git log --oneline",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "git diff HEAD",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -m \"fix push + tests\"",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "rm x",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "rm -r build",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "ls -la",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "grep auth.json bin/review-bundle",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat .env.example",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "cat memory/core/conventions.md",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "git pull",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -m \"mentions rm -rf and git push --force\"",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -F - <<'EOF'\nmentions git push --force and rm -rf\nEOF",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "sed -n 1,3p memory/core/x.md",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat ~/.claude/projects/x/memory/MEMORY.md",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "ls ~/.grok/docs",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "read",
+   "input": "~/.ssh/id_rsa",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "~/.aws/credentials",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "~/.claude/.credentials.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "~/.local/share/opencode/auth.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "/work/.env",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": ".env",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "/work/service.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "~/.grok/config.toml",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "~/.grok/auth.json",
+   "expect": "deny"
+  },
+  {
+   "kind": "read",
+   "input": "/work/.env.example",
+   "expect": "allow"
+  },
+  {
+   "kind": "read",
+   "input": "/work/src/app.cs",
+   "expect": "allow"
+  },
+  {
+   "kind": "read",
+   "input": "README.md",
+   "expect": "allow"
+  },
+  {
+   "kind": "read",
+   "input": "~/.claude/projects/x/memory/MEMORY.md",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "edit",
+   "input": "memory/core/safety.md",
+   "expect": "deny"
+  },
+  {
+   "kind": "edit",
+   "input": "/home/u/.config/opencode/memory/core/safety.md",
+   "expect": "deny"
+  },
+  {
+   "kind": "edit",
+   "input": "README.md",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "edit",
+   "input": "memory/learnings/pending/2026-11-01.md",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  }
+ ]
+}
