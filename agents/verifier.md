@@ -103,6 +103,9 @@ permissions:
   - { action: shell, resource: "*rm -f -r*", effect: deny }
   - { action: shell, resource: "*rm --recursive*", effect: deny }
   - { action: shell, resource: "*sudo *", effect: deny }
+  - { action: shell, resource: "*find*-delete*", effect: deny }
+  - { action: shell, resource: "*xargs*rm -rf*", effect: deny }
+  - { action: shell, resource: "*xargs*rm -fr*", effect: deny }
   - { action: shell, resource: "*/.ssh/*", effect: deny }
   - { action: shell, resource: "*~/.ssh*", effect: deny }
   - { action: shell, resource: "*/.aws/*", effect: deny }

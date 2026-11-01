@@ -13,9 +13,11 @@ It never prints "allow": allowing would skip the harness's own prompts.
 Unlike the text globs in opencode.json, this parses the command: quoting,
 `&&`/`;`/`|` chains, `$(...)`, `sh -c "..."`, `env`/`command` wrappers, git's
 global options (`git -C x push`), heredoc bodies, and clustered short flags
-(`-fu`). It is still best effort. It does not understand `python -c`, base64, or
-variables built at run time, and it is a convenience layer, not a sandbox: the
-user owns the file that registers it. See docs/security-model.md.
+(`-fu`), `xargs` and `find -delete`, a base64/xxd/openssl decode piped into a
+shell (deny), and curl/wget piped into a shell (ask). It is still best effort. It
+does not understand `python -c`, a decode done by another tool, or variables built
+at run time. It is a convenience layer, not a sandbox: the user owns the file that
+registers it. See docs/security-model.md.
 
 Both harnesses fail open when a hook crashes or times out, so every code path in
 here that can raise ends in a deny rather than a silent allow.
@@ -45,8 +47,26 @@ CONTENT_KEYS = {"content", "contents", "new_string", "old_string", "text", "new_
 READERS = {"cat", "less", "more", "head", "tail", "bat", "cp", "mv", "scp", "rsync", "base64", "xxd", "strings", "od",
            "open", "source", ".", "cut", "tee", "nl", "tac", "zcat"}
 WRITERS = {"tee", "cp", "mv", "rm", "touch", "truncate", "install", "ln", "chmod", "chown", "dd", "rsync", "mkdir", "rmdir"}
-WRAPPERS = {"env", "command", "exec", "nohup", "time", "builtin", "nice", "stdbuf", "setsid", "caffeinate"}
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+WRAPPERS = {"env", "command", "exec", "nohup", "time", "builtin", "nice", "stdbuf", "setsid", "caffeinate",
+            "timeout", "ionice", "busybox", "toybox"}
+# Options of a wrapper that take a separate value, and positionals it takes before the command.
+WRAPPER_VALUE_OPTIONS = {
+    "env": {"-u", "--unset", "-C", "--chdir"},
+    "nice": {"-n", "--adjustment"},
+    "timeout": {"-s", "--signal", "-k", "--kill-after"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
+    "time": {"-f", "--format", "-o", "--output"},
+    "ionice": {"-c", "-n", "-p", "--class", "--classdata"},
+}
+WRAPPER_POSITIONALS = {"timeout": 1}
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh"}
+FETCHERS = {"curl", "wget"}
+FIND_VALUE_OPTIONS = {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex", "-lname", "-ilname",
+                      "-newer", "-perm", "-user", "-group", "-type", "-xtype", "-size", "-mtime", "-atime", "-ctime", "-mmin",
+                      "-amin", "-cmin", "-fstype", "-links", "-inum", "-printf", "-fprintf", "-fprint", "-maxdepth", "-mindepth"}
+XARGS_VALUE_OPTIONS = {"-n", "-I", "-P", "-L", "-s", "-d", "-E", "-a", "-J", "-R", "-S",
+                       "--max-args", "--max-procs", "--max-lines", "--max-chars", "--delimiter", "--arg-file", "--eof", "--process-slot-var"}
 SEPARATORS = set(";&|()\n")
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"}
 NESTED = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
@@ -71,6 +91,72 @@ def expand(token: str) -> str:
     if token == "~" or token.startswith("~/"):
         token = HOME + token[1:]
     return os.path.normpath(token) if token.startswith("/") else token
+
+
+def heredoc_scripts(text: str) -> list[str]:
+    """Bodies of heredocs whose line feeds a shell (`bash <<EOF`, `cat <<EOF | sh`): they are programs, not data."""
+    out, tag, body, owner = [], None, [], ""
+    for line in text.replace("\\\n", " ").split("\n"):
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+                if shell_reads_stdin(owner):
+                    out.append("\n".join(body))
+            else:
+                body.append(line)
+            continue
+        match = HEREDOC.search(line)
+        if match:
+            tag, body, owner = match.group(2), [], line
+    if tag is not None and shell_reads_stdin(owner):
+        out.append("\n".join(body))  # no closing delimiter: the shell still runs what it read
+    return out
+
+
+def shell_reads_stdin(line: str) -> bool:
+    tokens, kept, skip = [t for t in tokenize(line) if t not in ("{", "}")], [], False
+    for tok in tokens:
+        if skip:
+            skip = False
+        elif tok and set(tok) <= set("<>&"):
+            skip = True  # a redirection operator and its target
+        else:
+            kept.append(tok)
+    seg: list[str] = []
+    for tok in kept + [";"]:
+        if tok and set(tok) <= SEPARATORS | {"|"}:
+            if seg and runs_script_from_stdin(unwrap(seg) or ["true"]):
+                return True
+            seg = []
+        else:
+            seg.append(tok)
+    return False
+
+
+HERESTRING = re.compile(r"""<<<\s*(?:'([^']*)'|"([^"]*)"|(\S+))""")
+
+
+def herestring_scripts(command: str) -> list[str]:
+    """`bash <<< 'cmd'`: the here-string is the program."""
+    out = []
+    for line in command.replace("\\\n", " ").split("\n"):
+        match = HERESTRING.search(line)
+        if match and shell_reads_stdin(line):
+            out.append(next(g for g in match.groups() if g is not None))
+    return out
+
+
+def literal_scripts(command: str) -> list[str]:
+    """`printf 'cmd\\n' | sh`, `echo cmd | bash -s`: the literal arguments are the program."""
+    out = []
+    for pipe in pipelines(command):
+        pipe = [s for s in (unwrap(p) for p in pipe) if s]
+        for i, seg in enumerate(pipe):
+            if os.path.basename(seg[0]) in ("echo", "printf") and any(runs_script_from_stdin(later) for later in pipe[i + 1 :]):
+                args = [t for t in seg[1:] if not re.fullmatch(r"-[neE]+", t)]
+                out.append(" ".join(args).replace("\\n", "\n").replace("\\t", " "))
+                out.extend(args)
+    return out
 
 
 def strip_heredocs(text: str) -> str:
@@ -102,7 +188,7 @@ def segments(command: str, depth: int = 0) -> list[list[str]]:
         return []
     result: list[list[str]] = []
     current: list[str] = []
-    for token in tokenize(strip_heredocs(command)):
+    for token in tokenize(strip_heredocs(command.replace("\\\n", " "))):
         if token and set(token) <= SEPARATORS:
             if current:
                 result.append(current)
@@ -120,10 +206,21 @@ def segments(command: str, depth: int = 0) -> list[list[str]]:
         expanded.append(seg)
         prog = os.path.basename(seg[0])
         if prog in SHELLS:
-            for i, tok in enumerate(seg[1:], 1):
-                if tok.startswith("-") and not tok.startswith("--") and "c" in tok and i + 1 < len(seg):
-                    expanded.extend(segments(seg[i + 1], depth + 1))
-                    break
+            body = shell_c_body(seg)
+            if body:
+                expanded.extend(segments(body, depth + 1))
+        elif prog == "xargs":
+            expanded.extend(segments(" ".join(shlex.quote(t) for t in xargs_command(seg)), depth + 1))
+        elif prog == "find":
+            for i, tok in enumerate(seg):
+                if tok in ("-exec", "-execdir", "-ok", "-okdir"):
+                    inner = []
+                    for t in seg[i + 1 :]:
+                        if t in ("+", ";", "\\;"):
+                            break
+                        inner.append(t)
+                    if inner:
+                        expanded.extend(segments(" ".join(shlex.quote(t) for t in inner), depth + 1))
         elif prog == "eval":
             expanded.extend(segments(" ".join(seg[1:]), depth + 1))
         for tok in seg:
@@ -132,20 +229,47 @@ def segments(command: str, depth: int = 0) -> list[list[str]]:
     return expanded
 
 
+def xargs_command(seg: list[str]) -> list[str]:
+    """The command xargs will run: `xargs -n 1 rm -rf x` -> `rm -rf x`."""
+    i = 1
+    while i < len(seg) and seg[i].startswith("-") and seg[i] != "--":
+        i += 2 if seg[i] in XARGS_VALUE_OPTIONS else 1
+    if i < len(seg) and seg[i] == "--":
+        i += 1
+    return seg[i:]
+
+
 def unwrap(seg: list[str]) -> list[str]:
-    """Drop leading VAR=value assignments and transparent wrappers."""
+    """Drop leading VAR=value assignments and transparent wrappers, with their operands (`nice -n 10`, `timeout 5`)."""
     i = 0
     while i < len(seg):
-        tok = seg[i]
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tok):
+        name = os.path.basename(seg[i])
+        if ASSIGNMENT.fullmatch(seg[i]):
             i += 1
-        elif os.path.basename(tok) in WRAPPERS:
+        elif name in WRAPPERS:
             i += 1
-            while i < len(seg) and (seg[i].startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", seg[i])):
-                i += 1
+            values = WRAPPER_VALUE_OPTIONS.get(name, set())
+            while i < len(seg) and (seg[i].startswith("-") or ASSIGNMENT.fullmatch(seg[i])):
+                i += 2 if seg[i] in values else 1
+            i += WRAPPER_POSITIONALS.get(name, 0)
         else:
             break
     return seg[i:]
+
+
+def shell_c_body(seg: list[str]) -> str | None:
+    """The script given to `sh -c`, including `-lc` and an attached `-c"script"`; None if the shell is not run with -c."""
+    args = seg[1:]
+    for i, tok in enumerate(args):
+        if tok.startswith("--"):
+            continue
+        if re.fullmatch(r"-[A-Za-z]*c", tok):
+            return args[i + 1] if i + 1 < len(args) else ""
+        if tok.startswith("-c") and len(tok) > 2 and not tok[2:].isalpha():
+            return tok[2:]
+        if not tok.startswith("-"):
+            return None
+    return None
 
 
 def git_parts(args: list[str]) -> tuple[str | None, list[str]]:
@@ -185,6 +309,15 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
         return False
     if prog not in ([programs] if isinstance(programs, str) else programs):
         return False
+    if "after" in rule:  # the command a wrapper such as xargs runs must be this program
+        inner = xargs_command(seg)
+        if not inner or os.path.basename(inner[0]) != rule["after"]:
+            return False
+        seg = inner
+    if "tokens" in rule:
+        args = seg[1:seg.index("--")] if "--" in seg else seg[1:]
+        if not all(any(a == need and (i == 0 or args[i - 1] not in FIND_VALUE_OPTIONS) for i, a in enumerate(args)) for need in rule["tokens"]):
+            return False
     if "all_of" in rule:
         shorts: set[str] = set()
         longs: set[str] = set()
@@ -197,6 +330,120 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
                 shorts.update(tok[1:])
         return all((shorts & set(g.get("short", ""))) or (longs & set(g.get("long", []))) for g in rule["all_of"])
     return True
+
+
+def decodes(seg: list[str]) -> bool:
+    """A command whose output is decoded text: base64 -d/-D, xxd -r, openssl enc -d."""
+    prog, args = os.path.basename(seg[0]), seg[1:]
+    flags = [t for t in args if re.fullmatch(r"-[A-Za-z]+", t)]
+    if prog == "base64":
+        return any(f in ("-d", "-D") or "d" in f[1:] or "D" in f[1:] for f in flags) or "--decode" in args
+    if prog == "xxd":
+        return any("r" in f[1:] for f in flags) or "--revert" in args
+    if prog == "openssl":
+        return "-d" in args or "-decrypt" in args
+    return False
+
+
+def fetches(seg: list[str]) -> bool:
+    return os.path.basename(seg[0]) in FETCHERS
+
+
+def runs_script_from_stdin(seg: list[str]) -> bool:
+    """A shell with no script file and no -c reads its program from stdin."""
+    if os.path.basename(seg[0]) in ("busybox", "toybox") and len(seg) > 1:
+        seg = seg[1:]
+    if os.path.basename(seg[0]) not in SHELLS:
+        return False
+    body = shell_c_body(seg)
+    if body is not None:
+        return bool(STDIN_BODY.search(body))  # `sh -c 'source /dev/stdin'`, `sh -c "$(cat)"`
+    for tok in seg[1:]:
+        if tok.startswith("-") and not tok.startswith("--") and "s" in tok:
+            return True  # `sh -s` reads commands from stdin
+        if not tok.startswith("-"):
+            return tok in STDIN_FILES  # `sh /dev/stdin`, `sh -`
+    return True
+
+
+def pipelines(command: str) -> list[list[list[str]]]:
+    """`command` as a list of pipelines, each a list of simple commands. `|` and `|&` join, even across a `( ... )` or
+    `{ ...; }` group; `;`/`&&`/newline split."""
+    out: list[list[list[str]]] = []
+    pipe: list[list[str]] = []
+    current: list[str] = []
+    for token in tokenize(strip_heredocs(command.replace("\\\n", " "))):
+        bare = token.replace("(", "").replace(")", "")
+        if token and set(token) <= set("()"):
+            continue  # grouping only
+        if bare in ("|", "|&"):
+            if current:
+                pipe.append(current)
+            current = []
+        elif token and set(token) <= SEPARATORS:
+            if current:
+                pipe.append(current)
+            out.append(pipe)
+            pipe, current = [], []
+        else:
+            current.append(token)
+    if current:
+        pipe.append(current)
+    out.append(pipe)
+    return out
+
+
+STDIN_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+_STDIN = r"(?:/dev/stdin|/dev/fd/0|/proc/self/fd/0)"
+STDIN_BODY = re.compile(
+    r"(?:\bsource\b|(?:^|[;&|\s])\.)\s+" + _STDIN
+    + r"|\$\(\s*(?:cat\s*(?:-|" + _STDIN + r")?|<\s*" + _STDIN + r")\s*\)"
+    + r"|`\s*cat\s*(?:-|" + _STDIN + r")?\s*`"
+)
+PROCSUB = re.compile(r"(?:\b(?:sh|bash|zsh|dash|ksh|ash|source)|(?:^|[;&|\s])\.)\s+(?:<\s*)?<\(([^()]*)\)")
+PROC_OUT = re.compile(r"([^;&|\n]*?)\s>\s*>\(\s*(?:sh|bash|zsh|dash|ksh|ash)\b[^()]*\)")
+LEADING_SUBST = re.compile(r"""^\s*(?:(?:eval|exec)\s+)?["']?(?:\$\(|`)""")
+
+
+def substituted(script: str, depth: int) -> list[Decision]:
+    """`sh -c "$(decode ...)"`, `eval "$(curl ...)"`, `bash <(curl ...)`: what the substitution prints is run as a program."""
+    found: list[Decision] = []
+    # A substitution is a program only when it is the whole script (or leads it); `echo "$(base64 -d x)"` just prints.
+    inners = ([m.group(1) or m.group(2) for m in NESTED.finditer(script)] if LEADING_SUBST.match(script) else [])
+    inners += [m.group(1) for m in PROCSUB.finditer(script)] + [m.group(1) for m in PROC_OUT.finditer(script)]
+    for inner in inners:
+        for seg in segments(inner, depth + 1):
+            if decodes(seg):
+                found.append(Decision("deny", "decode-to-shell", f"decode-to-shell: `{' '.join(seg)[:60]}` is run as a program"))
+            elif fetches(seg):
+                found.append(Decision("ask", "fetch-to-shell", f"fetch-to-shell: `{' '.join(seg)[:60]}` is run as a program"))
+    return found
+
+
+def pipe_chains(command: str, depth: int = 0) -> list[Decision]:
+    """Chain rules over a pipeline: decoded text piped into a shell is run (deny); fetched text piped into a shell is run (ask)."""
+    if depth > MAX_DEPTH:
+        return []
+    found: list[Decision] = substituted(command, depth) if (PROCSUB.search(command) or PROC_OUT.search(command)) else []
+    for pipe in pipelines(command):
+        pipe = [s for s in (unwrap([t for t in p if t not in ("{", "}")]) for p in pipe) if s]
+        for i, seg in enumerate(pipe):
+            later_shell = any(runs_script_from_stdin(later) for later in pipe[i + 1 :])
+            if later_shell and decodes(seg):
+                found.append(Decision("deny", "decode-to-shell", f"decode-to-shell: `{' '.join(seg)[:60]} | sh` runs decoded text"))
+            elif later_shell and fetches(seg):
+                found.append(Decision("ask", "fetch-to-shell", f"fetch-to-shell: `{' '.join(seg)[:60]} | sh` runs downloaded text"))
+            if os.path.basename(seg[0]) in SHELLS:
+                body = shell_c_body(seg)
+                if body:
+                    found += pipe_chains(body, depth + 1) + substituted(body, depth)
+            elif os.path.basename(seg[0]) == "eval":
+                script = " ".join(seg[1:])
+                found += pipe_chains(script, depth + 1) + substituted(script, depth)
+            for tok in seg:
+                for match in NESTED.finditer(tok):
+                    found += pipe_chains(match.group(1) or match.group(2), depth + 1)
+    return found
 
 
 def protected_path(policy: dict, raw: str) -> str | None:
@@ -247,8 +494,11 @@ def writes(seg: list[str]) -> bool:
     return prog in WRITERS
 
 
-def check_shell(policy: dict, command: str) -> list[Decision]:
-    found: list[Decision] = []
+def check_shell(policy: dict, command: str, depth: int = 0) -> list[Decision]:
+    found: list[Decision] = pipe_chains(command)
+    if depth < MAX_DEPTH:
+        for script in heredoc_scripts(command) + herestring_scripts(command) + literal_scripts(command):
+            found += check_shell(policy, script, depth + 1) + substituted(script, depth)
     for seg in segments(command):
         prog = os.path.basename(seg[0])
         for kind in ("deny", "ask"):

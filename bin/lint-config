@@ -144,11 +144,14 @@ def check_policy(agents: dict) -> None:
                 got = effective(agents[name], action[v["kind"]], v["input"])
                 if got != v["expect"]:
                     fail(f"opencode/{name}: {label} is {got}, expected {v['expect']}")
-        if v["expect"] == "allow":
+        if v["expect"] == "allow" and not v.get("native_overblock_ok"):
             for kind in ("deny", "ask"):
                 for text in native[kind]:
                     if native_match(text, v["kind"], v["input"]):
                         fail(f"native rule {text} blocks {label}, which must be allowed")
+        if v["expect"] == "deny" and "native" in engines:
+            if not any(native_match(text, v["kind"], v["input"]) for text in native["deny"]):
+                fail(f"native rule set does not deny {label}")
 
     # the hook contract, end to end, in both payload shapes
     for payload, rc, decision in (
@@ -185,6 +188,95 @@ def check_policy(agents: dict) -> None:
             fail("sync-harness home merge dropped the user's own settings")
         if len(merged["hooks"]["PreToolUse"]) != 2 or merged["hooks"]["PreToolUse"][0]["matcher"] != "X":
             fail("sync-harness home merge disturbed the user's own hooks")
+
+
+def check_shared_surfaces() -> None:
+    """Reviewers rendered for Claude Code/Grok are read-only; rendering is idempotent; Roslynk registration works."""
+    sync = load_script("sync-harness")
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    spec = policy["readonly_agents"]
+    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter"}:
+        fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only reviewers in agents/")
+    writers = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch"}
+    rendered = sync.render_claude_agents(policy, ROOT)
+    for name, text in rendered.items():
+        tools = re.search(r"^tools: (.+)$", text, flags=re.M).group(1).split(", ")
+        bad = [t for t in tools if t in writers or (t.startswith("mcp__") and not t.startswith("mcp__roslynk__"))]
+        bad += [t for t in tools if t.startswith("mcp__roslynk__") and t[14:] not in spec["roslynk_read_tools"]]
+        if bad:
+            fail(f"rendered Claude reviewer {name} has non-read-only tools: {bad}")
+        if not text.startswith("---\nname: " + name + "\n"):
+            fail(f"rendered Claude reviewer {name} has a bad header")
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        mine = home / ".claude" / "agents" / "review-light.md"
+        mine.parent.mkdir(parents=True)
+        mine.write_text("---\nname: review-light\n---\nMy own prompt.\n")
+        for path, text in sync.agents_changes(policy, ROOT, home):
+            sync.write_agent(path, text)
+        if sync.agents_changes(policy, ROOT, home):
+            fail("sync-harness agent rendering is not idempotent")
+        backups = list(mine.parent.glob("review-light.md.bak-*"))
+        if len(backups) != 1 or "My own prompt." not in backups[0].read_text():
+            fail("sync-harness overwrote a user's own agent file without a backup")
+        if list(mine.parent.glob("review-deep.md.bak-*")):
+            fail("sync-harness backed up a file that was not the user's")
+        before = len(list(mine.parent.glob("*.bak-*")))
+        for path, text in sync.agents_changes(policy, ROOT, home):
+            sync.write_agent(path, text)
+        if len(list(mine.parent.glob("*.bak-*"))) != before:
+            fail("sync-harness re-applied and created another backup")
+        # Roslynk registration, with a stub `claude` on PATH
+        (home / ".dotnet" / "tools").mkdir(parents=True)
+        (home / ".dotnet" / "tools" / "roslynk").write_text("")
+        bindir = home / "bin"
+        bindir.mkdir()
+        stub = bindir / "claude"
+        stub.write_text('#!/bin/sh\n[ "$1 $2" = "mcp get" ] && exit "${STUB_REGISTERED:-1}"\nexit 0\n')
+        stub.chmod(0o755)
+        saved = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{bindir}:{saved}"
+        try:
+            os.environ["STUB_REGISTERED"] = "1"
+            state, command = sync.roslynk_registration(home)
+            if state != "missing" or command[:5] != ["claude", "mcp", "add", "--scope", "user"] or command[-1] != "stdio":
+                fail(f"roslynk registration: expected a user-scope add command, got {state} {command}")
+            os.environ["STUB_REGISTERED"] = "0"
+            if sync.roslynk_registration(home)[0] != "ok":
+                fail("roslynk registration: a registered server must be reported ok")
+        finally:
+            os.environ["PATH"] = saved
+            os.environ.pop("STUB_REGISTERED", None)
+
+
+GROK_CAP = 10000
+ROUTING_TARGETS = {
+    ("opencode", "opencode-go/mimo-v2.6-flash"),
+    ("opencode", "opencode-go/deepseek-v4.1-flash"),
+    ("claudeAgent", "claude-sonnet-5-5"),
+    ("grok", "grok-4.7"),
+}
+
+
+def check_instructions() -> None:
+    """AGENTS.md is shared by opencode, Claude Code (CLAUDE.md) and Grok Build, which caps it."""
+    text = (ROOT / "AGENTS.md").read_text()
+    if len(text) > GROK_CAP:
+        fail(f"AGENTS.md is {len(text)} characters; Grok 1.0.70 loads at most {GROK_CAP} per file")
+    for heading in ("## Default workflow", "## Model routing", "## Memory", "## C# / .NET work"):
+        if not re.search(r"^" + re.escape(heading) + r"\s*$", text, flags=re.M):
+            fail(f"AGENTS.md: missing heading {heading!r}")
+    for needle in ("delegate_task", "orchestrator_capabilities", "never silently downgraded"):
+        if needle not in text:
+            fail(f"AGENTS.md: missing {needle!r}")
+    section = re.search(r"^## Model routing\s*$(.*?)(?=^## )", text, flags=re.M | re.S)
+    rows = [l for l in (section.group(1) if section else "").splitlines() if l.startswith("|")][2:]
+    if not rows:
+        fail("AGENTS.md: Model routing has no table rows")
+    for row in rows:
+        cells = [c.strip().strip("`") for c in row.strip().strip("|").split("|")]
+        if len(cells) < 5 or (cells[2], cells[3]) not in ROUTING_TARGETS:
+            fail(f"AGENTS.md: routing row does not name a real T3 target: {row[:80]}")
 
 
 def main() -> int:
@@ -256,6 +348,8 @@ def main() -> int:
         fail("explore: edit must be deny; it is the read-only swarm")
 
     check_policy(agents)
+    check_shared_surfaces()
+    check_instructions()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle"):
         target = ROOT / rel

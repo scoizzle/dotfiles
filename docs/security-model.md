@@ -32,11 +32,27 @@ the `verifier`'s `shell *: allow` used to erase every global shell deny.
 expected decision for each sample command and path. `bin/lint-config` runs those
 vectors through every engine in CI, so the three cannot disagree unnoticed.
 
-| Harness | How the policy reaches it | Strength |
-| --- | --- | --- |
-| opencode | `bin/sync-harness` renders `opencode.json` `permissions` and the `verifier` block | Text globs |
-| Claude Code | `bin/sync-harness` writes `permissions.deny/ask` and a `PreToolUse` hook (`bin/harness-guard`) into `~/.claude/settings.json` | Parsed command checks plus native rules |
-| Grok Build | Reads the same `~/.claude/settings.json` for rules and hooks (its Claude compatibility is on by default). `~/.grok/config.toml` is never touched; it holds an MCP bearer token | Same as Claude Code, and `ask` forces a prompt even in always-approve |
+| Harness | Rules | Hook (`harness-guard`) | Source of truth for the harness |
+| --- | --- | --- | --- |
+| opencode | `opencode.json` `permissions` and the `verifier` block, rendered by `bin/sync-harness` | none; text globs only | `opencode.json` |
+| Claude Code | `permissions.deny/ask` from `~/.claude/settings.json` | `PreToolUse` hook from `~/.claude/settings.json` | `~/.claude/settings.json` |
+| Grok Build | the same `permissions.deny/ask`, read from `~/.claude/settings.json` (verified with `grok inspect`: `permissions.loaded` counted them, even in an untrusted folder) | the same `PreToolUse` hook, **only in a trusted folder** (verified with `grok inspect`: `hooks: []` untrusted; after `trusted_folders.toml` marks the folder, the hook appears with `vendor: claude`, `compatibilityStatus: enabled`) | `~/.claude/settings.json` |
+
+`~/.grok/config.toml` is never touched; it holds an MCP bearer token. Grok's
+trust gate matters in practice: only folders listed in `~/.grok/trusted_folders.toml`
+run global hooks, and each T3 worktree is a separate checkout. In an untrusted
+folder Grok still enforces the rules, and `ask` still forces a prompt in
+always-approve mode, but the hook (and so its parsing) is skipped. Trusting a
+folder is a person's decision (`/hooks-trust`, or `grok --trust`).
+
+Optional hardening: `/Library/Application Support/ClaudeCode/managed-settings.json`
+is root-owned, read by both harnesses (`grok inspect` reports the path), applies in
+every folder, and cannot be overridden by user or project settings.
+`bin/sync-harness --scope managed` prints the rules for it and the `sudo` command a
+person runs; it writes nothing and never uses sudo. It carries rules, not the hook.
+
+Grok's sandbox is CLI-only (`--sandbox workspace|read-only|strict`, profiles in
+`~/.grok/sandbox.toml`); no config key makes it the default.
 
 `harness-guard` parses the command (quoting, `&&`/`;`/pipes, `$(...)`, `sh -c`,
 `env`/`command` wrappers, `git -C x push`, clustered flags like `-fu`, heredoc
@@ -50,21 +66,29 @@ are kept, and retired rules are not removed automatically).
 
 Limits specific to this layer:
 
-- Global hooks run only after Grok's folder trust, and a hook missing from disk
-  fails open. The native deny rules are the fallback for both cases.
-- The hook does not understand `python -c`, base64, or paths built at run time.
-- The user owns `~/.claude/settings.json` and can edit the hook out. Grok's docs
-  call config hooks "convenience distribution, not an enforcement boundary". For
-  an enforced Grok policy, deploy the same hook through root-owned
-  `/etc/grok/requirements.toml`.
-- Instructions (`AGENTS.md`) are not shared with Claude Code or Grok Build; only
-  permissions are. Grok reads `~/.grok/AGENTS.md` capped at 10,000 characters,
-  and Claude Code reads `CLAUDE.md`, so wiring those is a separate step.
+- A hook missing from disk fails open in Claude Code and Grok. The native deny
+  rules are the fallback, and `bin/lint-config` checks they cover the denied
+  commands that globs can express.
+- Decode-to-shell (`base64 -d x | sh`, `xxd -r`, `openssl enc -d`, also inside
+  `sh -c`) is denied and `curl | sh` asks, by `harness-guard` only. opencode and
+  Grok in an untrusted folder do not get that parsing. `find -delete` and
+  `xargs rm -rf` are covered by both globs and the hook. Nothing understands
+  `python -c`, decoding done by other tools, or paths built at run time. A
+  script supplied as a literal is analysed when it comes from `echo`/`printf`, a
+  heredoc, or a here-string; any other producer (`cat file | sh`, a script
+  written by an earlier command) is not, because the guard cannot know what it
+  emits.
+- The guard hook is a convenience layer in a file the user owns
+  (`~/.claude/settings.json`) and can edit out. Enforcement needs the root-owned
+  file above, which carries rules, not the hook.
+- Instructions are shared: `install.cs` links `~/.claude/CLAUDE.md` and
+  `~/.grok/AGENTS.md` to `AGENTS.md`. Grok caps the file at 10,000 characters;
+  `bin/lint-config` fails above that.
 
 ## What is only discouraged
 
 Shell command denies are **text patterns, not a boundary**. `rm -rf` has dozens of
-spellings, `python -c` and `find -delete` do the same job, and a base64 payload
+spellings, `python -c` does the same job, and a base64 payload decoded by another tool
 matches nothing. The patterns in `opencode.json` raise the cost of an accident and
 of a lazy injection. They do not stop a determined one. `memory/core/safety.md`
 says the same.

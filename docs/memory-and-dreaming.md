@@ -101,4 +101,12 @@ A nightly crontab entry, using the installed path:
 15 3 * * * $HOME/.config/opencode/bin/dream
 ```
 
+## Schedule it in T3
+
+T3 has its own scheduler, and that is what this machine uses instead of cron. The job is a T3 scheduled task in the `dotfiles` project: title `Daily dream pass (memory)`, `03:15` local every day, one new thread per run, with a prompt that runs `~/.config/opencode/bin/dream`, reports the coverage line and where the lines were staged, and stops if `opencode` is missing rather than hand-writing memory. Dream stages in `memory/learnings/pending/`, so the run ends with a review queue: a person runs `dream --promote` before agents see any of it.
+
+It lives in T3's userdata, not in git, so it does not travel with this repo and a linked environment needs its own copy. List it from a session in that project, or open the Scheduled tab in T3.
+
+Pick one scheduler per machine. Cron plus a T3 job means two appends into the same dated pending file, and dream's optimistic-concurrency check will start refusing writes. If T3's scheduler is off for a while, the daily window is `--since 24h`, so the next run only sees the last day; pass `--since` to backfill.
+
 `/dream` is the in-session reminder to use that command later. It is not a step inside T0, T1, or T2 work.

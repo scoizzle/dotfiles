@@ -124,6 +124,47 @@
           "Bash(sudo:*)",
           "Bash(doas:*)"
         ]
+      },
+      {
+        "id": "find-delete",
+        "program": "find",
+        "tokens": [
+          "-delete"
+        ],
+        "opencode": [
+          "*find*-delete*"
+        ],
+        "native": [
+          "Bash(find * -delete*)",
+          "Bash(find -delete:*)"
+        ]
+      },
+      {
+        "id": "xargs-remove",
+        "program": "xargs",
+        "after": "rm",
+        "all_of": [
+          {
+            "short": "rR",
+            "long": [
+              "--recursive"
+            ]
+          },
+          {
+            "short": "f",
+            "long": [
+              "--force"
+            ]
+          }
+        ],
+        "opencode": [
+          "*xargs*rm -rf*",
+          "*xargs*rm -fr*"
+        ],
+        "native": [
+          "Bash(xargs * rm -rf*)",
+          "Bash(xargs * rm -fr*)"
+        ]
       }
     ]
   },
@@ -180,5 +221,41 @@
     "shell_deny_extra": [
       "*/.claude/*"
     ]
+  },
+  "readonly_agents": {
+    "doc": "Reviewers that must never write. agents/<name>.md is the source; bin/sync-harness renders each into ~/.claude/agents/<name>.md (Claude Code format, which Grok Build also reads) with only these tools. Models are the native fallback; the band pin in AGENTS.md applies when the reviewer runs as a T3 child. reload_solution is deliberately not listed: roslynk-rules allows it only on an explicit user request, which a reviewer never has.",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "roslynk_read_tools": [
+      "get_solution_status",
+      "get_diagnostics",
+      "get_symbol",
+      "get_symbol_body",
+      "get_members",
+      "search_symbols",
+      "find_definition",
+      "get_expression_info",
+      "find_references",
+      "find_reads",
+      "find_writes",
+      "get_callers",
+      "get_callees",
+      "find_implementations",
+      "get_type_hierarchy",
+      "find_dead_code",
+      "find_dead_conditionals",
+      "multi_query",
+      "get_code_actions",
+      "open_solution"
+    ],
+    "models": {
+      "review-light": "haiku",
+      "review-deep": "sonnet",
+      "plan-review-deep": "sonnet",
+      "second-opinion": "sonnet"
+    }
   }
 }
