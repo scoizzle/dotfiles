@@ -138,3 +138,72 @@ Two verifier cases and one second-opinion case, one repository. `claude-agent`
 reports $0 in `opencode stats`, so the saving here is quota and latency, not a
 measured dollar figure. The clean fixture's ground truth is "no known blocking
 defect", which is weaker than an un-fixed real fix's ground truth.
+
+### Harness and variant check (2026-10-31)
+
+Question: does Grok do better in its own CLI than in OpenCode, and is there a
+Grok variant that is faster without losing recall?
+
+Method: `evals/run-grok.sh` runs the same case, prompt, timeout, and scorer
+through `grok -p` (Grok Build 1.0.70, per `grok --version`), with
+`agents/verifier.md` appended as system rules. Model and effort are held constant where the comparison is about
+the harness.
+
+| Case | Harness | Model | Result | Seconds |
+| --- | --- | --- | --- | --- |
+| seeded concat | OpenCode | `grok-4.7#high` | 1/1 | 828 |
+| seeded concat | Grok Build | `grok-4.7#high` | 1/1 | 866 |
+| clean enum | OpenCode | `grok-4.7#high` | PASS | 603 |
+| clean enum | Grok Build | `grok-4.7#high` | PASS | 679 |
+
+The harness makes no difference: same recall in both directions, and Grok Build
+is 5–13% slower. Grok's time is reasoning and exploration, not a broken tool —
+the Build run made one build and three filtered test runs with no errors, and the
+OpenCode run made 91 tool calls to the Build run's smaller set.
+
+Variant results on the seeded case, all 1/1:
+
+| Variant | Harness | Seconds | Cost |
+| --- | --- | --- | --- |
+| `grok-4.7#high` | OpenCode | 828 | not captured |
+| `grok-4.7#medium` | OpenCode | 694 | $4.78, 115 tool calls |
+| `grok-4.6#high` | Grok Build | 662 | grok.com subscription |
+| `grok-4.7-build-fast` | Grok Build | 570 | grok.com subscription |
+| `grok-4.5#high` | Grok Build | 395 | grok.com subscription |
+
+Effort is not a cost lever. `#medium` saved 16% of wall-clock and made *more*
+tool calls than `#high` (115 against 91), because lower effort explores more
+before committing. `grok-4.7-build-fast` is the only variant that improves time
+with the same evidence, so it went on to the recall-sensitive cases:
+
+| Case | `grok-4.7-build-fast` | `grok-4.5#high` |
+| --- | --- | --- |
+| seeded concat | 570 s, 1/1 | 395 s, 1/1 |
+| storage enum 🟠 | 175 s, 1/1 | 145 s, 1/1 |
+| `plan-ide-storage-tab` | 216 s, 6/6 incl. 🔴 | 173 s, 6/6 incl. 🔴 |
+
+Both survive when the streamed narration is removed and only the final report is
+scored, so the speed was not bought by thin evidence. Each also records the
+build and the failing changed-area tests in its coverage block.
+
+The ranking on the seeded case is 4.5 (395 s), build-fast (570 s), 4.6 (662 s),
+then 4.7 (828–866 s). The oldest model tested is the fastest at no observed
+recall cost on these cases. That is surprising enough to treat as provisional:
+it is one run per cell, the plan fixture was extended from a Grok run and may
+favour the family, and server-side variance between runs was not measured.
+
+Sonnet remains the reference at 29 s (seeded) and 45 s (clean) through OpenCode,
+so even the fastest Grok variant is an order of magnitude slower on routine
+verification. The Grok variants are for steps that genuinely need multi-model
+recall and can afford minutes. None of 4.5, 4.6, or build-fast is in the OpenCode
+catalog, so using any of them means routing that step through the Grok Build CLI.
+
+Limits: one case per cell for the harness comparison, one case for `4.6`, and
+three for `4.5` and `build-fast`; one repository, one machine. `grok.com` usage is not in `opencode stats`, so the
+Build rows have no dollar figure. Tool-call and build/test counts above are read
+from the saved transcripts, not recorded by the runner. Grok Build applies no
+agent permission rule, so its write boundary is the prompt and the verifier's
+instructions (the fixture source is reachable through the clone's remote);
+`run.sh` enforces the same boundary with permissions. `grok-4.6` and
+`xai/grok-build-0.1` were not run because the variants that were run already
+answered both questions.

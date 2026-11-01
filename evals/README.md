@@ -29,6 +29,25 @@ change. Compare two models by running each in turn and reading the `TOTAL` line.
 `run.sh` exits non-zero when a case fails before or during review. Each case has
 a 900-second cap; set `EVAL_CASE_TIMEOUT` for a slower case.
 
+To compare a model across harnesses, `run-grok.sh` runs the same cases through
+Grok Build (`grok -p`) with the same prompt, the verifier's instructions as
+appended system rules, the same timeout, and the same results layout, so
+`score.py` grades it unchanged:
+
+```sh
+./run-grok.sh -c concat-nonstring-operand
+./score.py /private/var/folders/.../opencode/evals-run/<run-dir>
+```
+
+Grok Build's `plain` output includes its interim narration, not only the final
+report. The scorer reads the whole text, so a harness comparison should either
+trim to the report or confirm the finding appears in the final report alone.
+
+Grok Build runs with `--permission-mode bypassPermissions --always-approve`
+because it must build and test non-interactively. Unlike `run.sh`, the write
+boundary is therefore the prompt and the verifier's instructions, not an agent
+permission rule: only run it against a disposable clone.
+
 Each case clones its fixture repo at a base commit into a scratch directory under
 `$EVAL_WORK_ROOT` (default: the opencode temp dir) and runs the agent there. A
 change case applies its patch first; a plan case leaves the tree clean and passes
@@ -43,6 +62,7 @@ cases/<case-id>/case.json      fixture definition
 cases/<case-id>/change.patch   the diff, for a change case
 cases/<case-id>/plan.md        the plan, for a plan case
 run.sh                         run one model over the case set
+run-grok.sh                    run the same cases through Grok Build's harness
 score.py                       grade results against expectations
 cost.py                        per-model cost/steps for one run (called by run.sh)
 scoreboard.py                  standing view of the gates, from the session store
