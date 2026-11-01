@@ -130,7 +130,7 @@ jobs:
           PY
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke
@@ -314,6 +314,11 @@ jobs:
       # global deny unnoticed.
       - name: permission policy
         run: ./bin/lint-config
+
+      # opencode.json and the verifier's restated block are generated from
+      # policy/permissions.json; a hand edit shows up here as drift.
+      - name: generated config is in sync
+        run: ./bin/sync-harness --scope repo
 
       # .gitignore only stops new files; a tracked file stays tracked.
       - name: no tracked file is ignored

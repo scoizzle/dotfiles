@@ -19,9 +19,14 @@ This catches regressions in the denylist; it does not prove the denylist is enou
 from __future__ import annotations
 
 import fnmatch
+import importlib.machinery
+import importlib.util
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
@@ -86,6 +91,100 @@ def effective(rules: list[tuple[str, str, str]], action: str, text: str) -> str:
         if r_action == action and fnmatch.fnmatchcase(text, resource):
             verdict = effect
     return verdict
+
+
+def load_script(name: str):
+    loader = importlib.machinery.SourceFileLoader(name.replace("-", "_"), str(ROOT / "bin" / name))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
+
+
+def native_match(rule_text: str, kind: str, text: str) -> bool:
+    tool, pattern = re.fullmatch(r"(\w+)\((.*)\)", rule_text).groups()
+    if tool == "Bash" and kind == "shell":
+        if pattern.endswith(":*"):
+            prefix = pattern[:-2]
+            return text == prefix or text.startswith(prefix + " ")
+        return fnmatch.fnmatchcase(text, pattern)
+    if (tool == "Read" and kind == "read") or (tool in ("Edit", "Write") and kind == "edit"):
+        return fnmatch.fnmatchcase(text, pattern.replace("**", "*"))
+    return False
+
+
+def guard_event(vector: dict, claude_shape: bool) -> dict:
+    tool = {"shell": ("Bash", "run_terminal_command"), "read": ("Read", "read_file"), "edit": ("Edit", "search_replace")}[vector["kind"]]
+    key = "command" if vector["kind"] == "shell" else ("file_path" if claude_shape else "path")
+    if claude_shape:
+        return {"tool_name": tool[0], "tool_input": {key: vector["input"]}}
+    return {"toolName": tool[1], "toolInput": {key: vector["input"]}}
+
+
+def check_policy(agents: dict) -> None:
+    """One policy, three engines: the same expected decisions must hold everywhere."""
+    os.environ["HARNESS_POLICY"] = str(ROOT / "policy" / "permissions.json")
+    guard, sync = load_script("harness-guard"), load_script("sync-harness")
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    vectors = json.loads((ROOT / "policy" / "vectors.json").read_text())["vectors"]
+    native = sync.render_native(policy)
+    action = {"shell": "shell", "read": "read", "edit": "edit"}
+
+    for number, v in enumerate(vectors):
+        label = f"{v['kind']} `{v['input']!r}`"
+        engines = v.get("engines", ["guard", "opencode"])
+        if "guard" in engines:
+            found = guard.decide(guard_event(v, claude_shape=number % 2 == 0))
+            got = "deny" if any(d.kind == "deny" for d in found) else "ask" if found else "allow"
+            if got != v["expect"]:
+                fail(f"harness-guard: {label} is {got}, expected {v['expect']}")
+        if "opencode" in engines:
+            for name in ("(global)", "build", "verifier"):
+                if name in v.get("skip_agents", []):
+                    continue
+                got = effective(agents[name], action[v["kind"]], v["input"])
+                if got != v["expect"]:
+                    fail(f"opencode/{name}: {label} is {got}, expected {v['expect']}")
+        if v["expect"] == "allow":
+            for kind in ("deny", "ask"):
+                for text in native[kind]:
+                    if native_match(text, v["kind"], v["input"]):
+                        fail(f"native rule {text} blocks {label}, which must be allowed")
+
+    # the hook contract, end to end, in both payload shapes
+    for payload, rc, decision in (
+        ({"tool_name": "Bash", "tool_input": {"command": "git push --force"}}, 2, "deny"),
+        ({"toolName": "run_terminal_command", "toolInput": {"command": "rm -rf x"}}, 2, "deny"),
+        ({"tool_name": "Bash", "tool_input": {"command": "git push origin feature"}}, 0, "ask"),
+        ({"toolName": "run_terminal_command", "toolInput": {"command": "git status"}}, 0, None),
+        ({"tool_name": "Read", "tool_input": {"file_path": "~/.ssh/id_rsa"}}, 2, "deny"),
+        ({"toolName": "read_file", "toolInput": {"command": "x"}, "toolInputTruncated": True}, 2, "deny"),
+    ):
+        run = subprocess.run([sys.executable, str(ROOT / "bin" / "harness-guard")], input=json.dumps(payload), capture_output=True, text=True, env=dict(os.environ))
+        said = json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"] if run.stdout.strip() else None
+        if (run.returncode, said) != (rc, decision) or (rc == 2 and not run.stderr.strip()):
+            fail(f"harness-guard contract: {json.dumps(payload)[:70]} gave rc={run.returncode} decision={said}")
+    bad = subprocess.run([sys.executable, str(ROOT / "bin" / "harness-guard")], input="not json", capture_output=True, text=True)
+    if bad.returncode != 2:
+        fail("harness-guard must fail closed (exit 2) on input it cannot parse")
+
+    # rendered configs match the policy, and the home merge is additive and idempotent
+    for path, want in sync.repo_targets(policy, ROOT).items():
+        if path.read_text() != want:
+            fail(f"{path.relative_to(ROOT)} drifted from policy/permissions.json; run bin/sync-harness --apply")
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(json.dumps({"model": "m", "permissions": {"allow": ["Bash(ls:*)"], "deny": ["Bash(mine:*)"]}, "hooks": {"PreToolUse": [{"matcher": "X", "hooks": [{"type": "command", "command": "/mine"}]}]}}))
+        path, text, notes = sync.home_target(policy, home)
+        path.write_text(text)
+        again = sync.home_target(policy, home)
+        merged = json.loads(text)
+        if again[2]:
+            fail(f"sync-harness home merge is not idempotent: {again[2]}")
+        if merged["model"] != "m" or "Bash(mine:*)" not in merged["permissions"]["deny"] or "Bash(ls:*)" not in merged["permissions"]["allow"]:
+            fail("sync-harness home merge dropped the user's own settings")
+        if len(merged["hooks"]["PreToolUse"]) != 2 or merged["hooks"]["PreToolUse"][0]["matcher"] != "X":
+            fail("sync-harness home merge disturbed the user's own hooks")
 
 
 def main() -> int:
@@ -155,6 +254,8 @@ def main() -> int:
     explore = agents.get("explore")
     if explore is not None and effective(explore, "edit", "src/x.cs") != "deny":
         fail("explore: edit must be deny; it is the read-only swarm")
+
+    check_policy(agents)
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle"):
         target = ROOT / rel
