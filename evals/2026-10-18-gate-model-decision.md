@@ -36,7 +36,8 @@ clears it.
 The default workflow now uses `review-light` (MiMo 2.6 Flash) for T1 changes,
 `review-deep` (Grok 4.7#high) for T2 changes, `plan-review-deep` (Grok) for T2
 plans, and `second-opinion` (Claude Haiku 5.5#high) for T2. T1 plan review is a
-build self-check; T2 plan review is Grok.
+build self-check; T2 plan review is Grok. Phase 4 moves `second-opinion` onto
+Sonnet; the Haiku model in the command below is the Phase 2 pin.
 
 Gate: a light reviewer must not miss a T1 case that the Grok baseline caught on
 the same case. The enum case is T2 and is scored on `review-deep`, not
@@ -68,6 +69,66 @@ The T1 gate runs with the eval runner's `--standalone` isolation and a
 triage, not counted against recall. The earlier D5 veto was a plan premise and an
 enum change; both are T2 in this workflow, so it does not apply to T1 change
 review.
+
+## Phase 4 — routing bands (2026-10-31)
+
+Advisor spend is three moments, not a default model. `xai/grok-4.7#high` keeps
+the advisor pin: the 2026-10-18 gate gave it no veto, full recall, and a lower
+median than MiMo. The moments are:
+
+1. **Plan lock** — `plan-review-deep`, before a T2 plan locks.
+2. **Same error twice** — the same error or the same failing assertion on a
+   second T2 attempt. The build agent consults the advisor pin on that stuck
+   point and does not rerun the search on it.
+3. **Sign-off** — `review-deep`, before a T2 change is called done.
+
+Swarm work (repo map, grep, parallel read-only search) stays on `explore`
+(`opencode-go/mimo-v2.6-flash`). T1 review stays on `review-light` (same pin).
+The default builder stays `opencode-go/deepseek-v4.1-flash#high` on `build`,
+`plan`, and `general`. T2 implementation stays `implement-deep` on
+`claude-agent/sonnet#medium`. Roles stay on the provider the gates support.
+This repo has no Claude Code `--advisor` flag; the moments above are the
+policy the build agent follows.
+
+### Procedural pins leave the advisor
+
+`verifier` is procedural: collect evidence, run the build and the changed-area
+tests, write the coverage block, grade the contract. It is not one of the three
+advisor moments. `docs/per-step-model-selection` (`0a8cc93`, 2026-10-31)
+recorded the gate below. This change takes that pin direction and leaves that
+branch's fixture and scorer edits behind.
+
+Metered spend in the 14 days to 2026-10-31 was $438.73, from `session_v2`.
+`xai/grok-4.7#high` was $397.74 of it, and `verifier` was $214.49.
+`claude-agent` reports $0 there (flat rate), so the figure is metered dollars
+only.
+
+| Role | Before | After |
+| --- | --- | --- |
+| `verifier` | `xai/grok-4.7#high` | `claude-agent/sonnet#medium` |
+| `second-opinion` | `claude-agent/haiku#high` | `claude-agent/sonnet#medium` |
+
+Recorded results from that branch, not re-run here:
+
+| Case | Model | Result | Seconds |
+| --- | --- | --- | --- |
+| `concat-nonstring-operand` | `claude-agent/sonnet#medium` | 1/1 recall | 29 |
+| `concat-nonstring-operand` | `xai/grok-4.7#high` | 1/1 recall | 828 |
+| `clean-enum-backing-type` (`must_pass`, on that branch) | `claude-agent/sonnet#medium` | no 🔴/🟠 | 45 |
+| `storage-enum-backing-type` (`second-opinion`) | `claude-agent/sonnet#medium` | 1/1 recall | 19 |
+
+No veto on the seeded case: both models recovered the only expected finding, and
+sonnet stayed at 🟡/🟢 on the clean run. The second-opinion move is the
+decorrelation one. Haiku mostly agreed with `review-deep`. Sonnet stays a
+different family from grok, on the mid-tier pin, so the parallel T2 pass is not
+a fourth advisor moment.
+
+### Limits
+
+The recorded gate is two verifier cases and one second-opinion case, one
+repository. The clean fixture is not in this tree. `claude-agent` cost is quota
+and latency, not a dollar line in `opencode stats`. `review-deep` and
+`plan-review-deep` stay on `xai/grok-4.7#high`.
 
 
 ## Phase 3 — verifier and second opinion (2026-10-31)

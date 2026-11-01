@@ -1,5 +1,5 @@
 ---
-description: Skeptical verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Cannot edit. Use for T1/T2 changes and for plan contracts.
+description: Mid-tier procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Cannot edit. Manual check, not an advisor moment. Use for T1/T2 changes and for plan contracts.
 mode: subagent
 model: claude-agent/sonnet#medium
 color: "#ff6b6b"

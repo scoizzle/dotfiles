@@ -24,7 +24,8 @@ Never ask the user to choose a tier or model.
   enum/public API/be careful", or unsure. Write a plan with done-when; launch
   `plan-review-deep`; fix plan findings (cap 2); implement with
   `implement-deep`; run checks; launch `review-deep` and `second-opinion` in
-  parallel; triage; fix (cap 2); full suite.
+  parallel; triage; fix (cap 2); full suite. Pins and the three advisor
+  moments are in Model routing.
 
 ### Evidence
 
@@ -55,7 +56,7 @@ Never ask the user to choose a tier or model.
 - Do not stage, commit, or push unless asked.
 - Keep diffs minimal and consistent with the surrounding code.
 - Use `explore` for broad searches; do not read the whole repo in the main
-  context.
+  context. `explore` stays on its cheap pin (Model routing).
 
 ### Ledger
 
@@ -68,6 +69,41 @@ If the user has not answered, write the line as `pending`.
 `/verify` and `/second-opinion` are manual escape hatches. `build`, `plan`,
 `explore`, and `verifier` remain available; `verifier` is a manual shell-based
 deep check, not the default review path.
+
+## Model routing
+
+Match cost to the job. The bands are the policy; the pins are what the gates
+currently support and may move when a later gate says so. A band does not
+require a Claude model name. This setup has no `--advisor` switch: the build
+agent delegates to the named subagent.
+
+| Band | Work | Pin |
+| --- | --- | --- |
+| Swarm | Repo map, grep, parallel read-only search | `explore`: `opencode-go/mimo-v2.6-flash` |
+| Cheap review | T1 diff review | `review-light`: `opencode-go/mimo-v2.6-flash` |
+| Builder | Default session and T0/T1 edits | `build`, `plan`, `general`: `opencode-go/deepseek-v4.1-flash#high` |
+| Builder | T2 implementation after plan-lock | `implement-deep`: `claude-agent/sonnet#medium` |
+| Procedural | Build, tests, coverage, contract grade; independent T2 second look | `verifier` and `second-opinion`: `claude-agent/sonnet#medium` |
+| Advisor | Deep judgment only | `plan-review-deep` and `review-deep`: `xai/grok-4.7#high` |
+
+`explore` does every repo map, grep, and parallel read-only search, including
+while a builder or advisor session is open. Do not hand that work to
+`plan-review-deep`, `review-deep`, or `verifier`.
+
+The advisor pin is spent at three moments only:
+
+1. **Plan lock.** Before a T2 plan locks, launch `plan-review-deep`. A T1 plan
+   stays a build self-check on the builder pin.
+2. **Same error twice.** When the same error or the same failing assertion
+   repeats on a second attempt during T2 implementation, stop retrying on the
+   builder and on `explore`. Consult the advisor pin on that stuck point:
+   `plan-review-deep` when the plan is what is stuck, `review-deep` when the
+   change is. Pass the failure and the two attempts. A first failure is not
+   this moment. A T1 retry stays on the builder; do not promote it.
+3. **Sign-off.** Before calling a T2 change done, launch `review-deep`. Launch
+   `second-opinion` in parallel on its mid-tier pin; that pass is not the
+   advisor. T1 sign-off is `review-light`. `verifier` is the manual shell
+   check, not an advisor moment and not the default gate.
 
 ## C# / .NET work
 
