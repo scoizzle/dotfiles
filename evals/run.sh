@@ -6,7 +6,7 @@
 #   ./run.sh --tier T1 -a review-light -m opencode-go/mimo-v2.6-flash
 #   ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
 #   ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-#   ./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
+#   ./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
 #
 # `tier` is required on every case.json. `--tier` selects change cases only; a
 # plan case runs only with `-c` or `-a plan-review-deep`. `-m` is optional; when
@@ -66,10 +66,13 @@ if [ "$AGENT" = "plan-review-deep" ] && [ -n "$TIER" ]; then
   echo "error: a plan case runs with -c, not --tier" >&2
   exit 2
 fi
+# MiMo lost the T2 reviewer veto (it missed the plan premise and the enum
+# change), so it is not a T2 reviewer. The verifier is a different role: it runs
+# the build and the changed-area tests, so the T2 restriction does not apply.
 case "$MODEL" in
   *mimo-v2.6-flash*)
-    if [ "$TIER" = "T2" ]; then
-      echo "error: MiMo Flash is T1 only; do not use it for a T2 bakeoff" >&2
+    if [ "$TIER" = "T2" ] && [ "$AGENT" != "verifier" ]; then
+      echo "error: MiMo Flash is T1 only as a reviewer; do not use it for a T2 bakeoff" >&2
       exit 2
     fi
     ;;
@@ -181,8 +184,8 @@ for dir in "$HERE"/cases/*/; do
 
   case "$MODEL" in
     *mimo-v2.6-flash*)
-      if [ "$tier" = "T2" ]; then
-        echo "error: MiMo Flash is T1 only ($id)" >&2
+      if [ "$tier" = "T2" ] && [ "$AGENT" != "verifier" ]; then
+        echo "error: MiMo Flash is T1 only as a reviewer ($id)" >&2
         exit 2
       fi
       ;;

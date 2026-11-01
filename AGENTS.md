@@ -77,18 +77,37 @@ currently support and may move when a later gate says so. A band does not
 require a Claude model name. This setup has no `--advisor` switch: the build
 agent delegates to the named subagent.
 
+Claude quota is the binding limit, not metered dollars. `claude-agent` reports
+$0 in `opencode stats`, so a Sonnet row looks free while it spends the scarce
+resource. Keep the high-volume steps (`verifier`, `explore`, `review-light`)
+off Claude; reserve it for `implement-deep`, which runs about once a day.
+
 | Band | Work | Pin |
 | --- | --- | --- |
 | Swarm | Repo map, grep, parallel read-only search | `explore`: `opencode-go/mimo-v2.6-flash` |
 | Cheap review | T1 diff review | `review-light`: `opencode-go/mimo-v2.6-flash` |
 | Builder | Default session and T0/T1 edits | `build`, `plan`, `general`: `opencode-go/deepseek-v4.1-flash#high` |
 | Builder | T2 implementation after plan-lock | `implement-deep`: `claude-agent/sonnet#medium` |
-| Procedural | Build, tests, coverage, contract grade; independent T2 second look | `verifier` and `second-opinion`: `claude-agent/sonnet#medium` |
-| Advisor | Deep judgment only | `plan-review-deep` and `review-deep`: `xai/grok-4.7#high` |
+| Procedural | Build, tests, coverage, contract grade | `verifier`: `xai/grok-4.7#high` |
+| Opposite | Independent T2 second look | `second-opinion`: `opencode-go/deepseek-v4.1-flash#high` |
+| Advisor | Deep judgment only | `plan-review-deep` and `review-deep`: T3 Grok provider on `grok-4.5` (provisional) |
 
 `explore` does every repo map, grep, and parallel read-only search, including
 while a builder or advisor session is open. Do not hand that work to
 `plan-review-deep`, `review-deep`, or `verifier`.
+
+**Where the advisor runs.** The Grok bots (Jarvis, Chieftan) are orchestrators
+only; they do not do repository work. Worker models are T3 child sessions, and
+the advisor pin runs through the T3 Grok provider on `grok-4.5`. The OpenCode
+YAML keeps `xai/grok-4.7#high` because that catalog stops at 4.7; when a job
+needs 4.5, run it through T3 rather than claiming an OpenCode pin the catalog
+cannot serve. `grok-4.5` is provisional: it beat 4.7 on three cases in one
+repository, one run per cell.
+
+**opposite-lab.** The T3-side independent review of the same artifact, run on
+the T3 Grok provider. It buys a different execution context, not a different
+family; `second-opinion` is the family-independent pass and stays on
+`opencode-go/deepseek-v4.1-flash#high`.
 
 The advisor pin is spent at three moments only:
 

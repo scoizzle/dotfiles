@@ -1,7 +1,7 @@
 ---
 description: Mid-tier procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Cannot edit. Manual check, not an advisor moment. Use for T1/T2 changes and for plan contracts.
 mode: subagent
-model: claude-agent/sonnet#medium
+model: xai/grok-4.7#high
 color: "#ff6b6b"
 steps: 120
 permissions:
