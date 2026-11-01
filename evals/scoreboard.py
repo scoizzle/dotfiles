@@ -188,6 +188,7 @@ def main() -> int:
         reported = len(resolved)
         acted = sum(as_int(entry.get("acted")) for entry in resolved)
         dismissed = sum(as_int(entry.get("dismissed")) for entry in resolved)
+        unique = sum(as_int(entry.get("unique")) for entry in resolved)
         # Yield is a share of actionable findings (nits are not actionable).
         # Dismissal is a share of all findings, nits included, because a nit can
         # be waved off too.
@@ -204,6 +205,7 @@ def main() -> int:
         print(f"  findings reported          {all_findings}")
         print(f"  acted on                   {acted}")
         print(f"  dismissed                  {dismissed}")
+        print(f"  unique (second opinion)    {unique}")
         if actionable:
             print(f"  yield (acted / actionable) {acted / actionable * 100:.0f}%")
         if all_findings:

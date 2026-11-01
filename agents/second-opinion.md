@@ -1,7 +1,7 @@
 ---
-description: Independent read-only T2 second reviewer from a different model family. Use after the T2 change review, without showing it the first report.
+description: Mid-tier independent read-only T2 second reviewer from a different model family than review-deep. Use in parallel at T2 sign-off, and do not show it the first report. Not the advisor pin.
 mode: subagent
-model: claude-agent/haiku#high
+model: opencode-go/deepseek-v4.1-flash#high
 steps: 30
 color: "#b5179e"
 permissions:
