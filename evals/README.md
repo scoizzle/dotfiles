@@ -14,7 +14,7 @@ Two artifacts are covered: a **change** (a diff, caught before it ships) and a
 ./run.sh --tier T1 -a review-light -m opencode-go/mimo-v2.6-flash
 ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
 ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
+./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
 ```
 
 `run.sh` prints a per-case line, then the model's cost and step delta for the run,
@@ -54,6 +54,11 @@ change case applies its patch first; a plan case leaves the tree clean and passe
 the plan in the prompt. It uses `git clone --shared`, which reads the source
 repository's objects and writes nothing back — the fixture repo is never modified
 and its worktrees are never touched.
+
+Case fixtures name a repository by path (`repo` in `case.json`, currently
+`~/Projects/Poly/Poly`). That checkout is machine-local, so the golden set only
+runs where it exists; the runner fails the case before review when it is missing.
+Point `repo` at your own clone to reproduce.
 
 ## Layout
 
@@ -108,8 +113,8 @@ The verifier is scored in both directions, because a verifier that never finds a
 defect and one that finds a defect everywhere both cost the same:
 
 ```sh
-./run.sh -a verifier -m claude-agent/sonnet#medium -c concat-nonstring-operand
-./run.sh -a verifier -m claude-agent/sonnet#medium -c clean-enum-backing-type
+./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
+./run.sh -a verifier -m xai/grok-4.7#high -c clean-enum-backing-type
 ```
 
 The first is the seeded-🟠 change `review-light` already uses. The verifier has

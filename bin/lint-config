@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""Check the permission policy of this opencode config, without running opencode.
+
+    lint-config [repo]            # default: the repo this script lives in
+
+It loads opencode.json and every agents/*.md, then evaluates concrete commands
+and paths against each agent's effective rules and fails when the policy in
+AGENTS.md and memory/core/safety.md is not what the rules actually produce.
+
+Assumption, stated because opencode does not document it in its schema: rules are
+ordered, the LAST matching rule wins, an agent's rules come after the global
+ones, `*` matches any characters including spaces and slashes, and no match
+means allow. The verifier's own rule order relies on the same reading. If
+opencode changes that, these checks are the first thing that should break.
+
+A text-matched denylist is not a security boundary (see docs/security-model.md).
+This catches regressions in the denylist; it does not prove the denylist is enough.
+"""
+from __future__ import annotations
+
+import fnmatch
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+EFFECTS = {"allow", "deny", "ask"}
+READ_ONLY = ("review-light", "review-deep", "plan-review-deep", "second-opinion", "dream-drafter")
+MACHINE_PATH = re.compile(r"/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|/private/var/folders|[A-Z]:\\Users\\")
+
+failures: list[str] = []
+
+
+def fail(message: str) -> None:
+    failures.append(message)
+
+
+def rule(action: str, resource: str, effect: str) -> tuple[str, str, str]:
+    return (action, resource, effect)
+
+
+def frontmatter(text: str) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
+    parts = text.split("---\n", 2)
+    if len(parts) < 3 or parts[0] != "":
+        return {}, []
+    scalars: dict[str, str] = {}
+    rules: list[tuple[str, str, str]] = []
+    current: dict[str, str] = {}
+    in_permissions = False
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            rules.append(rule(current.get("action", ""), current.get("resource", ""), current.get("effect", "")))
+        current = {}
+
+    for raw in parts[1].splitlines():
+        if re.match(r"^permissions:\s*$", raw):
+            in_permissions = True
+            continue
+        if in_permissions and raw.startswith(" "):
+            inline = re.match(r'^\s*-\s*\{\s*action:\s*(\S+?),\s*resource:\s*"([^"]*)",\s*effect:\s*(\w+)\s*\}\s*$', raw)
+            if inline:
+                flush()
+                rules.append(rule(*inline.groups()))
+                continue
+            item = re.match(r'^\s*(?:-\s+)?(action|resource|effect):\s*"?([^"]*?)"?\s*$', raw)
+            if item:
+                if raw.lstrip().startswith("- "):
+                    flush()
+                current[item.group(1)] = item.group(2)
+            continue
+        in_permissions = False
+        flush()
+        scalar = re.match(r"^([A-Za-z_]+):\s*(.*)$", raw)
+        if scalar:
+            scalars[scalar.group(1)] = scalar.group(2).strip().strip('"')
+    flush()
+    return scalars, rules
+
+
+def effective(rules: list[tuple[str, str, str]], action: str, text: str) -> str:
+    verdict = "allow"
+    for r_action, resource, effect in rules:
+        if r_action == action and fnmatch.fnmatchcase(text, resource):
+            verdict = effect
+    return verdict
+
+
+def load_script(name: str):
+    loader = importlib.machinery.SourceFileLoader(name.replace("-", "_"), str(ROOT / "bin" / name))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
+
+
+def native_match(rule_text: str, kind: str, text: str) -> bool:
+    tool, pattern = re.fullmatch(r"(\w+)\((.*)\)", rule_text).groups()
+    if tool == "Bash" and kind == "shell":
+        if pattern.endswith(":*"):
+            prefix = pattern[:-2]
+            return text == prefix or text.startswith(prefix + " ")
+        return fnmatch.fnmatchcase(text, pattern)
+    if (tool == "Read" and kind == "read") or (tool in ("Edit", "Write") and kind == "edit"):
+        return fnmatch.fnmatchcase(text, pattern.replace("**", "*"))
+    return False
+
+
+def guard_event(vector: dict, claude_shape: bool) -> dict:
+    tool = {"shell": ("Bash", "run_terminal_command"), "read": ("Read", "read_file"), "edit": ("Edit", "search_replace")}[vector["kind"]]
+    key = "command" if vector["kind"] == "shell" else ("file_path" if claude_shape else "path")
+    if claude_shape:
+        return {"tool_name": tool[0], "tool_input": {key: vector["input"]}}
+    return {"toolName": tool[1], "toolInput": {key: vector["input"]}}
+
+
+def check_policy(agents: dict) -> None:
+    """One policy, three engines: the same expected decisions must hold everywhere."""
+    os.environ["HARNESS_POLICY"] = str(ROOT / "policy" / "permissions.json")
+    guard, sync = load_script("harness-guard"), load_script("sync-harness")
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    vectors = json.loads((ROOT / "policy" / "vectors.json").read_text())["vectors"]
+    native = sync.render_native(policy)
+    action = {"shell": "shell", "read": "read", "edit": "edit"}
+
+    for number, v in enumerate(vectors):
+        label = f"{v['kind']} `{v['input']!r}`"
+        engines = v.get("engines", ["guard", "opencode"])
+        if "guard" in engines:
+            found = guard.decide(guard_event(v, claude_shape=number % 2 == 0))
+            got = "deny" if any(d.kind == "deny" for d in found) else "ask" if found else "allow"
+            if got != v["expect"]:
+                fail(f"harness-guard: {label} is {got}, expected {v['expect']}")
+        if "opencode" in engines:
+            for name in ("(global)", "build", "verifier"):
+                if name in v.get("skip_agents", []):
+                    continue
+                got = effective(agents[name], action[v["kind"]], v["input"])
+                if got != v["expect"]:
+                    fail(f"opencode/{name}: {label} is {got}, expected {v['expect']}")
+        if v["expect"] == "allow" and not v.get("native_overblock_ok"):
+            for kind in ("deny", "ask"):
+                for text in native[kind]:
+                    if native_match(text, v["kind"], v["input"]):
+                        fail(f"native rule {text} blocks {label}, which must be allowed")
+        if v["expect"] == "deny" and "native" in engines:
+            if not any(native_match(text, v["kind"], v["input"]) for text in native["deny"]):
+                fail(f"native rule set does not deny {label}")
+
+    # the hook contract, end to end, in both payload shapes
+    for payload, rc, decision in (
+        ({"tool_name": "Bash", "tool_input": {"command": "git push --force"}}, 2, "deny"),
+        ({"toolName": "run_terminal_command", "toolInput": {"command": "rm -rf x"}}, 2, "deny"),
+        ({"tool_name": "Bash", "tool_input": {"command": "git push origin feature"}}, 0, "ask"),
+        ({"toolName": "run_terminal_command", "toolInput": {"command": "git status"}}, 0, None),
+        ({"tool_name": "Read", "tool_input": {"file_path": "~/.ssh/id_rsa"}}, 2, "deny"),
+        ({"toolName": "read_file", "toolInput": {"command": "x"}, "toolInputTruncated": True}, 2, "deny"),
+    ):
+        run = subprocess.run([sys.executable, str(ROOT / "bin" / "harness-guard")], input=json.dumps(payload), capture_output=True, text=True, env=dict(os.environ))
+        said = json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"] if run.stdout.strip() else None
+        if (run.returncode, said) != (rc, decision) or (rc == 2 and not run.stderr.strip()):
+            fail(f"harness-guard contract: {json.dumps(payload)[:70]} gave rc={run.returncode} decision={said}")
+    bad = subprocess.run([sys.executable, str(ROOT / "bin" / "harness-guard")], input="not json", capture_output=True, text=True)
+    if bad.returncode != 2:
+        fail("harness-guard must fail closed (exit 2) on input it cannot parse")
+
+    # rendered configs match the policy, and the home merge is additive and idempotent
+    for path, want in sync.repo_targets(policy, ROOT).items():
+        if path.read_text() != want:
+            fail(f"{path.relative_to(ROOT)} drifted from policy/permissions.json; run bin/sync-harness --apply")
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(json.dumps({"model": "m", "permissions": {"allow": ["Bash(ls:*)"], "deny": ["Bash(mine:*)"]}, "hooks": {"PreToolUse": [{"matcher": "X", "hooks": [{"type": "command", "command": "/mine"}]}]}}))
+        path, text, notes = sync.home_target(policy, home)
+        path.write_text(text)
+        again = sync.home_target(policy, home)
+        merged = json.loads(text)
+        if again[2]:
+            fail(f"sync-harness home merge is not idempotent: {again[2]}")
+        if merged["model"] != "m" or "Bash(mine:*)" not in merged["permissions"]["deny"] or "Bash(ls:*)" not in merged["permissions"]["allow"]:
+            fail("sync-harness home merge dropped the user's own settings")
+        if len(merged["hooks"]["PreToolUse"]) != 2 or merged["hooks"]["PreToolUse"][0]["matcher"] != "X":
+            fail("sync-harness home merge disturbed the user's own hooks")
+
+
+def check_shared_surfaces() -> None:
+    """Reviewers rendered for Claude Code/Grok are read-only; rendering is idempotent; Roslynk registration works."""
+    sync = load_script("sync-harness")
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    spec = policy["readonly_agents"]
+    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter"}:
+        fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only reviewers in agents/")
+    writers = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch"}
+    rendered = sync.render_claude_agents(policy, ROOT)
+    for name, text in rendered.items():
+        tools = re.search(r"^tools: (.+)$", text, flags=re.M).group(1).split(", ")
+        bad = [t for t in tools if t in writers or (t.startswith("mcp__") and not t.startswith("mcp__roslynk__"))]
+        bad += [t for t in tools if t.startswith("mcp__roslynk__") and t[14:] not in spec["roslynk_read_tools"]]
+        if bad:
+            fail(f"rendered Claude reviewer {name} has non-read-only tools: {bad}")
+        if not text.startswith("---\nname: " + name + "\n"):
+            fail(f"rendered Claude reviewer {name} has a bad header")
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        mine = home / ".claude" / "agents" / "review-light.md"
+        mine.parent.mkdir(parents=True)
+        mine.write_text("---\nname: review-light\n---\nMy own prompt.\n")
+        for path, text in sync.agents_changes(policy, ROOT, home):
+            sync.write_agent(path, text)
+        if sync.agents_changes(policy, ROOT, home):
+            fail("sync-harness agent rendering is not idempotent")
+        backups = list(mine.parent.glob("review-light.md.bak-*"))
+        if len(backups) != 1 or "My own prompt." not in backups[0].read_text():
+            fail("sync-harness overwrote a user's own agent file without a backup")
+        if list(mine.parent.glob("review-deep.md.bak-*")):
+            fail("sync-harness backed up a file that was not the user's")
+        before = len(list(mine.parent.glob("*.bak-*")))
+        for path, text in sync.agents_changes(policy, ROOT, home):
+            sync.write_agent(path, text)
+        if len(list(mine.parent.glob("*.bak-*"))) != before:
+            fail("sync-harness re-applied and created another backup")
+        # Roslynk registration, with a stub `claude` on PATH
+        (home / ".dotnet" / "tools").mkdir(parents=True)
+        (home / ".dotnet" / "tools" / "roslynk").write_text("")
+        bindir = home / "bin"
+        bindir.mkdir()
+        stub = bindir / "claude"
+        stub.write_text('#!/bin/sh\n[ "$1 $2" = "mcp get" ] && exit "${STUB_REGISTERED:-1}"\nexit 0\n')
+        stub.chmod(0o755)
+        saved = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{bindir}:{saved}"
+        try:
+            os.environ["STUB_REGISTERED"] = "1"
+            state, command = sync.roslynk_registration(home)
+            if state != "missing" or command[:5] != ["claude", "mcp", "add", "--scope", "user"] or command[-1] != "stdio":
+                fail(f"roslynk registration: expected a user-scope add command, got {state} {command}")
+            os.environ["STUB_REGISTERED"] = "0"
+            if sync.roslynk_registration(home)[0] != "ok":
+                fail("roslynk registration: a registered server must be reported ok")
+        finally:
+            os.environ["PATH"] = saved
+            os.environ.pop("STUB_REGISTERED", None)
+
+
+GROK_CAP = 10000
+ROUTING_TARGETS = {
+    ("opencode", "opencode-go/mimo-v2.6-flash"),
+    ("opencode", "opencode-go/deepseek-v4.1-flash"),
+    ("claudeAgent", "claude-sonnet-5-5"),
+    ("grok", "grok-4.7"),
+}
+
+
+def check_instructions() -> None:
+    """AGENTS.md is shared by opencode, Claude Code (CLAUDE.md) and Grok Build, which caps it."""
+    text = (ROOT / "AGENTS.md").read_text()
+    if len(text) > GROK_CAP:
+        fail(f"AGENTS.md is {len(text)} characters; Grok 1.0.70 loads at most {GROK_CAP} per file")
+    for heading in ("## Default workflow", "## Model routing", "## Memory", "## C# / .NET work"):
+        if not re.search(r"^" + re.escape(heading) + r"\s*$", text, flags=re.M):
+            fail(f"AGENTS.md: missing heading {heading!r}")
+    for needle in ("delegate_task", "orchestrator_capabilities", "never silently downgraded"):
+        if needle not in text:
+            fail(f"AGENTS.md: missing {needle!r}")
+    section = re.search(r"^## Model routing\s*$(.*?)(?=^## )", text, flags=re.M | re.S)
+    rows = [l for l in (section.group(1) if section else "").splitlines() if l.startswith("|")][2:]
+    if not rows:
+        fail("AGENTS.md: Model routing has no table rows")
+    for row in rows:
+        cells = [c.strip().strip("`") for c in row.strip().strip("|").split("|")]
+        if len(cells) < 5 or (cells[2], cells[3]) not in ROUTING_TARGETS:
+            fail(f"AGENTS.md: routing row does not name a real T3 target: {row[:80]}")
+
+
+def main() -> int:
+    config = json.loads((ROOT / "opencode.json").read_text())
+    base = [rule(r["action"], r["resource"], r["effect"]) for r in config.get("permissions", [])]
+    for r in config.get("permissions", []):
+        if r["effect"] not in EFFECTS:
+            fail(f"opencode.json: bad effect {r['effect']!r}")
+
+    agents: dict[str, list[tuple[str, str, str]]] = {}
+    for name, body in config.get("agents", {}).items():
+        agents[name] = base + [rule(r["action"], r["resource"], r["effect"]) for r in body.get("permissions", [])]
+    for path in sorted((ROOT / "agents").glob("*.md")):
+        scalars, rules = frontmatter(path.read_text())
+        name = path.stem
+        for key in ("description", "model", "steps"):
+            if not scalars.get(key):
+                fail(f"agents/{path.name}: missing {key}")
+        if scalars.get("model") and not re.fullmatch(r"[^/#]+/[^#]+(#[^#]+)?", scalars["model"]):
+            fail(f"agents/{path.name}: model {scalars['model']!r} is not provider/model[#variant]")
+        for r in rules:
+            if r[2] not in EFFECTS:
+                fail(f"agents/{path.name}: bad effect {r[2]!r}")
+        agents[name] = base + rules
+    agents.setdefault("(global)", base)
+
+    never_push = (
+        "git push --force", "git push -f", "git push origin main --force", "git push origin main -f",
+        "git push -u origin main -f", "git push origin +main", "git push origin --delete main",
+        "git push --mirror", 'sh -c "git push --force"', "git -C . push --force",
+    )
+    never_run = ("git reset --hard", "git clean -fd", "rm -rf x", "rm -fr x", "rm -r -f x", "sudo ls")
+    never_shell_read = ("cat ~/.ssh/id_rsa", "cat ~/.aws/credentials", "cat ~/.claude/.credentials.json",
+                        "cat ~/.local/share/opencode/auth.json", "cat ~/.config/gh/hosts.yml")
+    never_read = ("~/.ssh/id_rsa", "~/.aws/credentials", "~/.claude/.credentials.json",
+                  "~/.local/share/opencode/auth.json", "/work/.env", ".env", ".env.local", "/work/service.json")
+
+    for name, rules in sorted(agents.items()):
+        for command in never_push:
+            if effective(rules, "shell", command) != "deny":
+                fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
+        if effective(rules, "shell", "git push origin feature") == "allow":
+            fail(f"{name}: plain `git push` is allow; it must be ask or deny")
+        for command in never_run + never_shell_read:
+            if effective(rules, "shell", command) != "deny":
+                fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
+        for target in never_read:
+            if effective(rules, "read", target) != "deny":
+                fail(f"{name}: read {target} is {effective(rules, 'read', target)}, must be deny")
+        if effective(rules, "read", "src/x.cs") != "deny" and effective(rules, "read", "/work/.env.example") == "deny":
+            fail(f"{name}: .env.example should stay readable")
+        for target in ("memory/core/safety.md", "/home/u/.config/opencode/memory/core/safety.md"):
+            if effective(rules, "edit", target) != "deny":
+                fail(f"{name}: edit {target} is {effective(rules, 'edit', target)}, must be deny")
+
+    for name in READ_ONLY:
+        rules = agents.get(name)
+        if rules is None:
+            fail(f"read-only agent {name} has no agents/{name}.md")
+            continue
+        for action, sample in (("edit", "src/x.cs"), ("shell", "ls"), ("subagent", "explore")):
+            if effective(rules, action, sample) != "deny":
+                fail(f"{name}: {action} must be deny")
+    if "dream-drafter" in agents and effective(agents["dream-drafter"], "read", "src/x.cs") != "deny":
+        fail("dream-drafter: read must be deny; it handles untrusted text")
+
+    explore = agents.get("explore")
+    if explore is not None and effective(explore, "edit", "src/x.cs") != "deny":
+        fail("explore: edit must be deny; it is the read-only swarm")
+
+    check_policy(agents)
+    check_shared_surfaces()
+    check_instructions()
+
+    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle"):
+        target = ROOT / rel
+        files = [target] if target.is_file() else sorted(p for p in target.rglob("*") if p.is_file())
+        for file in files:
+            for number, line in enumerate(file.read_text(errors="replace").splitlines(), 1):
+                if MACHINE_PATH.search(line):
+                    fail(f"{file.relative_to(ROOT)}:{number}: machine-specific path")
+
+    dream = (ROOT / "bin" / "dream").read_text()
+    argv = re.search(r"OPENCODE_ARGV = \(([^)]*)\)", dream)
+    if not argv or '"--auto"' in argv.group(1) or '"dream-drafter"' not in argv.group(1):
+        fail("bin/dream: must draft with --agent dream-drafter and without --auto")
+
+    if failures:
+        print("lint-config: FAIL")
+        for message in failures:
+            print(f"  - {message}")
+        return 1
+    print(f"lint-config: ok ({len(agents)} agents checked)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

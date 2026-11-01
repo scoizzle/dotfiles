@@ -24,7 +24,7 @@ source: 4 sessions since 2026-10-30T03:15:00+00:00 (ses_a, ses_b)
 - **session or context id** — the opencode session the note came from, or `dream` for the out-of-band pass.
 - **source** — what was read: session ids and the window, a person, or a path.
 
-`bin/dream` writes the header itself and appends to `YYYY-MM-DD.md` (UTC date). Create that file when it is missing.
+`bin/dream` writes the header itself and stages the block in `pending/YYYY-MM-DD.md` (UTC date). `dream --promote` appends reviewed lines to `YYYY-MM-DD.md`, which is the file sessions read. Agents never write `YYYY-MM-DD.md` directly.
 
 ## Entries
 

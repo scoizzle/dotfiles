@@ -139,7 +139,6 @@ Return:
 - files changed;
 - the red test command and output;
 - the green test command and output;
-- the red and green test commands and output;
 - any blocker, uncertainty, or scope gap.
 
 Do not claim a check passed unless you ran it. Do not stage, commit, or push.

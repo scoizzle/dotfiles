@@ -14,4 +14,5 @@ Agents do not edit these files.
 Agents may append dated files here. Lessons are constraints, not transcripts.
 
 - `learnings/README.md` — Version header (who, when UTC, session or context id, source) and the `never` / `known` / `derived` lines, each tagged `harness`, `loop`, or `graph`.
+- `learnings/pending/YYYY-MM-DD.md` — Staged by `dream`, not yet reviewed. Agents do not read these; a person runs `dream --promote`.
 - `learnings/YYYY-MM-DD.md` — Local constraint lines from earlier sessions. Read the newest of these when the task could repeat a past failure, a bad command, or a wrong path.

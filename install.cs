@@ -33,6 +33,24 @@ var repoRoot = ResolveRepoRoot();
 var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 var targetRoot = Path.Combine(home, ".config", "opencode");
 
+// Links outside ~/.config/opencode, home-relative destination -> repo path. Claude Code
+// reads ~/.claude/CLAUDE.md and Grok Build reads ~/.grok/AGENTS.md (10,000-character
+// cap), so all three harnesses load the one AGENTS.md. Skills and commands go to
+// ~/.claude/{skills,commands}, which Claude Code reads and Grok Build reads through
+// its Claude compatibility layer. These are always symlinks, even with --copy: they
+// exist to be shared. New skills and commands are picked up on the next run.
+var homeEntries = new List<(string Dest, string Src, bool IsDir)>
+{
+    (Path.Combine(".claude", "CLAUDE.md"), "AGENTS.md", false),
+    (Path.Combine(".grok", "AGENTS.md"), "AGENTS.md", false),
+};
+if (Directory.Exists(Path.Combine(repoRoot, "skills")))
+    foreach (var dir in Directory.GetDirectories(Path.Combine(repoRoot, "skills")).OrderBy(d => d, StringComparer.Ordinal))
+        homeEntries.Add((Path.Combine(".claude", "skills", Path.GetFileName(dir)), Path.Combine("skills", Path.GetFileName(dir)), true));
+if (Directory.Exists(Path.Combine(repoRoot, "commands")))
+    foreach (var file in Directory.GetFiles(Path.Combine(repoRoot, "commands"), "*.md").OrderBy(f => f, StringComparer.Ordinal))
+        homeEntries.Add((Path.Combine(".claude", "commands", Path.GetFileName(file)), Path.Combine("commands", Path.GetFileName(file)), false));
+
 var checkOnly = args.Contains("--check");
 var copyMode = args.Contains("--copy");
 
@@ -124,6 +142,59 @@ foreach (var name in entries)
     }
 }
 
+foreach (var (rel, srcName, isDirEntry) in homeEntries)
+{
+    var src = Path.Combine(repoRoot, srcName);
+    var dst = Path.Combine(home, rel);
+    var label = "~/" + rel;
+    if (!(isDirEntry ? Directory.Exists(src) : File.Exists(src)))
+    {
+        Console.WriteLine($"  skip    {label} ({srcName} not in repo)");
+        continue;
+    }
+
+    var exists = TryAttrs(dst, out var attrs);
+    var isLink = exists && IsLink(dst, attrs);
+    if (isLink && SameLinkTarget(dst, src))
+    {
+        Console.WriteLine($"  ok      {label}");
+        continue;
+    }
+
+    drift.Add(label);
+    var action = !exists ? "create" : isLink ? "relink" : "replace";
+    if (checkOnly)
+    {
+        Console.WriteLine($"  would   {action} {label}");
+        continue;
+    }
+
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+        if (exists && !isLink)
+        {
+            backupRoot ??= MakeBackupRoot();
+            var bak = Path.Combine(backupRoot, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(bak)!);
+            MovePath(dst, bak);
+            Console.WriteLine($"  saved   {label} -> {Path.GetRelativePath(home, bak)}");
+        }
+        else if (isLink)
+        {
+            DeleteLink(dst);
+        }
+
+        CreateLink(dst, src, isDir: isDirEntry);
+        Console.WriteLine($"  {action,-7} {label} -> {src}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAILED  {label}: {ex.Message}");
+        failures++;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // verify: re-read the filesystem, don't trust the writes above
 // ---------------------------------------------------------------------------
@@ -146,6 +217,20 @@ if (!checkOnly)
         if (!ok)
         {
             Console.WriteLine($"  BROKEN  {name}");
+            broken++;
+        }
+    }
+
+    foreach (var (rel, srcName, isDirEntry) in homeEntries)
+    {
+        var src = Path.Combine(repoRoot, srcName);
+        if (!(isDirEntry ? Directory.Exists(src) : File.Exists(src))) continue;
+
+        var dst = Path.Combine(home, rel);
+        var exists = TryAttrs(dst, out var attrs);
+        if (!(exists && IsLink(dst, attrs) && SameLinkTarget(dst, src)))
+        {
+            Console.WriteLine($"  BROKEN  ~/{rel}");
             broken++;
         }
     }

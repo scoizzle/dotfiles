@@ -2,6 +2,7 @@
 """Collect the complete uncommitted change of a repo into a bundle directory.
 
 Usage: review-bundle <repo> [--show <path>]... [--baseline]
+       review-bundle <repo> --classify [--paths <path>...]
 
 Writes section files under $OPENCODE_TMP/review-bundles/<name>-<stamp>/ and prints
 the directory on success. Section files:
@@ -18,6 +19,11 @@ file, so a reviewer's 2000-line read cap is never hit. Nothing is cut except
 secret paths, which are excluded from the diff and untracked contents and listed
 in 99-omitted.txt.
 
+--classify prints a tier floor instead of a bundle: line 1 is T1 or T2, then one
+reason per line. It is a ratchet, not a verdict: the caller may raise the tier but
+never lower it. It reads the current diff, or the planned files named by --paths
+(no line count is known before the edit, so only the file rules apply there).
+
 Read-only: only `status`, `diff`, `ls-files`, `show`, `rev-parse`, and
 `hash-object` run, with optional locks disabled. Nothing is staged and the index
 is never written. A git failure aborts the run rather than emitting an empty
@@ -25,6 +31,7 @@ section.
 """
 
 import datetime
+import fnmatch
 import hashlib
 import json
 import os
@@ -113,20 +120,94 @@ def write_parts(root, prefix, text):
     return total
 
 
+# T1 limits from AGENTS.md, plus the paths it names as always-T2.
+T1_MAX_FILES = 3
+T1_MAX_LINES = 400
+SENSITIVE = (
+    ".github/*",
+    "*opencode.json",
+    "agents/*",
+    "memory/core/*",
+    "*global.json",
+    "*.sql",
+    "*migration*",
+    "*schema*",
+    "*.csproj",
+    "*.sln",
+    "*.slnx",
+    "*Dockerfile*",
+    "*auth*",
+    "*secret*",
+    "*credential*",
+    "*.env*",
+    "*permission*",
+)
+
+
+def is_sensitive(rel):
+    low = rel.lower()
+    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in SENSITIVE)
+
+
+def classify(repo, planned):
+    """Return (floor, reasons). T2 when any rule trips; otherwise T1."""
+    lines = 0
+    if planned:
+        paths = list(planned)
+    else:
+        paths = [
+            p
+            for p in (git_ok(repo, ["diff", "--name-only", "HEAD"]).stdout or "").splitlines()
+            if p
+        ]
+        for row in (git_ok(repo, ["diff", "--numstat", "HEAD"]).stdout or "").splitlines():
+            added, removed, _name = (row.split("\t") + ["", "", ""])[:3]
+            lines += int(added) if added.isdigit() else 0
+            lines += int(removed) if removed.isdigit() else 0
+        listed = git_ok(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout or ""
+        for rel in (p for p in listed.split("\0") if p):
+            paths.append(rel)
+            try:
+                with open(os.path.join(repo, rel), "rb") as fh:
+                    lines += fh.read().count(b"\n")
+            except OSError:
+                pass
+    reasons = []
+    source = [p for p in paths if not p.lower().endswith((".md", ".txt"))]
+    if len(source) > T1_MAX_FILES:
+        reasons.append(f"{len(source)} non-doc files (T1 allows {T1_MAX_FILES})")
+    if lines > T1_MAX_LINES:
+        reasons.append(f"{lines} changed lines (T1 allows {T1_MAX_LINES})")
+    for rel in paths:
+        if is_sensitive(rel):
+            reasons.append(f"{rel} is a public-contract, security, data, or CI path")
+    return ("T2" if reasons else "T1"), reasons
+
+
 def is_binary(data):
     return b"\x00" in data[:8192]
 
 
 def main(argv):
     if not argv:
-        print("usage: review-bundle <repo> [--show <path>]...", file=sys.stderr)
+        print("usage: review-bundle <repo> [--show <path>]... [--baseline] | --classify [--paths <path>...]", file=sys.stderr)
         return 2
     repo = os.path.abspath(argv[0])
     shows = []
     baseline = False
+    classify_only = False
+    planned = []
     rest = argv[1:]
     while rest:
-        if rest[0] == "--show":
+        if rest[0] == "--classify":
+            classify_only = True
+            rest = rest[1:]
+        elif rest[0] == "--paths":
+            rest = rest[1:]
+            while rest and not rest[0].startswith("--"):
+                planned.append(rest[0])
+                rest = rest[1:]
+        elif rest[0] == "--show":
             if len(rest) < 2:
                 print("--show needs a path", file=sys.stderr)
                 return 2
@@ -142,6 +223,13 @@ def main(argv):
     if git(repo, ["rev-parse", "--is-inside-work-tree"]).returncode != 0:
         print(f"not a git repo: {repo}", file=sys.stderr)
         return 2
+
+    if classify_only:
+        floor, reasons = classify(repo, planned)
+        print(floor)
+        for reason in reasons:
+            print(f"  {reason}")
+        return 0
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     base = os.path.join(

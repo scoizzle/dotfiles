@@ -8,10 +8,19 @@ Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 ## Workflow
 
 `AGENTS.md` classifies each request as T0, T1, or T2 and names the review gate.
-Which model runs which job is the **Model routing** section there: `explore`
-stays on the cheap flash pin for repo search, the builder pins implement, and
-the expensive advisor pin is only for plan-lock, a repeated error, and T2
-sign-off.
+Which model runs which job is the **Model routing** table there: every delegated
+job goes through T3 with the band's pinned target, so the pin does not depend on
+which harness the session runs in. The expensive advisor pin is only for plan-lock,
+a repeated error, and T2 sign-off.
+
+Permissions come from one policy, `policy/permissions.json`, rendered for opencode,
+Claude Code and Grok Build by `bin/sync-harness` and checked by `bin/lint-config` in
+CI. After installing, run `~/.config/opencode/bin/sync-harness` to see what it would
+add to `~/.claude/settings.json`, then `--apply`. Grok Build reads that same file:
+the rules everywhere, and the `harness-guard` hook in folders it trusts.
+One `AGENTS.md` is loaded by all three: `install.cs` also links it as
+`~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
+[`docs/security-model.md`](docs/security-model.md).
 
 ## Install on a new machine
 
@@ -56,16 +65,28 @@ back here.
 
 ## What this repo manages
 
-| path            | what it is                                        |
-| --------------- | ------------------------------------------------- |
-| `AGENTS.md`     | global workflow (tiers, review gates, ledger)      |
-| `opencode.json` | model, permissions, MCP servers, agent overrides   |
-| `agents/`       | subagent prompts                                   |
-| `commands/`     | slash commands                                     |
-| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   |
-| `memory/`       | bookshelf, read-only core, learnings format         |
-| `bin/`          | `review-bundle`, `review-log`, `smoke-workflow`, `dream` |
-| `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      |
+The repo is the single source for three harnesses: opencode, Claude Code, and
+Grok Build (which reads `~/.claude` through its Claude compatibility layer).
+
+| path            | what it is                                        | reaches |
+| --------------- | ------------------------------------------------- | ------- |
+| `AGENTS.md`     | global workflow, routing table, memory and C# rules (kept under Grok's 10,000-character cap) | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
+| `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
+| `agents/`       | subagent prompts (opencode format); the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
+| `commands/`     | slash commands | opencode; `~/.claude/commands` |
+| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
+| `policy/`       | the permission policy and its test vectors | rendered into all three by `bin/sync-harness` |
+| `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
+| `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
+| `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
+
+`install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
+must be merged into files you also edit: `~/.claude/settings.json` (rules and the
+`harness-guard` hook, which Grok reads too in folders it trusts), the reviewers under `~/.claude/agents`,
+and the Roslynk MCP registration for Claude Code. Grok's own `config.toml` is never
+touched. Run `./install.cs` and then `~/.config/opencode/bin/sync-harness` (report)
+and `--apply`; both are safe to repeat. Verify what Grok actually loads with
+`grok inspect` in a trusted folder.
 
 How the bookshelf and the out-of-band dream pass fit together is in
 [`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
@@ -93,7 +114,11 @@ Outside `~/.config/opencode`, also untracked on purpose:
   only make them drift from the tool that owns them.
 - `~/.claude/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
   of it credential-bearing. `~/.claude` also holds the login the Claude Agent
-  integration borrows, so it is never linked or copied.
+  integration borrows, so it is never linked or copied. The only managed paths
+  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`
+  and `~/.grok/AGENTS.md`; the rest of `~/.claude` (login, projects) and all of
+  `~/.grok/config.toml` are never touched. Grok reads the rules and, in a trusted
+  folder, the hook from `~/.claude/settings.json` (written by `bin/sync-harness`).
 
 ## Adding a file to the repo
 

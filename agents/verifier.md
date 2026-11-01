@@ -1,5 +1,5 @@
 ---
-description: Mid-tier procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Cannot edit. Manual check, not an advisor moment. Use for T1/T2 changes and for plan contracts.
+description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not an advisor moment. Metered (xai) and slow, about 10 minutes a run, so use it on request only. Use for T1/T2 changes and for plan contracts.
 mode: subagent
 model: xai/grok-4.7#high
 color: "#ff6b6b"
@@ -8,9 +8,6 @@ permissions:
   - action: edit
     resource: "*"
     effect: deny
-  - action: edit
-    resource: "/private/var/folders/cy/4_ykzyn94plgzgh4v_vwhzrh0000gn/T/opencode/*"
-    effect: allow
   - action: subagent
     resource: "*"
     effect: deny
@@ -55,33 +52,80 @@ permissions:
     effect: deny
   - { action: shell, resource: "*", effect: allow }
   - { action: shell, resource: "git push*", effect: deny }
-  - { action: shell, resource: "git * push*", effect: deny }
+  - { action: shell, resource: "git -* push*", effect: deny }
   - { action: shell, resource: "git commit*", effect: deny }
-  - { action: shell, resource: "git * commit*", effect: deny }
+  - { action: shell, resource: "git -* commit*", effect: deny }
   - { action: shell, resource: "git add*", effect: deny }
-  - { action: shell, resource: "git * add*", effect: deny }
+  - { action: shell, resource: "git -* add*", effect: deny }
   - { action: shell, resource: "git reset*", effect: deny }
-  - { action: shell, resource: "git * reset*", effect: deny }
+  - { action: shell, resource: "git -* reset*", effect: deny }
   - { action: shell, resource: "git checkout*", effect: deny }
-  - { action: shell, resource: "git * checkout*", effect: deny }
+  - { action: shell, resource: "git -* checkout*", effect: deny }
   - { action: shell, resource: "git switch*", effect: deny }
-  - { action: shell, resource: "git * switch*", effect: deny }
+  - { action: shell, resource: "git -* switch*", effect: deny }
   - { action: shell, resource: "git stash*", effect: deny }
-  - { action: shell, resource: "git * stash*", effect: deny }
+  - { action: shell, resource: "git -* stash*", effect: deny }
   - { action: shell, resource: "git clean*", effect: deny }
-  - { action: shell, resource: "git * clean*", effect: deny }
+  - { action: shell, resource: "git -* clean*", effect: deny }
   - { action: shell, resource: "git restore*", effect: deny }
-  - { action: shell, resource: "git * restore*", effect: deny }
+  - { action: shell, resource: "git -* restore*", effect: deny }
   - { action: shell, resource: "git worktree*", effect: deny }
-  - { action: shell, resource: "git * worktree*", effect: deny }
+  - { action: shell, resource: "git -* worktree*", effect: deny }
   - { action: shell, resource: "git config*", effect: deny }
-  - { action: shell, resource: "git * config*", effect: deny }
+  - { action: shell, resource: "git -* config*", effect: deny }
   - { action: shell, resource: "git rebase*", effect: deny }
-  - { action: shell, resource: "git * rebase*", effect: deny }
+  - { action: shell, resource: "git -* rebase*", effect: deny }
   - { action: shell, resource: "git merge*", effect: deny }
-  - { action: shell, resource: "git * merge*", effect: deny }
+  - { action: shell, resource: "git -* merge*", effect: deny }
   - { action: shell, resource: "git *--output*", effect: deny }
   - { action: shell, resource: "sudo *", effect: deny }
+  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block.
+  # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here.
+  - { action: shell, resource: "*git push*", effect: ask }
+  - { action: shell, resource: "*git -* push*", effect: ask }
+  - { action: shell, resource: "*git push*--force*", effect: deny }
+  - { action: shell, resource: "*git -* push*--force*", effect: deny }
+  - { action: shell, resource: "*git push* -f*", effect: deny }
+  - { action: shell, resource: "*git -* push* -f*", effect: deny }
+  - { action: shell, resource: "*git push* +*", effect: deny }
+  - { action: shell, resource: "*git -* push* +*", effect: deny }
+  - { action: shell, resource: "*git push*--delete*", effect: deny }
+  - { action: shell, resource: "*git -* push*--delete*", effect: deny }
+  - { action: shell, resource: "*git push*--mirror*", effect: deny }
+  - { action: shell, resource: "*git -* push*--mirror*", effect: deny }
+  - { action: shell, resource: "*git reset*--hard*", effect: deny }
+  - { action: shell, resource: "*git -* reset*--hard*", effect: deny }
+  - { action: shell, resource: "*git clean*", effect: deny }
+  - { action: shell, resource: "*git -* clean*", effect: deny }
+  - { action: shell, resource: "*rm -rf*", effect: deny }
+  - { action: shell, resource: "*rm -fr*", effect: deny }
+  - { action: shell, resource: "*rm -r -f*", effect: deny }
+  - { action: shell, resource: "*rm -f -r*", effect: deny }
+  - { action: shell, resource: "*rm --recursive*", effect: deny }
+  - { action: shell, resource: "*sudo *", effect: deny }
+  - { action: shell, resource: "*find*-delete*", effect: deny }
+  - { action: shell, resource: "*xargs*rm -rf*", effect: deny }
+  - { action: shell, resource: "*xargs*rm -fr*", effect: deny }
+  - { action: shell, resource: "*/.ssh/*", effect: deny }
+  - { action: shell, resource: "*~/.ssh*", effect: deny }
+  - { action: shell, resource: "*/.aws/*", effect: deny }
+  - { action: shell, resource: "*~/.aws*", effect: deny }
+  - { action: shell, resource: "*/.gnupg/*", effect: deny }
+  - { action: shell, resource: "*~/.gnupg*", effect: deny }
+  - { action: shell, resource: "*/.config/gh/*", effect: deny }
+  - { action: shell, resource: "*~/.config/gh*", effect: deny }
+  - { action: shell, resource: "*/.netrc*", effect: deny }
+  - { action: shell, resource: "*/.claude/.credentials.json*", effect: deny }
+  - { action: shell, resource: "*/.claude.json*", effect: deny }
+  - { action: shell, resource: "*/.grok/auth.json*", effect: deny }
+  - { action: shell, resource: "*/.grok/config.toml*", effect: deny }
+  - { action: shell, resource: "*/.local/share/opencode/auth.json*", effect: deny }
+  - { action: shell, resource: "*/.t3/userdata/statev2*", effect: deny }
+  - { action: shell, resource: "*/.claude/*", effect: deny }
+  - { action: shell, resource: "*service.json*", effect: deny }
+  - { action: shell, resource: "*auth.json*", effect: deny }
+  - { action: shell, resource: "*.netrc*", effect: deny }
+  # END managed by bin/sync-harness
 ---
 
 You verify one artifact — a **change** or a **plan** — and report its defects.
@@ -90,11 +134,14 @@ tests, read-only git, and a disposable probe. Assume the work is wrong until
 evidence says otherwise. Do not defend it, and do not talk yourself out of a
 defect you found: if it is real, report it.
 
-A hypothesis you can settle with a small program, settle. Write the probe under
-`/private/var/folders/cy/4_ykzyn94plgzgh4v_vwhzrh0000gn/T/opencode/` (that path
-is writable; the repository is not) and run it. Do not leave a finding as
-"possible" when a probe would prove or disprove it. Do not write into the
-repository, and do not commit, push, reset, or check out.
+A hypothesis you can settle with a small program, settle. Make a scratch
+directory with `mktemp -d`, take a disposable copy with
+`git clone --shared <repo> "$scratch/co"`, replay the working diff with
+`git diff HEAD | git -C "$scratch/co" apply`, copy any untracked files, and write
+and run the probe there.
+Do not leave a finding as "possible" when a probe would prove or disprove it.
+The edit tool is denied, but shell is not sandboxed, so the boundary is this rule:
+never write into the repository itself, and do not commit, push, reset, or check out.
 
 ## Scope
 

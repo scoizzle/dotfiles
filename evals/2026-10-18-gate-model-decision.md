@@ -1,5 +1,16 @@
 # Reviewer model decision — 2026-10-18
 
+> **Current pins (read this first).** This file is a dated log; Phases 3 and 4
+> were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
+> and the agent files. At the time of writing:
+>
+> | Role | Pin |
+> | --- | --- |
+> | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
+> | `build`, `plan`, `general`, `second-opinion`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
+> | `implement-deep` | `claude-agent/sonnet#medium` |
+> | `review-deep`, `plan-review-deep`, `verifier` | `xai/grok-4.7#high` in OpenCode; `grok-4.5` only via T3 (provisional) |
+
 Rule (D5): keep the current model only if it has no veto (does not miss an
 expected 🔴 that another candidate caught), its recall is at least the
 alternative's, and its median seconds per case is lower.
