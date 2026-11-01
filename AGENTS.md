@@ -14,6 +14,11 @@ Never ask the user to choose a tier or model.
 
 ### Classify
 
+Run `~/.config/opencode/bin/review-bundle <repo> --classify --paths <planned files>`
+before the first edit, and again with no `--paths` before review. It prints a tier
+floor and the reasons. You may raise the tier, never lower it; a T1 plan whose diff
+later floors at T2 is re-run as T2.
+
 - **T0:** no behaviour change, or one obvious mechanical edit; no public
   contract, data, security, or CI. Do it; run the check.
 - **T1:** one area, <=3 source files, <=400 lines, no public contract/data/
@@ -53,7 +58,9 @@ Never ask the user to choose a tier or model.
 ### Safety
 
 - Reviewers are read-only; never give them shell or edit.
-- Do not stage, commit, or push unless asked.
+- Do not stage, commit, or push unless asked. `git push` is `ask` in
+  `opencode.json`; force, delete, mirror, and `+refspec` pushes are denied. Never
+  run an unattended session with `--auto`: it approves every `ask`.
 - Keep diffs minimal and consistent with the surrounding code.
 - Use `explore` for broad searches; do not read the whole repo in the main
   context. `explore` stays on its cheap pin (Model routing).
@@ -98,21 +105,25 @@ off Claude; reserve it for `implement-deep`, which runs about once a day.
 | Cheap review | T1 diff review | `review-light`: `opencode-go/mimo-v2.6-flash` |
 | Builder | Default session and T0/T1 edits | `build`, `plan`, `general`: `opencode-go/deepseek-v4.1-flash#high` |
 | Builder | T2 implementation after plan-lock | `implement-deep`: `claude-agent/sonnet#medium` |
-| Procedural | Build, tests, coverage, contract grade | `verifier`: `xai/grok-4.7#high` |
+| Procedural | Build, tests, coverage, contract grade (manual; metered, about 10 minutes a run) | `verifier`: `xai/grok-4.7#high` |
 | Opposite | Independent T2 second look | `second-opinion`: `opencode-go/deepseek-v4.1-flash#high` |
-| Advisor | Deep judgment only | `plan-review-deep` and `review-deep`: T3 Grok provider on `grok-4.5` (provisional) |
+| Advisor | Deep judgment only | `plan-review-deep` and `review-deep`: `xai/grok-4.7#high` in OpenCode; `grok-4.5` only via T3 (provisional) |
 
 `explore` does every repo map, grep, and parallel read-only search, including
 while a builder or advisor session is open. Do not hand that work to
 `plan-review-deep`, `review-deep`, or `verifier`.
 
 **Where the advisor runs.** The Grok bots (Jarvis, Chieftan) are orchestrators
-only; they do not do repository work. Worker models are T3 child sessions, and
-the advisor pin runs through the T3 Grok provider on `grok-4.5`. The OpenCode
-YAML keeps `xai/grok-4.7#high` because that catalog stops at 4.7; when a job
-needs 4.5, run it through T3 rather than claiming an OpenCode pin the catalog
-cannot serve. `grok-4.5` is provisional: it beat 4.7 on three cases in one
-repository, one run per cell.
+only; worker models are T3 child sessions. Two routes exist and they differ:
+
+- **In this OpenCode setup** `plan-review-deep` and `review-deep` run on
+  `xai/grok-4.7#high`, which is metered, because the OpenCode catalog stops at 4.7.
+  This is what a `build` run actually launches.
+- **Through T3** the same jobs can run on `grok-4.5`, the provisional preferred
+  pin (it beat 4.7 on three cases in one repository, one run per cell). No
+  OpenCode agent routes there; a person or a T3 orchestrator starts it.
+
+Do not claim 4.5 for a run that went through the OpenCode agent.
 
 **opposite-lab.** The T3-side independent review of the same artifact, run on
 the T3 Grok provider. It buys a different execution context, not a different
@@ -154,6 +165,9 @@ Durable discoveries go to `memory/learnings/` as short constraints (`never`,
 `known`, `derived`, with a `harness`, `loop`, or `graph` tag) under the version
 header in `memory/learnings/README.md`: who, when in UTC, session or context
 id, and source.
+
+`dream` stages its output in `memory/learnings/pending/`, which agents do not
+read. A person promotes it with `~/.config/opencode/bin/dream --promote`.
 
 Do not rewrite memory in the middle of a task as a substitute for finishing
 the work. Curriculum updates are the out-of-band dream pass,

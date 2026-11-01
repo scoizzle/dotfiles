@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Check the permission policy of this opencode config, without running opencode.
+
+    lint-config [repo]            # default: the repo this script lives in
+
+It loads opencode.json and every agents/*.md, then evaluates concrete commands
+and paths against each agent's effective rules and fails when the policy in
+AGENTS.md and memory/core/safety.md is not what the rules actually produce.
+
+Assumption, stated because opencode does not document it in its schema: rules are
+ordered, the LAST matching rule wins, an agent's rules come after the global
+ones, `*` matches any characters including spaces and slashes, and no match
+means allow. The verifier's own rule order relies on the same reading. If
+opencode changes that, these checks are the first thing that should break.
+
+A text-matched denylist is not a security boundary (see docs/security-model.md).
+This catches regressions in the denylist; it does not prove the denylist is enough.
+"""
+from __future__ import annotations
+
+import fnmatch
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+EFFECTS = {"allow", "deny", "ask"}
+READ_ONLY = ("review-light", "review-deep", "plan-review-deep", "second-opinion", "dream-drafter")
+MACHINE_PATH = re.compile(r"/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|/private/var/folders|[A-Z]:\\Users\\")
+
+failures: list[str] = []
+
+
+def fail(message: str) -> None:
+    failures.append(message)
+
+
+def rule(action: str, resource: str, effect: str) -> tuple[str, str, str]:
+    return (action, resource, effect)
+
+
+def frontmatter(text: str) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
+    parts = text.split("---\n", 2)
+    if len(parts) < 3 or parts[0] != "":
+        return {}, []
+    scalars: dict[str, str] = {}
+    rules: list[tuple[str, str, str]] = []
+    current: dict[str, str] = {}
+    in_permissions = False
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            rules.append(rule(current.get("action", ""), current.get("resource", ""), current.get("effect", "")))
+        current = {}
+
+    for raw in parts[1].splitlines():
+        if re.match(r"^permissions:\s*$", raw):
+            in_permissions = True
+            continue
+        if in_permissions and raw.startswith(" "):
+            inline = re.match(r'^\s*-\s*\{\s*action:\s*(\S+?),\s*resource:\s*"([^"]*)",\s*effect:\s*(\w+)\s*\}\s*$', raw)
+            if inline:
+                flush()
+                rules.append(rule(*inline.groups()))
+                continue
+            item = re.match(r'^\s*(?:-\s+)?(action|resource|effect):\s*"?([^"]*?)"?\s*$', raw)
+            if item:
+                if raw.lstrip().startswith("- "):
+                    flush()
+                current[item.group(1)] = item.group(2)
+            continue
+        in_permissions = False
+        flush()
+        scalar = re.match(r"^([A-Za-z_]+):\s*(.*)$", raw)
+        if scalar:
+            scalars[scalar.group(1)] = scalar.group(2).strip().strip('"')
+    flush()
+    return scalars, rules
+
+
+def effective(rules: list[tuple[str, str, str]], action: str, text: str) -> str:
+    verdict = "allow"
+    for r_action, resource, effect in rules:
+        if r_action == action and fnmatch.fnmatchcase(text, resource):
+            verdict = effect
+    return verdict
+
+
+def main() -> int:
+    config = json.loads((ROOT / "opencode.json").read_text())
+    base = [rule(r["action"], r["resource"], r["effect"]) for r in config.get("permissions", [])]
+    for r in config.get("permissions", []):
+        if r["effect"] not in EFFECTS:
+            fail(f"opencode.json: bad effect {r['effect']!r}")
+
+    agents: dict[str, list[tuple[str, str, str]]] = {}
+    for name, body in config.get("agents", {}).items():
+        agents[name] = base + [rule(r["action"], r["resource"], r["effect"]) for r in body.get("permissions", [])]
+    for path in sorted((ROOT / "agents").glob("*.md")):
+        scalars, rules = frontmatter(path.read_text())
+        name = path.stem
+        for key in ("description", "model", "steps"):
+            if not scalars.get(key):
+                fail(f"agents/{path.name}: missing {key}")
+        if scalars.get("model") and not re.fullmatch(r"[^/#]+/[^#]+(#[^#]+)?", scalars["model"]):
+            fail(f"agents/{path.name}: model {scalars['model']!r} is not provider/model[#variant]")
+        for r in rules:
+            if r[2] not in EFFECTS:
+                fail(f"agents/{path.name}: bad effect {r[2]!r}")
+        agents[name] = base + rules
+    agents.setdefault("(global)", base)
+
+    never_push = (
+        "git push --force", "git push -f", "git push origin main --force", "git push origin main -f",
+        "git push -u origin main -f", "git push origin +main", "git push origin --delete main",
+        "git push --mirror", 'sh -c "git push --force"', "git -C . push --force",
+    )
+    never_run = ("git reset --hard", "git clean -fd", "rm -rf x", "rm -fr x", "rm -r -f x", "sudo ls")
+    never_shell_read = ("cat ~/.ssh/id_rsa", "cat ~/.aws/credentials", "cat ~/.claude/.credentials.json",
+                        "cat ~/.local/share/opencode/auth.json", "cat ~/.config/gh/hosts.yml")
+    never_read = ("~/.ssh/id_rsa", "~/.aws/credentials", "~/.claude/.credentials.json",
+                  "~/.local/share/opencode/auth.json", "/work/.env", ".env", ".env.local", "/work/service.json")
+
+    for name, rules in sorted(agents.items()):
+        for command in never_push:
+            if effective(rules, "shell", command) != "deny":
+                fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
+        if effective(rules, "shell", "git push origin feature") == "allow":
+            fail(f"{name}: plain `git push` is allow; it must be ask or deny")
+        for command in never_run + never_shell_read:
+            if effective(rules, "shell", command) != "deny":
+                fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
+        for target in never_read:
+            if effective(rules, "read", target) != "deny":
+                fail(f"{name}: read {target} is {effective(rules, 'read', target)}, must be deny")
+        if effective(rules, "read", "src/x.cs") != "deny" and effective(rules, "read", "/work/.env.example") == "deny":
+            fail(f"{name}: .env.example should stay readable")
+        for target in ("memory/core/safety.md", "/home/u/.config/opencode/memory/core/safety.md"):
+            if effective(rules, "edit", target) != "deny":
+                fail(f"{name}: edit {target} is {effective(rules, 'edit', target)}, must be deny")
+
+    for name in READ_ONLY:
+        rules = agents.get(name)
+        if rules is None:
+            fail(f"read-only agent {name} has no agents/{name}.md")
+            continue
+        for action, sample in (("edit", "src/x.cs"), ("shell", "ls"), ("subagent", "explore")):
+            if effective(rules, action, sample) != "deny":
+                fail(f"{name}: {action} must be deny")
+    if "dream-drafter" in agents and effective(agents["dream-drafter"], "read", "src/x.cs") != "deny":
+        fail("dream-drafter: read must be deny; it handles untrusted text")
+
+    explore = agents.get("explore")
+    if explore is not None and effective(explore, "edit", "src/x.cs") != "deny":
+        fail("explore: edit must be deny; it is the read-only swarm")
+
+    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle"):
+        target = ROOT / rel
+        files = [target] if target.is_file() else sorted(p for p in target.rglob("*") if p.is_file())
+        for file in files:
+            for number, line in enumerate(file.read_text(errors="replace").splitlines(), 1):
+                if MACHINE_PATH.search(line):
+                    fail(f"{file.relative_to(ROOT)}:{number}: machine-specific path")
+
+    dream = (ROOT / "bin" / "dream").read_text()
+    argv = re.search(r"OPENCODE_ARGV = \(([^)]*)\)", dream)
+    if not argv or '"--auto"' in argv.group(1) or '"dream-drafter"' not in argv.group(1):
+        fail("bin/dream: must draft with --agent dream-drafter and without --auto")
+
+    if failures:
+        print("lint-config: FAIL")
+        for message in failures:
+            print(f"  - {message}")
+        return 1
+    print(f"lint-config: ok ({len(agents)} agents checked)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

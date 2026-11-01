@@ -1,5 +1,5 @@
 ---
-description: Expensive read-only T2 change reviewer and sign-off advisor. Reviews a diff and its check output against the plan and done-when, including callers, contracts, and missing tests. Use for T2 change review only, not for repo search.
+description: Expensive read-only T2 change reviewer and sign-off advisor. Reviews a diff and its check output against the plan and done-when, including callers, contracts, and missing tests. Use for T2 change review only, not for repo search. Runs on metered xai/grok-4.7 here; the grok-4.5 route is a manual T3 run (see AGENTS.md).
 mode: subagent
 model: xai/grok-4.7#high
 steps: 40

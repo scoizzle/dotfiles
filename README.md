@@ -13,6 +13,9 @@ stays on the cheap flash pin for repo search, the builder pins implement, and
 the expensive advisor pin is only for plan-lock, a repeated error, and T2
 sign-off.
 
+Permissions are checked by `bin/lint-config` in CI, and the limits of a text-matched
+denylist are in [`docs/security-model.md`](docs/security-model.md).
+
 ## Install on a new machine
 
 **From a bare box** (no git, no dotnet — just a shell and curl):
@@ -64,7 +67,7 @@ back here.
 | `commands/`     | slash commands                                     |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   |
 | `memory/`       | bookshelf, read-only core, learnings format         |
-| `bin/`          | `review-bundle`, `review-log`, `smoke-workflow`, `dream` |
+| `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config` |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      |
 
 How the bookshelf and the out-of-band dream pass fit together is in

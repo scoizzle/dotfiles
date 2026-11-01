@@ -1,5 +1,5 @@
 ---
-description: Expensive read-only T2 plan reviewer and plan-lock advisor. Checks a plan against the repository, its done-when, test-first, step order, call sites, and scope. Use only before a T2 plan locks, not for repo search.
+description: Expensive read-only T2 plan reviewer and plan-lock advisor. Checks a plan against the repository, its done-when, test-first, step order, call sites, and scope. Use only before a T2 plan locks, not for repo search. Runs on metered xai/grok-4.7 here; the grok-4.5 route is a manual T3 run (see AGENTS.md).
 mode: subagent
 model: xai/grok-4.7#high
 steps: 40

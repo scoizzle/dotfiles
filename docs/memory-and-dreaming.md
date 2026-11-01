@@ -27,7 +27,8 @@ A failure paid for inside a session is written down as a constraint. The next se
 | `memory/INDEX.md` | bookshelf |
 | `memory/core/` | read-only conventions and safety |
 | `memory/learnings/README.md` | append format |
-| `memory/learnings/YYYY-MM-DD.md` | local lessons, gitignored |
+| `memory/learnings/pending/YYYY-MM-DD.md` | staged by dream, unreviewed, not read by agents |
+| `memory/learnings/YYYY-MM-DD.md` | promoted lessons, gitignored |
 | `~/.config/opencode/bin/dream` | the out-of-band pass |
 | `commands/dream.md` | `/dream`, which points at that script |
 
@@ -76,8 +77,21 @@ The session store is the one `evals/scoreboard.py` opens: `~/.local/share/openco
 When there is something to learn, dream drafts with the local `opencode` login. The invocation is:
 
 ```sh
-opencode run --standalone --format json --auto -m opencode-go/deepseek-v4.1-flash <prompt>
+opencode run --standalone --format json --agent dream-drafter -m opencode-go/deepseek-v4.1-flash <prompt>
 ```
+
+`dream-drafter` denies every tool and there is no `--auto`, because the digest quotes tool output and error text that a third party may have written. Before the prompt leaves the machine the digest is redacted for credential shapes and framed as untrusted data; every returned line is length-limited and checked for URLs, fetch-and-run, and injection phrasing. See `docs/security-model.md`.
+
+### Staging and promotion
+
+Dream never writes the files agents read. It stages the block in `memory/learnings/pending/YYYY-MM-DD.md`:
+
+```sh
+~/.config/opencode/bin/dream --promote --dry-run   # show what is pending
+~/.config/opencode/bin/dream --promote             # show, ask, then append to learnings/YYYY-MM-DD.md
+```
+
+`--promote` re-validates every line (so an edited pending file cannot smuggle one in), asks on a terminal, and refuses without `--yes` when there is no terminal. A cron job therefore leaves a review queue, not new instructions.
 
 The model is pinned so a change to the top-level `opencode.json` model cannot move this nightly job onto Claude quota. `--model` or `DREAM_MODEL` overrides it. The prompt is fixed in `bin/dream`. It asks for markdown constraint lines in the learnings format and tells the model not to edit files. The script does not read API keys. If `opencode` is not on `PATH`, dream exits with a short hint and writes nothing. Run it from cron only after `opencode` is installed and logged in on that machine.
 
