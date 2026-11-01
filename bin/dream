@@ -1,0 +1,1211 @@
+#!/usr/bin/env python3
+"""Out-of-band learning pass: recent opencode sessions become learnings constraints.
+
+    dream                         # last 24h, append today's learnings file
+    dream --since 48h             # duration, or an ISO date (UTC)
+    dream --sessions 10           # cap sessions inside the window
+    dream --dry-run               # print the proposed append, write nothing
+    dream --db PATH               # override the opencode session store
+    dream --source auto|t3|opencode  # which stores to read (default auto)
+    dream --t3-db PATH            # override the T3 store
+    dream --model provider/model  # drafting model
+
+The opencode store is the one evals/scoreboard.py uses:
+~/.local/share/opencode/opencode.db, table session_v2, messages in
+session_message. A missing store prints that path and appends nothing.
+
+T3 keeps a second record for the threads it launches itself. `auto` reads
+opencode.db plus the T3 `grok` and `claudeAgent` threads, which never appear in
+opencode.db. T3 `opencode` threads are skipped because their work is already in
+opencode.db. `--source t3` reads only the T3 projection, all providers.
+
+Drafting calls the local opencode binary. This script does not read API keys.
+The invocation is:
+
+    opencode run --standalone --format json --auto -m <model> <prompt>
+
+Lessons are appended to ~/.config/opencode/memory/learnings/YYYY-MM-DD.md.
+memory/core/ is never written.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# Same default as evals/scoreboard.py. --db overrides it. Do not invent a
+# second location; XDG and OPENCODE_DB are opencode's own knobs, and the
+# scoreboard does not read them.
+DEFAULT_DB = "~/.local/share/opencode/opencode.db"
+DEFAULT_T3_DB = "~/.t3/userdata/statev2.sqlite"
+DEFAULT_MEMORY = "~/.config/opencode/memory"
+DEFAULT_SINCE = "24h"
+DEFAULT_SESSIONS = 50
+# Pinned so a change to the top-level opencode model cannot move this nightly
+# pass onto scarce Claude quota. --model or DREAM_MODEL overrides it.
+DEFAULT_MODEL = "opencode-go/deepseek-v4.1-flash"
+OPENCODE_ARGV = ("run", "--standalone", "--format", "json", "--auto")
+T3_PROVIDERS = ("grok", "claudeAgent")
+T3_THREADS = "orchestration_v2_projection_provider_threads"
+T3_MESSAGES = "orchestration_v2_projection_messages"
+T3_ITEMS = "orchestration_v2_projection_turn_items"
+DIGEST_LIMIT = 12000
+MESSAGE_CHARS = 1500
+RECORDED_LIMIT = 80
+
+CONSTRAINT = re.compile(
+    r"^\s*(?:[-*]\s*)?(never|known|derived):\s+(\S.*?)\s+\[(harness|loop|graph)\]\s*$",
+    re.IGNORECASE,
+)
+SINCE_DURATION = re.compile(r"^(\d+)([mhd])$", re.IGNORECASE)
+DATED_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+PATH_MARKERS = re.compile(
+    r"(?:No such file or directory|FileNotFoundError|ENOENT)"
+    r"(?::\s*|\s+)'?([^'\s\"]+)'?",
+    re.IGNORECASE,
+)
+
+PROMPT_HEAD = """DREAM-PASS
+You are updating durable memory for an opencode harness. Reply with markdown constraint lines only. Do not use tools. Do not edit files. Do not repeat a line that is already recorded.
+
+Lessons are constraints, not transcripts. One line each:
+- never: a dead approach. Do not retry it.
+- known: a durable fact.
+- derived: a rule that should change how the next piece of work is cut (the brief or the splitter), not advice stuffed into a worker prompt.
+
+End every line with the layer that owns it: [harness], [loop], or [graph].
+- harness: config, tools, installer, memory layout.
+- loop: a repeated step inside one task (fix, test, retry).
+- graph: how work is split across agents or review gates.
+
+Skip one-offs. If the digest has no durable lesson, reply with exactly: (none)
+
+Digest:
+"""
+
+
+def now_utc() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def parse_since(value: str, now: datetime.datetime) -> int:
+    """Return a UTC epoch-millisecond lower bound. Matches scoreboard's time_created unit."""
+    match = SINCE_DURATION.fullmatch(value.strip())
+    if match:
+        count = int(match.group(1))
+        unit = match.group(2).lower()
+        seconds = {"m": 60, "h": 3600, "d": 86400}[unit] * count
+        return int((now.timestamp() - seconds) * 1000)
+
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        raise SystemExit(
+            f"--since {value!r} is not a duration (30m, 24h, 7d) or an ISO-8601 date"
+        ) from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+def sha256_file(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def connect_ro(path: str) -> sqlite3.Connection:
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    try:
+        return sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as error:
+        raise SystemExit(f"cannot read session store at {path}: {error}") from None
+
+
+def tables(connection: sqlite3.Connection) -> set[str]:
+    rows = connection.execute(
+        "select name from sqlite_master where type = 'table'"
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def columns(connection: sqlite3.Connection, table: str) -> list[str]:
+    rows = connection.execute(f"pragma table_info({table})").fetchall()
+    return [row[1] for row in rows]
+
+
+def iso_z(milliseconds: int) -> str:
+    moment = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def epoch_ms(text: object) -> int:
+    if not isinstance(text, str) or not text:
+        return 0
+    try:
+        moment = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return int(moment.timestamp() * 1000)
+
+
+def connect_t3(path: str) -> sqlite3.Connection | None:
+    """Open the T3 store read-only, or None when it is absent or unreadable."""
+    if not os.path.exists(path):
+        return None
+    try:
+        connection = connect_ro(path)
+        connection.execute("pragma busy_timeout = 5000")
+        return connection
+    except (sqlite3.Error, SystemExit) as error:
+        print(f"t3 store unreadable at {path}: {error}", file=sys.stderr)
+        return None
+
+
+def t3_shape_ok(connection: sqlite3.Connection) -> bool:
+    """The projection is T3-internal. Probe the shape instead of assuming it."""
+    present = tables(connection)
+    if not {T3_THREADS, T3_MESSAGES, T3_ITEMS} <= present:
+        return False
+    required = {
+        T3_THREADS: ("provider_thread_id", "thread_id", "provider", "status", "updated_at", "payload_json"),
+        T3_MESSAGES: ("thread_id", "role", "created_at", "payload_json"),
+        T3_ITEMS: ("thread_id", "provider_thread_id", "type", "status", "ordinal", "payload_json"),
+    }
+    return all(
+        column in columns(connection, table)
+        for table, names in required.items()
+        for column in names
+    )
+
+
+def t3_bound_sessions(connection: sqlite3.Connection) -> set[str]:
+    """opencode session ids T3 already holds as provider=opencode threads."""
+    rows = connection.execute(
+        f"select json_extract(payload_json, '$.nativeThreadRef.nativeId') "
+        f"from {T3_THREADS} where provider = 'opencode'"
+    ).fetchall()
+    return {row[0] for row in rows if isinstance(row[0], str) and row[0]}
+
+
+def t3_threads(
+    connection: sqlite3.Connection,
+    since_iso: str,
+    limit: int,
+    providers: tuple[str, ...] | None,
+    exclude_native_ids: tuple[str, ...] = (),
+) -> list[tuple]:
+    # thread_id is the orchestration thread and is shared by provider rows.
+    # provider_thread_id is the unique row and the key turn items carry.
+    sql = (
+        f"select provider_thread_id, thread_id, provider, status, updated_at, payload_json "
+        f"from {T3_THREADS} where updated_at >= ?"
+    )
+    params: list[object] = [since_iso]
+    if providers:
+        sql += " and provider in (" + ",".join("?" for _ in providers) + ")"
+        params.extend(providers)
+    if exclude_native_ids:
+        # Exclude bound mirrors in SQL so they cannot consume the LIMIT and
+        # starve an older unbound mirror.
+        sql += (
+            " and (provider != 'opencode' or coalesce("
+            "json_extract(payload_json, '$.nativeThreadRef.nativeId'), '') not in ("
+            + ",".join("?" for _ in exclude_native_ids)
+            + "))"
+        )
+        params.extend(exclude_native_ids)
+    sql += " order by updated_at desc limit ?"
+    params.append(limit)
+    return connection.execute(sql, params).fetchall()
+
+
+def t3_skipped_count(
+    connection: sqlite3.Connection, since_iso: str, native_ids: tuple[str, ...]
+) -> int:
+    if not native_ids:
+        return 0
+    placeholders = ",".join("?" for _ in native_ids)
+    row = connection.execute(
+        f"select count(*) from {T3_THREADS} where updated_at >= ? and provider = 'opencode' "
+        f"and json_extract(payload_json, '$.nativeThreadRef.nativeId') in ({placeholders})",
+        (since_iso, *native_ids),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def t3_session(row: tuple) -> dict:
+    provider_thread_id, thread_id, provider, _status, updated_at, _payload = row
+    when = epoch_ms(updated_at)
+    return {
+        "id": f"t3:{provider_thread_id or thread_id}",
+        "title": None,
+        "directory": None,
+        "agent": provider,
+        "time_created": when,
+        "time_updated": when,
+        # provider_threads.status is only active/idle; failures come from items.
+        "idle_outcome": None,
+        "parent_id": None,
+        "cost": 0.0,
+        "schema": "t3",
+        "provider": provider,
+    }
+
+
+def t3_native_id(raw: object) -> str:
+    payload = parse_data(raw)
+    ref = payload.get("nativeThreadRef")
+    if isinstance(ref, dict):
+        value = ref.get("nativeId")
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def t3_text(value: object) -> str:
+    """Pull the useful message out of a T3 string or nested output object."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("output_for_prompt", "FileNotFound", "message", "error", "output", "text"):
+            found = value.get(key)
+            if isinstance(found, str) and found.strip():
+                return found.strip()
+            if isinstance(found, dict):
+                nested = t3_text(found)
+                if nested:
+                    return nested
+    return ""
+
+
+def t3_missing(text: str) -> str:
+    """T3 says 'File not found' and 'does not exist'; PATH_MARKERS does not."""
+    if not text or "No such file or directory" in text:
+        return text
+    match = re.search(
+        r"(?:File not found|FileNotFound)[:\s]+['\"]?(?:Error:\s*)?([^'\"\s]+)", text
+    )
+    if match:
+        return f"No such file or directory: {match.group(1)}"
+    match = re.search(r"([^\s'\"]+)\s+does not exist", text)
+    if match:
+        return f"No such file or directory: {match.group(1)}"
+    return text
+
+
+def t3_command(value: object) -> str:
+    if isinstance(value, str):
+        return " ".join(value.split())
+    if isinstance(value, dict):
+        for key in ("command", "cmd", "path", "target_file", "file_path"):
+            found = value.get(key)
+            if isinstance(found, str) and found.strip():
+                return " ".join(found.split())
+    return ""
+
+
+def t3_status(failed: bool, status: str) -> str:
+    if failed:
+        return "error"
+    return status or "completed"
+
+
+T3_ITEM_TYPES = (
+    "command_execution",
+    "file_change",
+    "dynamic_tool",
+    "error",
+    "assistant_message",
+    "user_message",
+    "subagent",
+    "file_search",
+    "web_search",
+)
+
+
+def t3_event(kind: str, status: str, payload: dict) -> dict | None:
+    """Map one T3 turn item onto the event shape collect_patterns reads."""
+    failed = status == "failed"
+    if kind == "command_execution":
+        code = payload.get("exitCode")
+        failed = failed or (isinstance(code, int) and code != 0)
+        error = t3_missing(t3_text(payload.get("output"))) if failed else ""
+        return {
+            "name": "shell",
+            "status": t3_status(failed, status),
+            "command": t3_command(payload.get("input")),
+            "error": error[:180],
+        }
+    if kind == "file_change":
+        return {
+            "name": "edit",
+            "status": t3_status(failed, status),
+            "command": str(payload.get("fileName") or ""),
+            "error": "",
+        }
+    if kind == "dynamic_tool":
+        error = t3_missing(t3_text(payload.get("output"))) if failed else ""
+        return {
+            "name": str(payload.get("toolName") or "tool"),
+            "status": t3_status(failed, status),
+            "command": t3_command(payload.get("input")),
+            "error": error[:180],
+        }
+    if kind == "error":
+        failure = payload.get("failure") if isinstance(payload.get("failure"), dict) else {}
+        message = t3_missing(t3_text(failure.get("message") or payload.get("title")))
+        return {
+            "name": str(failure.get("class") or "error"),
+            "status": "error",
+            "command": "",
+            "error": message[:180],
+        }
+    if failed:
+        failure = payload.get("failure") if isinstance(payload.get("failure"), dict) else {}
+        message = t3_missing(
+            t3_text(failure.get("message") or payload.get("output") or payload.get("title"))
+        )
+        return {
+            "name": kind,
+            "status": "error",
+            "command": t3_command(payload.get("input")),
+            "error": message[:180],
+        }
+    return None
+
+
+def t3_blob(
+    connection: sqlite3.Connection,
+    provider_thread_id: str,
+    thread_id: str,
+    include_messages: bool,
+) -> tuple[str, list[dict], bool]:
+    """Plain text, tool events, and whether this thread is itself a dream pass."""
+    texts: list[str] = []
+    if include_messages:
+        for role, raw in connection.execute(
+            f"select role, payload_json from {T3_MESSAGES} where thread_id = ? order by created_at",
+            (thread_id,),
+        ).fetchall():
+            payload = parse_data(raw)
+            text = payload.get("text")
+            if isinstance(text, str) and text:
+                texts.append(f"{role or 'message'}: {text[:MESSAGE_CHARS]}")
+
+    events: list[dict] = []
+    placeholders = ",".join("?" for _ in T3_ITEM_TYPES)
+    items = connection.execute(
+        f"select type, status, payload_json from {T3_ITEMS} "
+        f"where thread_id = ? and provider_thread_id = ? and type in ({placeholders}) "
+        "order by ordinal",
+        (thread_id, provider_thread_id, *T3_ITEM_TYPES),
+    ).fetchall()
+    for kind, status, raw in items:
+        payload = parse_data(raw)
+        if kind in ("assistant_message", "user_message"):
+            # Messages carry the same text; only fall back when the message
+            # table has nothing for this thread.
+            if not texts:
+                text = payload.get("text")
+                if isinstance(text, str) and text:
+                    texts.append(f"{kind}: {text[:MESSAGE_CHARS]}")
+            continue
+        event = t3_event(str(kind), str(status or ""), payload)
+        if event is not None:
+            events.append(event)
+
+    joined = "\n".join(texts)
+    if "DREAM-PASS" in joined:
+        return "", [], True
+    return joined[: MESSAGE_CHARS * 4], events, False
+
+
+def load_sessions(
+    connection: sqlite3.Connection, since_ms: int, limit: int
+) -> tuple[str, list[dict]]:
+    """Return (schema, sessions). schema is session_v2 or the legacy session table."""
+    present = tables(connection)
+    if "session_v2" in present:
+        table = "session_v2"
+    elif "session" in present:
+        table = "session"
+    else:
+        raise SystemExit(
+            "session store has neither session_v2 nor session. "
+            f"Expected the schema evals/scoreboard.py reads ({DEFAULT_DB})."
+        )
+
+    available = columns(connection, table)
+    if "id" not in available or "time_created" not in available:
+        raise SystemExit(f"{table} is missing id or time_created")
+
+    wanted = [
+        "id",
+        "title",
+        "directory",
+        "agent",
+        "time_created",
+        "time_updated",
+        "idle_outcome",
+        "parent_id",
+        "cost",
+    ]
+    selected = [name for name in wanted if name in available]
+    sql = (
+        f"select {', '.join(selected)} from {table} "
+        "where time_created >= ? order by time_created desc limit ?"
+    )
+    try:
+        rows = connection.execute(sql, (since_ms, limit)).fetchall()
+    except sqlite3.Error as error:
+        raise SystemExit(f"query failed on {table}: {error}") from None
+
+    sessions = []
+    for row in rows:
+        item = dict(zip(selected, row))
+        item["schema"] = table
+        sessions.append(item)
+    return table, sessions
+
+
+def message_rows(connection: sqlite3.Connection, session_id: str, schema: str) -> list[dict]:
+    present = tables(connection)
+    if schema == "session_v2" and "session_message" in present:
+        return _rows(
+            connection,
+            "session_message",
+            "session_id",
+            session_id,
+            order_candidates=("seq", "time_created", "id"),
+        )
+    if "message" in present:
+        return _rows(
+            connection,
+            "message",
+            "session_id",
+            session_id,
+            order_candidates=("time_created", "id"),
+        )
+    return []
+
+
+def _rows(
+    connection: sqlite3.Connection,
+    table: str,
+    key: str,
+    value: str,
+    order_candidates: tuple[str, ...],
+) -> list[dict]:
+    available = columns(connection, table)
+    if key not in available or "data" not in available:
+        return []
+    order = next((name for name in order_candidates if name in available), None)
+    wanted = [name for name in ("id", "type", "data") if name in available]
+    if "data" not in wanted:
+        return []
+    sql = f"select {', '.join(wanted)} from {table} where {key} = ?"
+    if order:
+        sql += f" order by {order}"
+    try:
+        fetched = connection.execute(sql, (value,)).fetchall()
+    except sqlite3.Error:
+        return []
+    return [dict(zip(wanted, row)) for row in fetched]
+
+
+def part_rows(connection: sqlite3.Connection, message_id: str) -> list[dict]:
+    present = tables(connection)
+    table = "session_part" if "session_part" in present else "part" if "part" in present else ""
+    if not table:
+        return []
+    return _rows(
+        connection,
+        table,
+        "message_id",
+        message_id,
+        order_candidates=("ordinal", "time_created", "id"),
+    )
+
+
+def parse_data(raw: object) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def error_text(error: object) -> str:
+    if error is None:
+        return ""
+    if isinstance(error, str):
+        return error.strip()
+    if isinstance(error, dict):
+        for key in ("message", "reason"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        data = error.get("data")
+        if isinstance(data, dict):
+            message = data.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        name = error.get("name") or error.get("type")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return ""
+
+
+def command_of(state: dict) -> str:
+    raw = state.get("input")
+    if isinstance(raw, str):
+        return " ".join(raw.split())
+    if isinstance(raw, dict):
+        for key in ("command", "cmd"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                return " ".join(value.split())
+    return ""
+
+
+def tool_events(payload: dict) -> list[dict]:
+    content = payload.get("content")
+    items = content if isinstance(content, list) else []
+    events = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") not in (None, "tool"):
+            continue
+        if item.get("type") != "tool" and "state" not in item:
+            continue
+        state = item.get("state") if isinstance(item.get("state"), dict) else {}
+        name = item.get("name") or item.get("tool") or "tool"
+        if not isinstance(name, str):
+            name = "tool"
+        events.append(
+            {
+                "name": name,
+                "status": str(state.get("status") or ""),
+                "error": error_text(state.get("error")) or error_text(item.get("error")),
+                "command": command_of(state),
+            }
+        )
+    return events
+
+
+def text_bits(payload: dict) -> list[str]:
+    bits = []
+    if isinstance(payload.get("text"), str):
+        bits.append(payload["text"])
+    content = payload.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                bits.append(item["text"])
+    summary = payload.get("summary")
+    if isinstance(summary, str):
+        bits.append(summary)
+    err = error_text(payload.get("error"))
+    if err:
+        bits.append(err)
+    return bits
+
+
+def session_blob(connection: sqlite3.Connection, session: dict) -> tuple[str, list[dict], bool]:
+    """Plain text, tool events, and whether this session is itself a dream pass."""
+    texts: list[str] = []
+    events: list[dict] = []
+    for message in message_rows(connection, str(session["id"]), session["schema"]):
+        payload = parse_data(message.get("data"))
+        kind = message.get("type") or payload.get("role") or ""
+        bits = text_bits(payload)
+        found = tool_events(payload)
+        if not bits and not found and message.get("id"):
+            for part in part_rows(connection, str(message["id"])):
+                part_payload = parse_data(part.get("data"))
+                bits.extend(text_bits(part_payload))
+                found.extend(tool_events({"content": [part_payload]}))
+        blob = "\n".join(bits)
+        if "DREAM-PASS" in blob:
+            return "", [], True
+        if blob:
+            texts.append(f"{kind}: {blob[:MESSAGE_CHARS]}")
+        events.extend(found)
+    joined = "\n".join(texts)
+    if "DREAM-PASS" in joined:
+        return "", [], True
+    return joined[: MESSAGE_CHARS * 4], events, False
+
+
+def normalize_sig(text: str) -> str:
+    collapsed = " ".join(text.split())
+    return collapsed[:180]
+
+
+def note_path(paths: dict[str, int], found: str) -> None:
+    cleaned = found.strip().rstrip(".,);")
+    if cleaned and cleaned not in (".", "..") and not cleaned.startswith("-"):
+        paths[cleaned] = paths.get(cleaned, 0) + 1
+
+
+def collect_patterns(sessions: list[dict], details: list[tuple[dict, str, list[dict]]]) -> dict:
+    failures: dict[str, int] = {}
+    commands: dict[str, dict[str, int]] = {}
+    paths: dict[str, int] = {}
+    workarounds: list[str] = []
+    failed_idle: list[str] = []
+    singles_seen: dict[str, int] = {}
+
+    for session, _text, events in details:
+        saw_shell_error = False
+        saw_shell_ok_after = False
+        failed_cmd = ""
+        for event in events:
+            signature = normalize_sig(
+                f"{event['name']}: {event['error'] or event['command'] or event['status']}"
+            )
+            status = event["status"].lower()
+            errored = status == "error" or bool(event["error"])
+            if errored and signature.strip():
+                failures[signature] = failures.get(signature, 0) + 1
+                singles_seen[signature] = singles_seen.get(signature, 0) + 1
+            command = event["command"]
+            if command:
+                bucket = commands.setdefault(command[:180], {"error": 0, "ok": 0})
+                if errored:
+                    bucket["error"] += 1
+                elif status in ("completed", "ok", "success"):
+                    bucket["ok"] += 1
+            for found in PATH_MARKERS.findall(f"{event['error']} {event['command']}"):
+                note_path(paths, found)
+            if event["name"] in ("shell", "bash") and errored:
+                saw_shell_error = True
+                failed_cmd = command or event["error"]
+            elif (
+                event["name"] in ("shell", "bash")
+                and status in ("completed", "ok", "success")
+                and saw_shell_error
+            ):
+                saw_shell_ok_after = True
+        for found in PATH_MARKERS.findall(_text):
+            note_path(paths, found)
+        if saw_shell_error and saw_shell_ok_after:
+            title = session.get("title") or session.get("id")
+            workarounds.append(
+                f"{session.get('id')}: shell failed ({normalize_sig(failed_cmd) or 'unknown'}), a later shell completed ({title})"
+            )
+        if session.get("idle_outcome") == "failed":
+            failed_idle.append(
+                f"{session.get('id')} agent={session.get('agent') or '(none)'} title={session.get('title') or ''}"
+            )
+
+    repeated = sorted(
+        ((count, sig) for sig, count in failures.items() if count >= 2),
+        reverse=True,
+    )
+    flaky = sorted(
+        (
+            f"{cmd}  failed {counts['error']}, completed {counts['ok']}"
+            for cmd, counts in commands.items()
+            if counts["error"] and counts["ok"]
+        )
+    )
+    single = sorted(
+        ((count, sig) for sig, count in singles_seen.items() if count == 1),
+        reverse=True,
+    )
+    return {
+        "repeated": [f"{count}× {sig}" for count, sig in repeated[:12]],
+        "flaky": flaky[:8],
+        "paths": [f"{path} ({count})" for path, count in sorted(paths.items(), key=lambda item: -item[1])[:12]],
+        "workarounds": workarounds[:8],
+        "failed_idle": failed_idle[:12],
+        "single": [sig for _count, sig in single[:8]],
+    }
+
+
+def digest_lines(
+    store: str,
+    since_ms: int,
+    schema: str,
+    sessions: list[dict],
+    patterns: dict,
+    recorded: list[str],
+) -> str:
+    since = datetime.datetime.fromtimestamp(since_ms / 1000, datetime.timezone.utc).isoformat()
+    lines = [
+        f"store: {store}",
+        f"schema: {schema}",
+        f"since: {since}",
+        f"sessions: {len(sessions)}",
+        "",
+        "repeated failures:",
+    ]
+    lines.extend(f"- {item}" for item in patterns["repeated"] or ["(none)"])
+    lines.append("")
+    lines.append("flaky commands:")
+    lines.extend(f"- {item}" for item in patterns["flaky"] or ["(none)"])
+    lines.append("")
+    lines.append("missing paths:")
+    lines.extend(f"- {item}" for item in patterns["paths"] or ["(none)"])
+    lines.append("")
+    lines.append("possible workarounds (shell failed, a later shell completed):")
+    lines.extend(f"- {item}" for item in patterns["workarounds"] or ["(none)"])
+    lines.append("")
+    lines.append("sessions that ended failed:")
+    lines.extend(f"- {item}" for item in patterns["failed_idle"] or ["(none)"])
+    lines.append("")
+    lines.append("single failures (usually skip):")
+    lines.extend(f"- {item}" for item in patterns["single"] or ["(none)"])
+    if recorded:
+        lines.append("")
+        lines.append("already recorded:")
+        lines.extend(recorded[-RECORDED_LIMIT:])
+    text = "\n".join(lines)
+    if len(text) > DIGEST_LIMIT:
+        text = text[:DIGEST_LIMIT] + "\n...(digest truncated)"
+    return text
+
+
+def has_signal(patterns: dict) -> bool:
+    # A one-off tool error is listed in the digest when something else already
+    # qualifies. On its own it is not worth a draft.
+    return any(patterns[key] for key in ("repeated", "flaky", "paths", "workarounds", "failed_idle"))
+
+
+def recorded_lines(learnings: Path) -> list[str]:
+    if not learnings.is_dir():
+        return []
+    found: list[str] = []
+    for path in sorted(learnings.glob("*.md")):
+        if path.name in ("README.md",):
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            match = CONSTRAINT.match(line)
+            if match:
+                found.append(format_constraint(match))
+    return found
+
+
+def format_constraint(match: re.Match[str]) -> str:
+    kind, body, layer = match.group(1).lower(), match.group(2).strip(), match.group(3).lower()
+    return f"- {kind}: {body} [{layer}]"
+
+
+def constraint_lines(text: str) -> list[str]:
+    lines = []
+    for raw in text.splitlines():
+        match = CONSTRAINT.match(raw)
+        if match:
+            lines.append(format_constraint(match))
+    # Keep order, drop duplicates.
+    seen = set()
+    unique = []
+    for line in lines:
+        if line not in seen:
+            seen.add(line)
+            unique.append(line)
+    return unique
+
+
+def model_text(stdout: str) -> str:
+    texts: list[str] = []
+    parsed = False
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        parsed = True
+        if isinstance(event, dict) and event.get("type") == "text":
+            part = event.get("part") or {}
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                texts.append(part["text"])
+    if texts:
+        return "\n".join(texts)
+    if parsed:
+        return ""
+    return stdout
+
+
+def source_line(sessions: list[dict], since_ms: int) -> str:
+    since = datetime.datetime.fromtimestamp(since_ms / 1000, datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    ids = [str(session.get("id")) for session in sessions if session.get("id")]
+    shown = ids[:8]
+    extra = len(ids) - len(shown)
+    listed = ", ".join(shown)
+    if extra > 0:
+        listed = f"{listed}, and {extra} more"
+    return f"source: {len(sessions)} sessions since {since} ({listed})"
+
+
+def format_block(lines: list[str], sessions: list[dict], since_ms: int, when: datetime.datetime) -> str:
+    stamp = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+    header = f"## {stamp} · agent · dream\n{source_line(sessions, since_ms)}"
+    return header + "\n\n" + "\n".join(lines) + "\n"
+
+
+def run_opencode(binary: str, prompt: str, timeout: int, model: str) -> str:
+    with tempfile.TemporaryDirectory(prefix="opencode-dream-") as folder:
+        try:
+            result = subprocess.run(
+                [binary, *OPENCODE_ARGV, "-m", model, prompt],
+                cwd=folder,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise SystemExit(f"opencode run timed out after {timeout}s") from None
+        except OSError as error:
+            raise SystemExit(f"failed to run {binary}: {error}") from None
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise SystemExit(f"opencode run exited {result.returncode}\n{detail}")
+    return model_text(result.stdout)
+
+
+def missing_opencode_hint(model: str) -> SystemExit:
+    argv = " ".join((*OPENCODE_ARGV, "-m", model))
+    return SystemExit(
+        "opencode is not on PATH, so dream cannot draft lessons.\n"
+        f"invocation: opencode {argv} <prompt>\n"
+        "Install opencode and re-run. This script does not read API keys."
+    )
+
+
+def assert_learnings_target(memory: Path, target: Path) -> Path:
+    """Refuse anything that is not a dated file inside learnings. Never touch core."""
+    if not memory.is_dir():
+        raise SystemExit(
+            f"memory is not installed at {memory}\n"
+            "run ./install.cs so memory/ is linked to ~/.config/opencode/memory"
+        )
+    learnings = memory / "learnings"
+    core = memory / "core"
+    if not learnings.is_dir():
+        raise SystemExit(f"missing {learnings}")
+    if not DATED_NAME.fullmatch(target.name):
+        raise SystemExit(f"refusing to write {target.name}; learnings files are YYYY-MM-DD.md")
+    if target.name in ("README.md", ".gitkeep"):
+        raise SystemExit(f"refusing to overwrite {target.name}")
+
+    learnings_resolved = learnings.resolve()
+    core_resolved = core.resolve() if core.exists() else None
+    target_resolved = target.resolve()
+    if core_resolved is not None and (
+        target_resolved == core_resolved or core_resolved in target_resolved.parents
+    ):
+        raise SystemExit(f"refusing to write memory/core ({target_resolved})")
+    if learnings_resolved not in target_resolved.parents:
+        raise SystemExit(f"refusing to write outside {learnings_resolved} ({target_resolved})")
+    return target_resolved
+
+
+def append_if_same(path: Path, prior: str | None, block: str) -> bool:
+    """Append block if the file's hash is still prior. prior None means the file was absent."""
+    existed = path.exists()
+    if prior is None and existed and path.stat().st_size > 0:
+        return False
+    flags = os.O_RDWR | (0 if existed else os.O_CREAT)
+    try:
+        fd = os.open(path, flags, 0o644)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise SystemExit(f"cannot open {path}: {error}") from None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.lseek(fd, 0, os.SEEK_SET)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        # An empty file that already existed hashes to sha256(b""). None means
+        # the file was absent. A file we just created is still absent until the
+        # append below, so keep that as None. An empty file someone else
+        # created before this lock is a real hash and must not match None.
+        if not existed and data == b"":
+            current = None
+        else:
+            current = hashlib.sha256(data).hexdigest()
+        if current != prior:
+            return False
+        prefix = ""
+        if data and not data.endswith(b"\n"):
+            prefix += "\n"
+        if data and not data.endswith(b"\n\n"):
+            prefix += "\n"
+        payload = (prefix + block.rstrip() + "\n").encode()
+        os.lseek(fd, 0, os.SEEK_END)
+        os.write(fd, payload)
+        return True
+    finally:
+        os.close(fd)
+
+
+def draft(
+    binary: str | None,
+    prompt: str,
+    timeout: int,
+    model: str,
+) -> list[str]:
+    if binary is None:
+        raise missing_opencode_hint(model)
+    text = run_opencode(binary, prompt, timeout, model).strip()
+    if not text or text == "(none)":
+        return []
+    lines = constraint_lines(text)
+    if not lines:
+        print("model reply had no constraint lines", file=sys.stderr)
+        print(text[:2000], file=sys.stderr)
+        raise SystemExit(1)
+    return lines
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--since", default=DEFAULT_SINCE, help="window: 30m, 24h, 7d, or an ISO date (default 24h)")
+    parser.add_argument("--sessions", type=int, default=DEFAULT_SESSIONS, help="max sessions in the window (default 50)")
+    parser.add_argument("--dry-run", action="store_true", help="print the proposed append and write nothing")
+    parser.add_argument("--db", default=DEFAULT_DB, help=f"opencode session store (default {DEFAULT_DB})")
+    parser.add_argument("--t3-db", default=DEFAULT_T3_DB, help=f"T3 store (default {DEFAULT_T3_DB})")
+    parser.add_argument(
+        "--source",
+        choices=("auto", "t3", "opencode"),
+        default="auto",
+        help="auto reads opencode.db plus T3 grok/claudeAgent; t3 reads the T3 projection only",
+    )
+    parser.add_argument("--memory", default=DEFAULT_MEMORY, help=f"memory root (default {DEFAULT_MEMORY})")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("DREAM_MODEL") or DEFAULT_MODEL,
+        help=f"drafting model, provider/model (default {DEFAULT_MODEL})",
+    )
+    parser.add_argument("--timeout", type=int, default=180, help="seconds to wait for opencode run")
+    args = parser.parse_args(argv)
+
+    if args.sessions < 1:
+        parser.error("--sessions must be >= 1")
+
+    moment = now_utc()
+    since_ms = parse_since(args.since, moment)
+    since_iso = iso_z(since_ms)
+    db_path = os.path.expanduser(args.db)
+    t3_path = os.path.expanduser(args.t3_db)
+    memory = Path(os.path.expanduser(args.memory))
+    target = memory / "learnings" / f"{moment.strftime('%Y-%m-%d')}.md"
+
+    details: list[tuple[dict, str, list[dict]]] = []
+    schema_parts: list[str] = []
+    opencode_ids: set[str] = set()
+
+    if args.source in ("auto", "opencode"):
+        if os.path.exists(db_path):
+            connection = connect_ro(db_path)
+            try:
+                schema, sessions = load_sessions(connection, since_ms, args.sessions)
+                for session in sessions:
+                    # Record every id, including dream passes, so their T3
+                    # mirrors are skipped rather than re-ingested.
+                    opencode_ids.add(str(session["id"]))
+                    text, events, is_dream = session_blob(connection, session)
+                    if is_dream:
+                        continue
+                    details.append((session, text, events))
+            finally:
+                connection.close()
+            schema_parts.append(schema)
+        elif args.source == "opencode":
+            print(f"no session store at {db_path}")
+            print(f"expected location matches evals/scoreboard.py: {DEFAULT_DB}")
+            print("nothing to append")
+            return 0
+        else:
+            print(f"no opencode session store at {db_path}", file=sys.stderr)
+
+    t3_read = False
+    t3_skipped = 0
+    bound: set[str] = set()
+
+    if args.source in ("auto", "t3"):
+        connection = connect_t3(t3_path)
+        if connection is None:
+            if args.source == "t3":
+                raise SystemExit(f"no t3 store at {t3_path}")
+            print(f"no t3 store at {t3_path}", file=sys.stderr)
+        else:
+            try:
+                shape_error = ""
+                try:
+                    shape = t3_shape_ok(connection)
+                except sqlite3.Error as error:
+                    shape = False
+                    shape_error = str(error)
+                if not shape:
+                    detail = f": {shape_error}" if shape_error else ""
+                    message = f"t3 store shape not recognised at {t3_path}{detail}"
+                    if args.source == "t3":
+                        raise SystemExit(message)
+                    print(message, file=sys.stderr)
+                else:
+                    # auto takes the providers opencode.db cannot hold, plus
+                    # any T3 opencode thread whose native session is missing
+                    # from opencode.db. Items are joined on provider_thread_id;
+                    # thread_id is shared by the provider rows.
+                    if args.source == "auto":
+                        bound = t3_bound_sessions(connection)
+                        t3_skipped = t3_skipped_count(
+                            connection, since_iso, tuple(sorted(opencode_ids))
+                        )
+                        rows = t3_threads(connection, since_iso, args.sessions, T3_PROVIDERS)
+                        # Mirrors are fetched separately so bound opencode rows
+                        # cannot consume the grok/claudeAgent limit, and excluded
+                        # in SQL so they cannot consume the mirror limit either.
+                        rows += t3_threads(
+                            connection,
+                            since_iso,
+                            args.sessions,
+                            ("opencode",),
+                            exclude_native_ids=tuple(sorted(opencode_ids)),
+                        )
+                    else:
+                        rows = t3_threads(connection, since_iso, args.sessions, None)
+                    staged: list[tuple[dict, str, list[dict]]] = []
+                    seen_messages: set[str] = set()
+                    for row in rows:
+                        provider_thread_id, thread_id, provider, _status, _updated, payload = row
+                        if args.source == "auto" and provider == "opencode":
+                            native = t3_native_id(payload)
+                            if native and native in opencode_ids:
+                                t3_skipped += 1
+                                continue
+                        include_messages = thread_id not in seen_messages
+                        seen_messages.add(thread_id)
+                        text, events, is_dream = t3_blob(
+                            connection,
+                            str(provider_thread_id or thread_id),
+                            str(thread_id),
+                            include_messages,
+                        )
+                        if is_dream:
+                            continue
+                        staged.append((t3_session(row), text, events))
+                    details.extend(staged)
+                    t3_read = True
+                    schema_parts.append("t3")
+            except sqlite3.Error as error:
+                if args.source == "t3":
+                    raise SystemExit(f"t3 store unusable at {t3_path}: {error}") from None
+                print(f"t3 store unusable at {t3_path}: {error}", file=sys.stderr)
+            finally:
+                connection.close()
+
+    details.sort(key=lambda item: item[0].get("time_created") or 0, reverse=True)
+    details = details[: args.sessions]
+    sessions = [item[0] for item in details]
+
+    opencode_count = sum(1 for session, _text, _events in details if session.get("schema") != "t3")
+    t3_stats: dict[str, int] = {}
+    for session, _text, _events in details:
+        if session.get("schema") == "t3":
+            provider = str(session.get("provider"))
+            t3_stats[provider] = t3_stats.get(provider, 0) + 1
+    unbound = sum(
+        1
+        for session, _text, _events in details
+        if session.get("schema") != "t3" and str(session["id"]) not in bound
+    )
+
+    print(
+        "dream: sources "
+        f"opencode={opencode_count} "
+        f"t3={sum(t3_stats.values())} "
+        f"(grok={t3_stats.get('grok', 0)} claudeAgent={t3_stats.get('claudeAgent', 0)}) "
+        f"t3-opencode-skipped={t3_skipped} unbound-opencode={unbound}",
+        file=sys.stderr,
+    )
+
+    if not sessions:
+        where = db_path if not t3_read else f"{db_path} or {t3_path}"
+        print(f"no sessions since {args.since} in {where}")
+        print("nothing to append")
+        return 0
+
+    patterns = collect_patterns(sessions, details)
+    if not has_signal(patterns):
+        where = db_path if not t3_read else f"{db_path} and {t3_path}"
+        print(f"{len(sessions)} sessions in {where}, no failures, flaky commands, or missing paths")
+        print("nothing to append")
+        return 0
+
+    binary = shutil.which("opencode")
+    learnings = memory / "learnings"
+    store_label = db_path if not t3_read else f"{db_path} + {t3_path}"
+    schema_label = "+".join(schema_parts) or "t3"
+
+    for attempt in (1, 2):
+        prior = sha256_file(target) if learnings.is_dir() else None
+        recorded = recorded_lines(learnings)
+        digest = digest_lines(
+            store_label, since_ms, schema_label, sessions, patterns, recorded[-RECORDED_LIMIT:]
+        )
+        prompt = PROMPT_HEAD + digest + "\n"
+        lines = draft(binary, prompt, args.timeout, args.model)
+        fresh = [line for line in lines if line not in set(recorded)]
+        if not fresh:
+            print("no durable lessons")
+            return 0
+        block = format_block(fresh, sessions, since_ms, now_utc())
+        if args.dry_run:
+            sys.stdout.write(block)
+            return 0
+        assert_learnings_target(memory, target)
+        if append_if_same(target, prior, block):
+            print(target)
+            return 0
+        if attempt == 1:
+            print(f"{target} changed while drafting; retrying", file=sys.stderr)
+            continue
+        print(f"refusing to append to {target}; it changed again before the write", file=sys.stderr)
+        return 1
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

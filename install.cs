@@ -24,6 +24,7 @@ string[] entries =
     "agents",
     "commands",
     "skills",
+    "memory",
     "bin",
     "evals",
 ];

@@ -16,7 +16,9 @@
     { "action": "read", "resource": "**/service.json", "effect": "deny" },
     { "action": "read", "resource": "~/.ssh/*", "effect": "deny" },
     { "action": "read", "resource": "~/.aws/*", "effect": "deny" },
-    { "action": "read", "resource": "~/.config/gh/*", "effect": "deny" }
+    { "action": "read", "resource": "~/.config/gh/*", "effect": "deny" },
+    { "action": "edit", "resource": "memory/core/*", "effect": "deny" },
+    { "action": "edit", "resource": "*/memory/core/*", "effect": "deny" }
   ],
   "agents": {
     "build": {

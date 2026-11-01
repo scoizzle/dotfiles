@@ -6,6 +6,17 @@ service.json
 cli.json
 reviews.jsonl
 
+# Agent-written lessons. install.cs symlinks memory/ to
+# ~/.config/opencode/memory/, so a dream writes these into this working tree.
+# They stay on disk in the checkout and do not travel with git.
+# README.md and .gitkeep stay tracked.
+memory/learnings/*
+!memory/learnings/README.md
+!memory/learnings/.gitkeep
+
+__pycache__/
+*.py[cod]
+
 # Generated eval output (re-runnable with evals/run.sh)
 evals/canary-*/
 
