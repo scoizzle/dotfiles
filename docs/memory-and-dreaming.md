@@ -35,6 +35,27 @@ A failure paid for inside a session is written down as a constraint. The next se
 
 `opencode.json` denies `edit` on `memory/core/` (edit, write, and patch). Shell text is matched as a command, not as a path, so `AGENTS.md` is what forbids a redirection into core.
 
+## Sources
+
+T3 launches work that never appears in the opencode store: its native `grok` and `claudeAgent` threads. `bin/dream` reads two stores.
+
+| source | covers |
+| --- | --- |
+| `opencode.db` | every OpenCode session, including T3 `opencode` threads |
+| T3 `statev2.sqlite`, `provider in (grok, claudeAgent)` | the threads no other store records |
+
+The modes are `auto` (default), `t3`, and `opencode`. `auto` reads `opencode.db` plus the T3 `grok` and `claudeAgent` threads, and skips a T3 `opencode` thread only when its native session is already in that read of `opencode.db`. The binding is `payload_json.nativeThreadRef.nativeId` on the T3 thread. Turn items are joined on `provider_thread_id`, not `thread_id`, because two provider rows can share one orchestration thread. `--source t3` reads only the T3 projection, all providers; `--source opencode` is the previous behavior.
+
+The T3 tables are `orchestration_v2_projection_*`: internal, derived, and subject to migration. Dream probes their shape and falls back to opencode-only in `auto`; in `t3` mode a missing or unrecognised store is an error. `statev2.sqlite` is live, so the read is read-only with a busy timeout.
+
+Each run prints a coverage line to stderr:
+
+```text
+dream: sources opencode=12 t3=3 (grok=2 claudeAgent=1) t3-opencode-skipped=4 unbound-opencode=0
+```
+
+`unbound-opencode` counts opencode sessions in the window with no T3 thread. When T3 is the only launcher it should stay at zero; that is the signal to switch the cron job to `--source t3`. Both stores are per machine, so a linked environment needs its own run.
+
 ## Run dream
 
 From a machine that has run `./install.cs`:
@@ -45,19 +66,20 @@ From a machine that has run `./install.cs`:
 ~/.config/opencode/bin/dream --since 48h
 ~/.config/opencode/bin/dream --since 2026-10-30
 ~/.config/opencode/bin/dream --sessions 10
+~/.config/opencode/bin/dream --source t3
 ```
 
-`--since` defaults to `24h` (`Nh`, `Nd`, `Nm`, or an ISO date interpreted as UTC). `--sessions` caps how many sessions in that window are read (default 50). `--db` overrides the store. `--dry-run` prints the proposed append and does not write.
+`--since` defaults to `24h` (`Nh`, `Nd`, `Nm`, or an ISO date interpreted as UTC). `--sessions` caps how many sessions in that window are read (default 50). `--db` overrides the opencode store, `--t3-db` the T3 store, and `--source` picks the modes above. `--dry-run` prints the proposed append and does not write.
 
-The session store is the one `evals/scoreboard.py` opens: `~/.local/share/opencode/opencode.db`, table `session_v2`, messages in `session_message`. A missing store prints that path and appends nothing. It is an empty machine, not a crash.
+The session store is the one `evals/scoreboard.py` opens: `~/.local/share/opencode/opencode.db`, table `session_v2`, messages in `session_message`. The T3 store defaults to `~/.t3/userdata/statev2.sqlite`. A missing store prints that path and appends nothing. It is an empty machine, not a crash.
 
 When there is something to learn, dream drafts with the local `opencode` login. The invocation is:
 
 ```sh
-opencode run --standalone --format json --auto <prompt>
+opencode run --standalone --format json --auto -m opencode-go/deepseek-v4.1-flash <prompt>
 ```
 
-The prompt is fixed in `bin/dream`. It asks for markdown constraint lines in the learnings format and tells the model not to edit files. The script does not read API keys. If `opencode` is not on `PATH`, dream exits with a short hint and writes nothing. Run it from cron only after `opencode` is installed and logged in on that machine.
+The model is pinned so a change to the top-level `opencode.json` model cannot move this nightly job onto Claude quota. `--model` or `DREAM_MODEL` overrides it. The prompt is fixed in `bin/dream`. It asks for markdown constraint lines in the learnings format and tells the model not to edit files. The script does not read API keys. If `opencode` is not on `PATH`, dream exits with a short hint and writes nothing. Run it from cron only after `opencode` is installed and logged in on that machine.
 
 A nightly crontab entry, using the installed path:
 

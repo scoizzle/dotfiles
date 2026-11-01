@@ -164,7 +164,7 @@ jobs:
           grep -q 'learnings/README.md' memory/INDEX.md
           grep -q 'YYYY-MM-DD.md' memory/INDEX.md
           ./bin/dream --help >/dev/null
-          out="$(./bin/dream --dry-run --db "${RUNNER_TEMP:-/tmp}/no-such-opencode.db")"
+          out="$(./bin/dream --source opencode --dry-run --db "${RUNNER_TEMP:-/tmp}/no-such-opencode.db")"
           echo "$out"
           echo "$out" | grep -q 'nothing to append'
           echo "$out" | grep -q 'opencode.db'
@@ -248,32 +248,32 @@ jobs:
           target="$memory/learnings/$day.md"
 
           set +e
-          PATH="/usr/bin:/bin" ./bin/dream --db "$db" --memory "$memory" --dry-run >"$root/no-opencode.txt" 2>&1
+          PATH="/usr/bin:/bin" ./bin/dream --source opencode --db "$db" --memory "$memory" --dry-run >"$root/no-opencode.txt" 2>&1
           rc=$?
           set -e
           test "$rc" -ne 0
           grep -q 'opencode is not on PATH' "$root/no-opencode.txt"
           test ! -e "$target"
 
-          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" --dry-run >"$root/dry.txt"
+          PATH="$root/bin:$PATH" ./bin/dream --source opencode --db "$db" --memory "$memory" --dry-run >"$root/dry.txt"
           test ! -e "$target"
           grep -q 'known: missing/file.txt is not in the tree \[harness\]' "$root/dry.txt"
           grep -q 'never: cat missing/file.txt \[loop\]' "$root/dry.txt"
           test -z "$(find "$memory/core" -type f -print)"
 
-          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/write.txt"
+          PATH="$root/bin:$PATH" ./bin/dream --source opencode --db "$db" --memory "$memory" >"$root/write.txt"
           grep -q "$target" "$root/write.txt"
           test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
           test -z "$(find "$memory/core" -type f -print)"
 
-          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/second.txt"
+          PATH="$root/bin:$PATH" ./bin/dream --source opencode --db "$db" --memory "$memory" >"$root/second.txt"
           grep -q 'no durable lessons' "$root/second.txt"
           test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
 
           # An existing empty file must hash as sha256(b""), not as "absent".
           rm -f "$target"
           : > "$target"
-          PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/empty.txt"
+          PATH="$root/bin:$PATH" ./bin/dream --source opencode --db "$db" --memory "$memory" >"$root/empty.txt"
           test "$(grep -c 'missing/file.txt is not in the tree' "$target")" = "1"
 
           python3 - "$memory" << 'PY'
@@ -295,16 +295,214 @@ jobs:
 
           rm -f "$target"
           DREAM_TAMPER="$target" DREAM_TAMPER_MARK="$root/once" \
-            PATH="$root/bin:$PATH" ./bin/dream --db "$db" --memory "$memory" >"$root/retry.txt"
+            PATH="$root/bin:$PATH" ./bin/dream --source opencode --db "$db" --memory "$memory" >"$root/retry.txt"
           grep -q 'missing/file.txt is not in the tree' "$target"
           grep -q 'tampered during draft' "$target"
 
           rm -f "$target"
           set +e
           DREAM_TAMPER="$target" PATH="$root/bin:$PATH" \
-            ./bin/dream --db "$db" --memory "$memory" >"$root/refuse.txt" 2>&1
+            ./bin/dream --source opencode --db "$db" --memory "$memory" >"$root/refuse.txt" 2>&1
           rc=$?
           set -e
           test "$rc" -eq 1
           grep -q 'refusing to append' "$root/refuse.txt"
           test "$(grep -c 'missing/file.txt is not in the tree' "$target" || true)" = "0"
+
+      # T3 launches grok and claudeAgent threads that never land in
+      # opencode.db. This proves the t3 source, the auto union, the skip of
+      # t3-opencode threads already in opencode.db, and the pinned -m.
+      - name: dream t3 source
+        run: |
+          set -eu
+          root="$(mktemp -d)"
+          mkdir -p "$root/memory/learnings" "$root/memory/core" "$root/bin"
+
+          python3 - "$root/t3.db" << 'PY'
+          import datetime, json, sqlite3, sys
+          db = sqlite3.connect(sys.argv[1])
+          db.execute("""create table orchestration_v2_projection_provider_threads (
+            provider_thread_id text primary key, thread_id text, provider text,
+            status text, updated_at text, payload_json text
+          )""")
+          db.execute("""create table orchestration_v2_projection_messages (
+            message_id text primary key, thread_id text, role text, created_at text, payload_json text
+          )""")
+          db.execute("""create table orchestration_v2_projection_turn_items (
+            turn_item_id text primary key, thread_id text, provider_thread_id text,
+            ordinal integer, type text, status text, payload_json text
+          )""")
+          now = datetime.datetime.now(datetime.timezone.utc)
+          def stamp(minutes):
+              return (now - datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+          # thread-shared carries two provider rows. The opencode item must be
+          # counted once in t3 mode and skipped in auto, not swallowed by the
+          # grok row that shares its thread_id. Timestamps are distinct so the
+          # --sessions cap has a stable order.
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-grok", "thread-grok", "grok", "idle", stamp(2), "{}"))
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-oc", "thread-shared", "opencode", "idle", stamp(0),
+                      json.dumps({"nativeThreadRef": {"driver": "opencode", "nativeId": "ses_bound"}})))
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-grok-shared", "thread-shared", "grok", "idle", stamp(1), "{}"))
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-dream", "thread-dream", "opencode", "idle", stamp(0),
+                      json.dumps({"nativeThreadRef": {"driver": "opencode", "nativeId": "ses_dream"}})))
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-oc2", "thread-oc2", "opencode", "idle", stamp(0),
+                      json.dumps({"nativeThreadRef": {"driver": "opencode", "nativeId": "ses_bound"}})))
+          db.execute("insert into orchestration_v2_projection_provider_threads values (?,?,?,?,?,?)",
+                     ("pt-oc3", "thread-oc3", "opencode", "idle", stamp(0),
+                      json.dumps({"nativeThreadRef": {"driver": "opencode", "nativeId": "ses_unbound"}})))
+          for i in (1, 2):
+              db.execute(
+                  "insert into orchestration_v2_projection_turn_items values (?,?,?,?,?,?,?)",
+                  (f"item-{i}", "thread-grok", "pt-grok", i, "command_execution", "failed",
+                   json.dumps({"input": "cat missing/file.txt",
+                               "output": "No such file or directory: missing/file.txt",
+                               "exitCode": 1})),
+              )
+          db.execute(
+              "insert into orchestration_v2_projection_turn_items values (?,?,?,?,?,?,?)",
+              ("item-oc", "thread-shared", "pt-oc", 3, "command_execution", "failed",
+               json.dumps({"input": "cat missing/t3-only.txt",
+                           "output": "No such file or directory: missing/t3-only.txt",
+                           "exitCode": 1})),
+          )
+          db.execute(
+              "insert into orchestration_v2_projection_turn_items values (?,?,?,?,?,?,?)",
+              ("item-grok-shared", "thread-shared", "pt-grok-shared", 1, "command_execution", "completed",
+               json.dumps({"input": "echo ok", "output": "ok", "exitCode": 0})),
+          )
+          db.execute(
+              "insert into orchestration_v2_projection_turn_items values (?,?,?,?,?,?,?)",
+              ("item-dream", "thread-dream", "pt-dream", 1, "command_execution", "failed",
+               json.dumps({"input": "cat missing/dream-only.txt",
+                           "output": "No such file or directory: missing/dream-only.txt",
+                           "exitCode": 1})),
+          )
+          db.execute(
+              "insert into orchestration_v2_projection_messages values (?,?,?,?,?)",
+              ("msg-1", "thread-grok", "user", stamp(2), json.dumps({"text": "please fix it"})),
+          )
+          db.commit()
+          PY
+
+          cat > "$root/bin/opencode" << 'EOF'
+          #!/usr/bin/env python3
+          import json, os, sys
+          with open(os.environ["DREAM_ARGV"], "w") as handle:
+              handle.write(" ".join(sys.argv[1:]))
+          sys.stdout.write(json.dumps({"type": "text", "part": {"text": "- known: missing/file.txt is absent [loop]\n"}}) + "\n")
+          EOF
+          chmod 755 "$root/bin/opencode"
+
+          DREAM_ARGV="$root/argv-t3.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source t3 --t3-db "$root/t3.db" --db "$root/absent.db" \
+            --memory "$root/memory" --dry-run > "$root/t3.txt"
+          grep -q 'known: missing/file.txt is absent \[loop\]' "$root/t3.txt"
+          grep -q -- '-m opencode-go/deepseek-v4.1-flash' "$root/argv-t3.txt"
+          test "$(find "$root/memory/learnings" -name '*.md' | wc -l | tr -d ' ')" = "0"
+
+          DREAM_ARGV="$root/argv-auto.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source auto --t3-db "$root/t3.db" --db "$root/absent.db" \
+            --memory "$root/memory" --dry-run > "$root/auto.txt" 2> "$root/auto.err"
+          grep -q 'known: missing/file.txt is absent \[loop\]' "$root/auto.txt"
+          grep -q 't3=' "$root/auto.err"
+
+          if DREAM_ARGV="$root/argv-none.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source t3 --t3-db "$root/no-t3.db" --db "$root/absent.db" \
+            --memory "$root/memory" --dry-run > "$root/none.txt" 2>&1; then
+            echo "missing t3 store should fail in t3 mode"
+            exit 1
+          fi
+          grep -q 'no t3 store' "$root/none.txt"
+
+          ./bin/dream --help | grep -q -- '--source'
+          ./bin/dream --help | grep -q -- '--t3-db'
+          ./bin/dream --help | grep -q -- '--model'
+
+          python3 - "$root/oc.db" << 'PY'
+          import datetime, json, sqlite3, sys
+          oc = sqlite3.connect(sys.argv[1])
+          oc.execute("""create table session_v2 (
+            id text, title text, directory text, agent text, time_created integer,
+            time_updated integer, idle_outcome text, parent_id text, cost real
+          )""")
+          oc.execute("""create table session_message (
+            id text, session_id text, type text, seq integer, data text
+          )""")
+          now = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+          for sid in ("ses_bound", "ses_unbound"):
+              oc.execute("insert into session_v2 values (?,?,?,?,?,?,?,?,?)",
+                         (sid, sid, "/tmp/work", "build", now, now, "failed", None, 0.0))
+              for i in (1, 2):
+                  data = json.dumps({"content": [{"type": "tool", "name": "shell", "state": {
+                      "status": "error", "input": {"command": "cat missing/file.txt"},
+                      "error": {"message": "No such file or directory: missing/file.txt"}}}]})
+                  oc.execute("insert into session_message values (?,?,?,?,?)",
+                             (f"{sid}-msg-{i}", sid, "assistant", i, data))
+          oc.execute("insert into session_v2 values (?,?,?,?,?,?,?,?,?)",
+                     ("ses_dream", "dream", "/tmp/work", "build", now, now, "failed", None, 0.0))
+          oc.execute("insert into session_message values (?,?,?,?,?)",
+                     ("ses_dream-msg", "ses_dream", "assistant", 1,
+                      json.dumps({"content": [{"type": "text", "text": "DREAM-PASS"}]})))
+          oc.commit()
+          PY
+
+          DREAM_ARGV="$root/argv-dedupe.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source auto --t3-db "$root/t3.db" --db "$root/oc.db" \
+            --memory "$root/memory" --dry-run > "$root/dedupe.txt" 2> "$root/dedupe.err"
+          grep -q 't3-opencode-skipped=4' "$root/dedupe.err"
+          grep -q 'unbound-opencode=0' "$root/dedupe.err"
+          grep -q 't3=2 ' "$root/dedupe.err"
+          test "$(grep -o 'ses_bound' "$root/dedupe.txt" | wc -l | tr -d ' ')" = "1"
+          test "$(grep -o 'ses_unbound' "$root/dedupe.txt" | wc -l | tr -d ' ')" = "1"
+          if grep -q -e 't3-only' -e 'dream-only' "$root/argv-dedupe.txt"; then
+            echo "auto swallowed an item from a skipped t3 opencode mirror"
+            exit 1
+          fi
+
+          # Bound opencode mirrors must not consume --sessions and starve the
+          # grok/claudeAgent rows: four newer mirrors against a cap of four
+          # would otherwise fill the T3 query and leave nothing to read.
+          DREAM_ARGV="$root/argv-cap.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source auto --sessions 4 --t3-db "$root/t3.db" --db "$root/oc.db" \
+            --memory "$root/memory" --dry-run > "$root/cap.txt" 2> "$root/cap.err"
+          grep -q 't3=2 ' "$root/cap.err"
+          grep -q 'missing/file.txt' "$root/argv-cap.txt"
+
+          DREAM_ARGV="$root/argv-t3all.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source t3 --t3-db "$root/t3.db" \
+            --db "$root/absent.db" --memory "$root/memory" --dry-run \
+            > "$root/t3all.txt" 2> "$root/t3all.err"
+          grep -q 't3=6 ' "$root/t3all.err"
+          grep -q 'missing/t3-only.txt (1)' "$root/argv-t3all.txt"
+          if grep -q '2× shell: No such file or directory: missing/t3-only.txt' "$root/argv-t3all.txt"; then
+            echo "shared thread_id duplicated an item"
+            exit 1
+          fi
+
+          printf 'not a database\n' > "$root/bad.sqlite"
+          DREAM_ARGV="$root/argv-bad.txt" PATH="$root/bin:$PATH" \
+            ./bin/dream --source auto --t3-db "$root/bad.sqlite" --db "$root/absent.db" \
+            --memory "$root/memory" --dry-run > "$root/bad.txt" 2> "$root/bad.err"
+          grep -q 'not recognised' "$root/bad.err"
+
+          python3 - << 'PY'
+          import importlib.machinery, importlib.util
+          loader = importlib.machinery.SourceFileLoader("dreammod", "bin/dream")
+          spec = importlib.util.spec_from_loader(loader.name, loader)
+          mod = importlib.util.module_from_spec(spec)
+          loader.exec_module(mod)
+          assert mod.t3_event("subagent", "failed", {"title": "delegate failed"})["status"] == "error"
+          err = mod.t3_event(
+              "dynamic_tool", "failed",
+              {"toolName": "Read", "input": {"path": "a"},
+               "output": {"output_for_prompt": "File not found: /tmp/missing/a"}},
+          )["error"]
+          assert err == "No such file or directory: /tmp/missing/a", err
+          assert mod.t3_event("command_execution", "interrupted", {"input": "make"})["status"] == "interrupted"
+          assert mod.t3_event("command_execution", "completed", {"input": "make", "exitCode": 1})["status"] == "error"
+          PY

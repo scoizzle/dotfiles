@@ -16,4 +16,4 @@ A dry run prints the proposed append and writes nothing:
 ~/.config/opencode/bin/dream --dry-run
 ```
 
-The script reads the session store `evals/scoreboard.py` uses and appends to `~/.config/opencode/memory/learnings/YYYY-MM-DD.md`. It does not write `memory/core/`. Flags, cron, and the talk mapping are in `docs/memory-and-dreaming.md`.
+The script reads the opencode session store and the T3 `grok`/`claudeAgent` threads, then appends to `~/.config/opencode/memory/learnings/YYYY-MM-DD.md`. It does not write `memory/core/`. Flags, sources, cron, and the talk mapping are in `docs/memory-and-dreaming.md`.
