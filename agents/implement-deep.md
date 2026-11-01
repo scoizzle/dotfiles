@@ -1,5 +1,5 @@
 ---
-description: T2 implementer. Implements an approved plan with a red test first, then the smallest fix, green test, and changed-area tests. Use for T2 changes only.
+description: Mid-tier T2 builder. Implements an approved plan with a red test first, then the smallest fix. Use after the plan locks, for T2 implementation only.
 mode: subagent
 model: claude-agent/sonnet#medium
 steps: 80

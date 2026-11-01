@@ -5,6 +5,14 @@ global `AGENTS.md` workflow — tracked so it can be reproduced on another machi
 
 Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 
+## Workflow
+
+`AGENTS.md` classifies each request as T0, T1, or T2 and names the review gate.
+Which model runs which job is the **Model routing** section there: `explore`
+stays on the cheap flash pin for repo search, the builder pins implement, and
+the expensive advisor pin is only for plan-lock, a repeated error, and T2
+sign-off.
+
 ## Install on a new machine
 
 **From a bare box** (no git, no dotnet — just a shell and curl):
