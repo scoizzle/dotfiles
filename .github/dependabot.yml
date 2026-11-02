@@ -11,8 +11,18 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
+    # Minor and patch bumps share one PR when an Action is pinned to a full version.
+    # Majors stay separate PRs so a breaking one cannot stall the group. Security
+    # updates stay ungrouped by default. (No dotnet-sdk entry, for the reason above.)
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
     # main requires branches to be up to date, so a stale bump is unmergeable.
     # Let Dependabot rebase itself instead of clicking "Update branch" per PR.
     rebase-strategy: auto
