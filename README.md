@@ -43,6 +43,24 @@ curl -fsSL https://raw.githubusercontent.com/scoizzle/dotfiles/main/bootstrap.sh
 `~/dotfiles`, then hands to `setup.sh`. It is safe to pipe: it never uses `$0` and
 never reads stdin. `--dry-run` and `--no-setup` exist for testing.
 
+### Windows (WSL2)
+
+Windows native is unsupported. `bootstrap-wsl.ps1` is the Windows cold start: it
+installs/enables the named distro, caps WSL2 memory once in `%UserProfile%\.wslconfig`
+(never overwritten), enables systemd and raises inotify watches in that distro, then
+runs `bootstrap.sh` inside it so the clone is `$HOME/dotfiles`. `bootstrap.sh`
+remains the Linux/macOS path.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\bootstrap-wsl.ps1 [-DryRun] [-Distro Ubuntu]
+```
+
+Tokens reach the distro through the environment only. T3 belongs in the distro, not
+on Windows or behind a `\\wsl$` path. A brand-new distro needs one interactive
+`wsl -d Ubuntu` first, to create your Linux user; the script never bootstraps as
+root. `wsl --shutdown` is needed once afterwards and is left to you; the script
+ends by printing the login commands it does not run.
+
 With the repo already cloned:
 
 ```sh
@@ -164,7 +182,8 @@ installed.
 ## Platforms
 
 Works on macOS and on Linux (Arch / [Omarchy](https://omarchy.org)). Same
-commands everywhere; nothing is per-machine in the tracked files.
+commands everywhere; nothing is per-machine in the tracked files. Windows is
+supported only through WSL2, via `bootstrap-wsl.ps1`.
 
 ```sh
 ./install.cs --doctor   # check prerequisites for this machine
