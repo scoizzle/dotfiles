@@ -9,7 +9,11 @@
 > | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
 > | `build`, `plan`, `general`, `second-opinion`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
 > | `implement-deep` | `claude-agent/sonnet#medium` |
-> | `review-deep`, `plan-review-deep`, `verifier` | `xai/grok-4.7#high` in OpenCode; `grok-4.5` only via T3 (provisional) |
+> | `review-deep`, `plan-review-deep`, `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` is routable but has no clean-case gate |
+>
+> **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are
+> `session_v2.cost`, which opencode computes from list price, not an invoice.
+> Read them as "what these tokens would cost on a metered key".
 
 Rule (D5): keep the current model only if it has no veto (does not miss an
 expected 🔴 that another candidate caught), its recall is at least the
@@ -343,3 +347,80 @@ with it; only the pin moves back.
 Limits: one run per cell, one repository. The DeepSeek failure is a severity
 judgement on documentation outside the diff; read the report before treating it
 as a hard veto against the model everywhere.
+
+## Phase 6 — cost provenance (2026-11-02)
+
+Phases 3 and 4 re-pinned two roles to save money. Phase 5 moved them back on
+quota grounds, and that reason stands. The money was never there.
+
+`session_v2.cost` in `~/.local/share/opencode/opencode.db`, over the 60 days to
+2026-11-02, is computed locally from the `models.json` price table; it is not a
+vendor invoice. Two providers prove it:
+
+| provider | sessions | recorded cost | why |
+| --- | --- | --- | --- |
+| `opencode-go` | 506 | $112.27 | a plan that is subscribed, still priced from the table |
+| `claude-agent` | 14 | $0.00 | no `models.json` entry, so nothing to compute |
+
+`$0` therefore means "unpriced", not "unmetered", and a positive number means
+"priced", not "billed". The $438.73 split by role in Phase 3 is the list-price
+value of the tokens each role consumed, which is a useful quantity and a
+misleading label.
+
+The xAI side settles it. The `xAI` credential is a device-flow OAuth login
+(`type: oauth`, `method: device`) against `auth.x.ai/oauth2`, not an API key;
+opencode's integration offers `Manually enter API Key` as the other method and
+that one was not taken. `console.x.ai` for 2026-10-27 to 2026-11-02 reports
+**0 requests, 0 tokens, $0.00**, while the same window holds:
+
+| | Oct 27 – Nov 2 |
+| --- | --- |
+| xAI sessions | 68 |
+| input tokens | 12.48M |
+| cache reads | 163.6M |
+| list price | $116.52 |
+
+Traffic that does not appear as API requests is not on the metered path. The
+earlier 126 sessions (Oct 18–26, $283.90 of list price) used the same grant, the
+same token and the same `api.x.ai/v1` base URL, so they are on that path as well.
+`grok-4.7` through the `opencode` instance is subscription-entitled.
+
+### What this changes
+
+- Phase 3 and Phase 4's dollar rationale is void. The `verifier` never cost
+  $214.49 per fourteen days; in that week it ran 16 sessions and consumed 41.3M
+  cache reads, about 2.6M per run. The other 52 sessions in the window were the
+  advisor bands (24 `review-deep`, 21 `plan-review-deep`, 7 unattributed), which
+  is the case for keeping the advisor off the highest-volume step.
+- Phase 5's quota rule survives and is now the only cost-adjacent constraint: the
+  high-volume step belongs on whichever subscription has headroom, not on
+  whichever model carries the lower price row.
+- The prices in this file keep one use. They are what these sessions would cost
+  if the grant lapsed and opencode fell back to an API key.
+
+### Pins after Phase 6
+
+The `grok` and `claudeAgent` T3 instances are disabled; both models are reachable
+through the single `opencode` instance, which multiplexes the Go plan and the xAI
+and Claude logins.
+
+| Role | Pin | Why |
+| --- | --- | --- |
+| `implement-deep` | `opencode` + `claude-agent/sonnet` + `variant=medium` | Same model and effort as before, on the Claude login. |
+| `verifier` | `opencode` + `xai/grok-4.7` + `variant=high` | Heaviest token consumer; put it on the xAI grant. |
+| `plan-review-deep`, `review-deep` | `opencode` + `xai/grok-4.7` + `variant=high` | Unchanged model, same grant. |
+| everything else | unchanged | already on `opencode`. |
+
+The option id moves with the instance: `claudeAgent` took `effort`, `opencode`
+takes `variant`. `opencode-go/grok-4.7` also exists and would draw the Go plan
+instead of the xAI login. `grok-4.7-build-fast` remains reachable only through
+the disabled `grok` driver.
+
+`bin/lint-config` now reads `policy/providers.json`, a `verified` snapshot of
+`orchestrator_capabilities`, and fails any routing row that names a disabled
+instance. That is what catches this class of rot: the rows were green for a day
+while four bands could not be delegated.
+
+Limits: one account, one console window, one repository. The console showed a
+single team; usage under another team on the same account was not checked. Grok
+4.5 and 4.6 were re-verified as routable through `opencode` but were not run.
