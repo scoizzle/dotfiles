@@ -93,7 +93,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | subagent prompts (opencode format); the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
-| `policy/`       | the permission policy and its test vectors | rendered into all three by `bin/sync-harness` |
+| `policy/`       | the permission policy, its test vectors, and the T3 provider snapshot the routing table is linted against | permissions reach all three via `bin/sync-harness`; the snapshot is read by `bin/lint-config` |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |

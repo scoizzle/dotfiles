@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "doc": "T3 provider instances from orchestrator_capabilities. bin/lint-config fails a Model routing row in AGENTS.md that names a disabled instance or a model outside the allowlist, so a settings change cannot leave a dead band behind. 'routableModels' is a curated allowlist of what the table may pin, not the full catalog. Re-verify with orchestrator_capabilities and move 'verified' in the same change.",
+  "verified": "2026-11-02",
+  "source": "orchestrator_capabilities",
+  "providers": {
+    "opencode": {
+      "enabled": true,
+      "canRunChildTask": true,
+      "routableModels": [
+        "opencode-go/mimo-v2.6-flash",
+        "opencode-go/deepseek-v4.1-flash",
+        "claude-agent/sonnet",
+        "xai/grok-4.7",
+        "xai/grok-4.5",
+        "xai/grok-4.6",
+        "opencode-go/grok-4.7"
+      ],
+      "optionIds": ["variant"],
+      "note": "One instance multiplexes the OpenCode Go plan and the xAI/Claude subscriptions: xai/* draws the xAI login, claude-agent/* the Claude Code login, opencode-go/* the Go plan."
+    },
+    "claudeAgent": {
+      "enabled": false,
+      "optionIds": ["effort"],
+      "reason": "Provider instance is disabled; claude-agent/sonnet on opencode replaces it."
+    },
+    "grok": {
+      "enabled": false,
+      "optionIds": ["reasoningEffort"],
+      "reason": "Provider instance is disabled; xai/grok-4.7 on opencode replaces it. grok-4.7-build-fast exists only here."
+    },
+    "codex": { "enabled": false, "reason": "Provider instance is disabled." },
+    "cursor": { "enabled": false, "reason": "Provider instance is disabled." },
+    "antigravity": { "enabled": false, "reason": "Provider instance is disabled." },
+    "fx": { "enabled": false, "reason": "Provider instance is disabled." },
+    "muse": { "enabled": false, "reason": "Provider instance is disabled." },
+    "pi": { "enabled": false, "reason": "Provider instance is disabled." }
+  }
+}

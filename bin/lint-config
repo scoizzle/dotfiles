@@ -250,12 +250,40 @@ def check_shared_surfaces() -> None:
 
 
 GROK_CAP = 10000
-ROUTING_TARGETS = {
-    ("opencode", "opencode-go/mimo-v2.6-flash"),
-    ("opencode", "opencode-go/deepseek-v4.1-flash"),
-    ("claudeAgent", "claude-sonnet-5-5"),
-    ("grok", "grok-4.7"),
-}
+PROVIDERS = ROOT / "policy" / "providers.json"
+
+
+def load_providers() -> dict[str, dict]:
+    """Enabled T3 instances and the model ids the routing table may pin.
+
+    A disabled instance is not a delegation target: delegate_task refuses it with
+    "Provider instance is disabled". Recording that here is what makes a stale
+    routing row a lint failure instead of a workflow that dies at T2.
+    """
+    try:
+        data = json.loads(PROVIDERS.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        fail(f"policy/providers.json: {error}")
+        return {}
+    if not data.get("verified") or not data.get("source"):
+        fail("policy/providers.json: needs 'verified' and 'source'")
+    providers = data.get("providers") or {}
+    if not providers:
+        fail("policy/providers.json: no providers recorded")
+    return providers
+
+
+def routing_targets(providers: dict[str, dict]) -> set[tuple[str, str]]:
+    targets: set[tuple[str, str]] = set()
+    for name, entry in providers.items():
+        if entry.get("enabled"):
+            models = entry.get("routableModels") or []
+            if not models:
+                fail(f"policy/providers.json: {name} is enabled with no routableModels")
+            targets.update((name, model) for model in models)
+        elif not entry.get("reason"):
+            fail(f"policy/providers.json: disabled {name} needs a reason")
+    return targets
 
 
 def check_instructions() -> None:
@@ -273,10 +301,26 @@ def check_instructions() -> None:
     rows = [l for l in (section.group(1) if section else "").splitlines() if l.startswith("|")][2:]
     if not rows:
         fail("AGENTS.md: Model routing has no table rows")
+    providers = load_providers()
+    targets = routing_targets(providers)
+    pinned: set[str] = set()
     for row in rows:
         cells = [c.strip().strip("`") for c in row.strip().strip("|").split("|")]
-        if len(cells) < 5 or (cells[2], cells[3]) not in ROUTING_TARGETS:
-            fail(f"AGENTS.md: routing row does not name a real T3 target: {row[:80]}")
+        if len(cells) < 5 or (cells[2], cells[3]) not in targets:
+            fail(f"AGENTS.md: routing row does not name an enabled instance and routable model "
+                 f"from policy/providers.json: {row[:80]}")
+            continue
+        pinned.add(cells[2])
+        option = cells[4]
+        if option and option != "none":
+            option_id = option.split("=", 1)[0]
+            allowed = (providers.get(cells[2]) or {}).get("optionIds") or []
+            if option_id not in allowed:
+                fail(f"AGENTS.md: row option {option!r} is not one of {allowed} for instance "
+                     f"{cells[2]!r}; the option id changes with the instance: {row[:80]}")
+    for name, entry in providers.items():
+        if entry.get("enabled") and name not in pinned:
+            fail(f"AGENTS.md: enabled instance {name!r} from policy/providers.json has no routing row")
 
 
 def main() -> int:
