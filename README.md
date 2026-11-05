@@ -93,6 +93,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | subagent prompts (opencode format); the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
+| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy, its test vectors, and the T3 provider snapshot the routing table is linted against | permissions reach all three via `bin/sync-harness`; the snapshot is read by `bin/lint-config` |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
