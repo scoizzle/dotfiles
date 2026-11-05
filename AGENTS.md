@@ -96,7 +96,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `xai/grok-4.7` | `variant=high` |
-| plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `xai/grok-4.7` | `variant=high` |
+| plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
 
 - Call `orchestrator_capabilities` once per thread before the first delegation,
   and again only after an error or a provider the user names. Pass the pin as
@@ -125,9 +125,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   stays on the builder band.
 - `agents/*.md` are the native fallback, not the routing source, and a pin must
   name an enabled instance in `policy/providers.json`. `grok-4.5` has no
-  clean-case gate, so the advisor stays on `grok-4.7`.
-- Claude quota is scarce: `implement-deep` is the only Claude band, about once
-  a day.
+  clean-case gate, so the verifier stays on `grok-4.7`.
+- Claude quota has headroom (2026-11-04): the advisor joins `implement-deep` on
+  Claude.
 
 ## Memory
 
