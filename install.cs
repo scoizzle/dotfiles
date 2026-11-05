@@ -26,6 +26,7 @@ string[] entries =
     "skills",
     "memory",
     "bin",
+    "plugins",
     "evals",
 ];
 
