@@ -88,7 +88,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 
 | path            | what it is                                        | reaches |
 | --------------- | ------------------------------------------------- | ------- |
-| `AGENTS.md`     | global workflow, routing table, memory and C# rules (kept under Grok's 10,000-character cap) | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
+| `AGENTS.md`     | global workflow, routing table, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
 | `agents/`       | subagent prompts (opencode format); the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
