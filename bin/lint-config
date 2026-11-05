@@ -286,7 +286,7 @@ def routing_targets(providers: dict[str, dict]) -> set[tuple[str, str]]:
 
 
 def check_instructions() -> None:
-    """AGENTS.md is shared by opencode, Claude Code (CLAUDE.md) and Grok Build."""
+    """Check the AGENTS.md every harness loads: headings, required phrases, routing rows."""
     text = (ROOT / "AGENTS.md").read_text()
     for heading in ("## Default workflow", "## Model routing", "## Memory", "## C# / .NET work"):
         if not re.search(r"^" + re.escape(heading) + r"\s*$", text, flags=re.M):

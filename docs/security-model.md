@@ -82,8 +82,8 @@ Limits specific to this layer:
   (`~/.claude/settings.json`) and can edit out. Enforcement needs the root-owned
   file above, which carries rules, not the hook.
 - Instructions are shared: `install.cs` links `~/.claude/CLAUDE.md` and
-  `~/.grok/AGENTS.md` to `AGENTS.md`. There is no size cap and no lint failure
-  for length.
+  `~/.grok/AGENTS.md` to `AGENTS.md`. Grok Build does not cap the file
+  (verified 2026-11-05).
 
 ## What is only discouraged
 
