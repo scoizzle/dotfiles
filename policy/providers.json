@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "doc": "T3 provider instances from orchestrator_capabilities. bin/lint-config fails a Model routing row in AGENTS.md that names a disabled instance or a model outside the allowlist, so a settings change cannot leave a dead band behind. 'routableModels' is a curated allowlist of what the table may pin, not the full catalog. Re-verify with orchestrator_capabilities and move 'verified' in the same change.",
-  "verified": "2026-11-02",
+  "doc": "T3 provider instances from orchestrator_capabilities. bin/lint-config fails a Model routing row in AGENTS.md that names a disabled instance or a model outside the allowlist, so a settings change cannot leave a dead band behind. 'routableModels' is a curated allowlist of what the table may pin, not the full catalog. Re-verify with orchestrator_capabilities and move 'verified' in the same change. 2026-11-04: re-verified against the live catalog; the curated allowlist is deliberately unchanged.",
+  "verified": "2026-11-04",
   "source": "orchestrator_capabilities",
   "providers": {
     "opencode": {
@@ -31,6 +31,7 @@
     },
     "codex": { "enabled": false, "reason": "Provider instance is disabled." },
     "cursor": { "enabled": false, "reason": "Provider instance is disabled." },
+    "kiro": { "enabled": false, "reason": "Provider instance is disabled." },
     "antigravity": { "enabled": false, "reason": "Provider instance is disabled." },
     "fx": { "enabled": false, "reason": "Provider instance is disabled." },
     "muse": { "enabled": false, "reason": "Provider instance is disabled." },
