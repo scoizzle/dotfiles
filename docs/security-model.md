@@ -82,8 +82,8 @@ Limits specific to this layer:
   (`~/.claude/settings.json`) and can edit out. Enforcement needs the root-owned
   file above, which carries rules, not the hook.
 - Instructions are shared: `install.cs` links `~/.claude/CLAUDE.md` and
-  `~/.grok/AGENTS.md` to `AGENTS.md`. Grok caps the file at 10,000 characters;
-  `bin/lint-config` fails above that.
+  `~/.grok/AGENTS.md` to `AGENTS.md`. Grok Build does not cap the file
+  (verified 2026-11-05).
 
 ## What is only discouraged
 

@@ -48,6 +48,14 @@ later floors at T2 is re-run as T2.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
   done-when. An unproven 🟠 gets a probe by the build agent or is downgraded and
   reported; it is not fixed as confirmed.
+- **Handback:** a reproducible bug in hand is work, not a note: write its red
+  test before the stream ends. A fix inside T1's limits stays T1 and the stream
+  continues; a larger one is T2 on its bands. Only a person's ruling defers,
+  recorded where the work is, dated, naming the decision it addresses. A "not a
+  patch" verdict names the estimated diff and the decision it violates.
+- **Green is the branch head.** A recorded suite result names the commit it ran
+  on and a tree whose `git status` you have read. A green run in a child tree, a
+  copy, or over uninspected untracked files proves nothing.
 - **Never** delete, skip, or weaken a test. If a test's expectation was wrong,
   say so and say why.
 - The **second-opinion prompt** contains the bundle directory, the plan/done-when,

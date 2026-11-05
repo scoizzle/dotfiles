@@ -133,10 +133,6 @@ jobs:
           sys.exit(0 if all(checks.values()) else 1)
           PY
 
-      # Grok Build loads ~/.grok/AGENTS.md and truncates past 10,000 characters.
-      - name: AGENTS.md fits the Grok cap
-        run: python3 -c 'import pathlib; t=pathlib.Path("AGENTS.md").read_text(); print(len(t)); assert len(t)<=10000, len(t)'
-
       - name: python tools still parse
         run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
 
