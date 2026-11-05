@@ -2,14 +2,15 @@
 
 > **Current pins (read this first).** This file is a dated log; Phases 3 and 4
 > were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
-> and the agent files. At the time of writing:
+> and the agent files. At the last re-pin (Phase 7):
 >
 > | Role | Pin |
 > | --- | --- |
 > | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
 > | `build`, `plan`, `general`, `second-opinion`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
 > | `implement-deep` | `claude-agent/sonnet#medium` |
-> | `review-deep`, `plan-review-deep`, `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` is routable but has no clean-case gate |
+> | `review-deep`, `plan-review-deep` | `claude-agent/sonnet#high` |
+> | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` is routable but has no clean-case gate |
 >
 > **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are
 > `session_v2.cost`, which opencode computes from list price, not an invoice.
@@ -400,6 +401,8 @@ same token and the same `api.x.ai/v1` base URL, so they are on that path as well
 
 ### Pins after Phase 6
 
+> Phase 7 supersedes the two advisor rows below.
+
 The `grok` and `claudeAgent` T3 instances are disabled; both models are reachable
 through the single `opencode` instance, which multiplexes the Go plan and the xAI
 and Claude logins.
@@ -424,3 +427,39 @@ while four bands could not be delegated.
 Limits: one account, one console window, one repository. The console showed a
 single team; usage under another team on the same account was not checked. Grok
 4.5 and 4.6 were re-verified as routable through `opencode` but were not run.
+
+## Phase 7 — quota headroom re-pin (2026-11-04)
+
+Phase 5's quota rule was the only reason the advisor stayed off Claude. The
+user reports the Claude subscription is no longer near its limits, so the
+advisor moves to the model that passed the clean-case gate fastest. Phase 6
+measured this band at about three times the verifier's session rate, so the
+change spends quota rather than sparing it; it rests on headroom, not volume.
+
+| Role | Pin | Why |
+| --- | --- | --- |
+| `plan-review-deep`, `review-deep` | `opencode` + `claude-agent/sonnet` + `variant=high` | Headroom granted by the user; lowest latency on the recorded gate, but `#high` is ungated. |
+| `verifier` | unchanged: `opencode` + `xai/grok-4.7` + `variant=high` | Keeps the xAI grant; not re-gated here. |
+| `second-opinion` | unchanged: `opencode-go/deepseek-v4.1-flash#high` | Different family from a Claude `review-deep` on the routed path; the native fallback gap is noted below. |
+| `implement-deep` | unchanged: `claude-agent/sonnet#medium` | Same model, lower effort; about one T2 a day. |
+
+Caveats:
+
+- The 29/45 s figure is `claude-agent/sonnet#medium` on the verifier gate.
+  `#high` is a legal variant (re-verified 2026-11-04) but is an ungated effort
+  bump, so advisor quality was not re-measured.
+- Family diversity holds on the routed path only: the native fallback renders
+  `review-deep`, `plan-review-deep` and `second-opinion` on the same Claude
+  model (`policy/permissions.json`), so the second pass is not decorrelated
+  there.
+- The ~1.8x token inflation was a T3 accounting bug, not this repository's; the
+  headroom claim rests on the user's report.
+- `policy/providers.json` was re-verified against `orchestrator_capabilities` on
+  2026-11-04; the allowlist is deliberately unchanged.
+
+### What would change this
+
+- Claude quota tightening again: move the advisor back to `xai/grok-4.7#high`
+  under the Phase 5 rule.
+- A measured advisor gate on `claude-agent/sonnet#high`; the recorded figure is
+  `#medium` on the verifier gate.
