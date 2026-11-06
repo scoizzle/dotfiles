@@ -2,12 +2,13 @@
 
 > **Current pins (read this first).** This file is a dated log; Phases 3 and 4
 > were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
-> and the agent files. At the last re-pin (Phase 7):
+> and the agent files. At the last re-pin (Phase 8):
 >
 > | Role | Pin |
 > | --- | --- |
 > | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
-> | `build`, `plan`, `general`, `second-opinion`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
+> | `build`, `plan`, `general`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
+> | `second-opinion` | `xai/grok-4.7#high` |
 > | `implement-deep` | `claude-agent/sonnet#medium` |
 > | `review-deep`, `plan-review-deep` | `claude-agent/sonnet#high` |
 > | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` is routable but has no clean-case gate |
@@ -463,3 +464,46 @@ Caveats:
   under the Phase 5 rule.
 - A measured advisor gate on `claude-agent/sonnet#high`; the recorded figure is
   `#medium` on the verifier gate.
+
+## Phase 8 — second-opinion decorrelation (2026-11-06)
+
+`second-opinion` moves from `opencode-go/deepseek-v4.1-flash#high` to
+`xai/grok-4.7#high`. `build`, `plan`, `general` and `dream-drafter` stay on
+deepseek, as the user asked.
+
+This reverses the Phase 5 rationale that sharing a family with the default
+builder is acceptable. The user observed independent reviews landing on the
+implementor's model. The second pass should be independent of both the first
+reviewer (Claude) and the author (deepseek); grok is a different family from
+both.
+
+Evidence, kept honest:
+
+- The clean-case gate (Phase 5) was run on `verifier`, not on `second-opinion`.
+  The 15/15 recall and 242 s median belong to the 2026-10-18 reviewer golden
+  set (line 29), which does not name `second-opinion`. `grok-4.7` has no direct
+  `second-opinion` run, so this is an extrapolation from the verifier gate.
+- The deepseek false 🔴 on a clean change is still a real reason to move a
+  reviewer off it.
+
+Latency trade-off: `grok-4.7` is ~242 s median on the 2026-10-18 reviewer set
+and 603-828 s on verifier cases, against 46 s for deepseek on the
+`storage-enum-backing-type` second-opinion case. `second-opinion` runs in
+parallel with `review-deep`; the recorded 29-45 s figures are
+`claude-agent/sonnet#medium` on the verifier gate, not a measured `review-deep`
+time, and `review-deep` runs at the ungated `#high`. Even so, grok is much
+slower, so `second-opinion` becomes the T2 sign-off critical path. Acceptable at
+about one T2 a day.
+
+Cost and quota: `second-opinion` draws the xAI grant, which Phase 6 measured as
+subscription-entitled (0 API requests, $0 metered). At about one T2 a day the
+added volume is small.
+
+Native fallback gap: `policy/permissions.json` renders `second-opinion` as
+`sonnet`, the same Claude model as `review-deep` and `plan-review-deep`. Claude
+Code cannot render Grok, so the routed pin is the decorrelated path.
+
+### What would change this
+
+- `grok-4.5` getting a clean-case gate: re-evaluate. `grok-4.5` and `4.6` are
+  faster but ungated on the clean case.

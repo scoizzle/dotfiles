@@ -101,7 +101,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | --- | --- | --- | --- | --- |
 | explore, review-light | repo map, grep, T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
 | build, plan, general | the session itself, T0/T1 edits | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
-| second-opinion | independent T2 second look | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
+| second-opinion | independent T2 second look | `opencode` | `xai/grok-4.7` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `xai/grok-4.7` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
