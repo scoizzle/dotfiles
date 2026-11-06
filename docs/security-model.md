@@ -21,6 +21,7 @@ that every later session trusts).
 | `dream` drafts with `dream-drafter` (no tools) and without `--auto` | `bin/dream`, `agents/dream-drafter.md` | Tool-level. |
 | The digest is redacted, framed as untrusted, and every returned line is validated | `bin/dream` | Heuristic. Drops, does not repair. |
 | Drafted lessons are staged in `memory/learnings/pending/` and reach agents only through `dream --promote`, which needs a person | `bin/dream` | Human gate. |
+| `dream` never writes `memory/core/`; `--promote` also rewrites only `memory/learnings/working.md`, from the dated archive, after the same confirmation | `bin/dream` | Path allowlist in `assert_working_target`. |
 
 `bin/lint-config` runs in CI and evaluates concrete commands and paths against each
 agent's effective rules. It exists because a rule order bug is invisible by reading:

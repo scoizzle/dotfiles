@@ -120,7 +120,8 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `reviews.jsonl` — append-only log of review runs.
 - `evals/canary-*/` — recorded model output from past eval runs.
 
-`memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored. With
+`memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored; that
+includes the generated `working.md`, which is local-only like the dated files. With
 the default symlink, `bin/dream` writes those files into this checkout: they
 are on disk here, and `git clone` does not carry them to another machine. A
 `--copy` install keeps them only under `~/.config/opencode/memory/learnings/`.

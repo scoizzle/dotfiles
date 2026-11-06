@@ -173,6 +173,8 @@ jobs:
           echo "$out" | grep -q 'nothing to append'
           echo "$out" | grep -q 'opencode.db'
           git check-ignore -q memory/learnings/2099-01-01.md
+          git check-ignore -q memory/learnings/working.md
+          python3 tests/dream_compact.py
           if git check-ignore -q memory/learnings/README.md; then
             echo "README.md should stay tracked"
             exit 1

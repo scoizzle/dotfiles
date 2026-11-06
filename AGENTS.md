@@ -159,6 +159,8 @@ id, and source.
 
 `dream` stages its output in `memory/learnings/pending/`, which agents do not
 read. A person promotes it with `~/.config/opencode/bin/dream --promote`.
+Read `memory/learnings/working.md` first when it exists, and open any dated file
+its `source:` line does not name; never write it, since promote generates it.
 
 Do not rewrite memory mid-task as a substitute for finishing the work.
 Curriculum updates are the out-of-band dream pass,

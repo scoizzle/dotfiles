@@ -33,6 +33,13 @@ Drafted lines are STAGED in memory/learnings/pending/YYYY-MM-DD.md, which agents
 do not read. `dream --promote` shows them and, after a person confirms (a tty
 prompt, or --yes), appends them to memory/learnings/YYYY-MM-DD.md. memory/core/
 is never written.
+
+Promote also compacts. After the appends, and after a person confirms, it
+rewrites learnings/working.md from the dated archive: deterministic, no model,
+no session-store read. Exact duplicates collapse, distinct remedies stay, and
+the dated files are never rewritten or deleted. Agents read working.md first.
+Only learnings/working.md is written besides the dated append; memory/core/
+never is. `dream --promote --yes` with nothing pending rebuilds a stale working.md.
 """
 from __future__ import annotations
 
@@ -843,9 +850,10 @@ def recorded_lines(learnings: Path) -> list[str]:
     if not learnings.is_dir():
         return []
     found: list[str] = []
-    for path in sorted([*learnings.glob("*.md"), *(learnings / PENDING_DIR).glob("*.md")]):
-        if path.name in ("README.md",):
-            continue
+    # Only dated files are the record. working.md is derived from them, and a
+    # stray notes.md is nobody's lesson.
+    candidates = [*learnings.glob("*.md"), *(learnings / PENDING_DIR).glob("*.md")]
+    for path in sorted(p for p in candidates if DATED_NAME.fullmatch(p.name)):
         try:
             text = path.read_text(errors="replace")
         except OSError:
@@ -988,6 +996,235 @@ def assert_learnings_target(memory: Path, target: Path) -> Path:
     return target_resolved
 
 
+WORKING_NAME = "working.md"
+WORKING_LOCK = ".working.lock"
+DIGEST_LINE = re.compile(r"^digest: ([0-9a-f]{64})[ \t]*$", re.MULTILINE)
+STOP_TOKENS = frozenset(
+    "a an the and or for with from that this into when then than are was were not but".split()
+)
+NEGATIVE_RETRY = re.compile(
+    r"\b(?:do not|don't|never)\b[^.;]{0,40}\bretr(?:y|ies)\b", re.IGNORECASE
+)
+AFFIRM_RETRY = re.compile(r"\b(?:retry|retries|rerun|re-run|re-issue|reissue)\b", re.IGNORECASE)
+BACKTICK_SPAN = re.compile(r"`[^`]*`")
+
+
+def assert_working_target(memory: Path, target: Path) -> Path:
+    """Allow only learnings/working.md. Never core, pending, README, or a dated file."""
+    if not memory.is_dir():
+        raise SystemExit(
+            f"memory is not installed at {memory}\n"
+            "run ./install.cs so memory/ is linked to ~/.config/opencode/memory"
+        )
+    learnings = memory / "learnings"
+    if not learnings.is_dir():
+        raise SystemExit(f"missing {learnings}")
+    core = memory / "core"
+    target_resolved = target.resolve()
+    if core.exists():
+        core_resolved = core.resolve()
+        if target_resolved == core_resolved or core_resolved in target_resolved.parents:
+            raise SystemExit(f"refusing to write memory/core ({target_resolved})")
+    if target.name != WORKING_NAME or target_resolved.parent != learnings.resolve():
+        raise SystemExit(
+            f"refusing to write {target}; the only compaction target is learnings/{WORKING_NAME}"
+        )
+    return target_resolved
+
+
+def normalize_body(body: str) -> str:
+    """Collapse key: whitespace, one trailing . or ;, lowercase prose only."""
+    text = " ".join(body.split())
+    if text.endswith((".", ";")):
+        text = text[:-1].rstrip()
+
+    def fold(word: str) -> str:
+        # Sentence case collapses. Flags, digits, and internal capitals do not:
+        # git clean -X and -x are different remedies, and so are PATH and path.
+        if not word.isalpha() or any(ch.isupper() for ch in word[1:]):
+            return word
+        return word.lower()
+
+    def prose(chunk: str) -> str:
+        return re.sub(r"\S+", lambda match: fold(match.group(0)), chunk)
+
+    out: list[str] = []
+    last = 0
+    for span in BACKTICK_SPAN.finditer(text):
+        out.append(prose(text[last : span.start()]))
+        out.append(span.group(0))
+        last = span.end()
+    out.append(prose(text[last:]))
+    return "".join(out)
+
+
+def conflict_tokens(body: str) -> set[str]:
+    tokens = {span[1:-1].strip().lower() for span in BACKTICK_SPAN.findall(body)}
+    rest = BACKTICK_SPAN.sub(" ", body)
+    for word in re.findall(r"[\w./-]+", rest):
+        word = word.rstrip(".,;:-").lstrip("-")
+        if len(word) >= 3 and re.search(r"[/._]", word):
+            tokens.add(word.lower())
+    return {t for t in tokens if t and t not in STOP_TOKENS}
+
+
+def inputs_digest(files: list[tuple[str, str]]) -> str:
+    digest = hashlib.sha256()
+    for name, text in files:
+        digest.update(name.encode())
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(text.encode()).digest())
+    return digest.hexdigest()
+
+
+def compact_texts(files: list[tuple[str, str]]) -> str:
+    """Deterministic working set from dated files, already in archive order. No clock."""
+    groups: dict[tuple[str, str, str], dict] = {}
+    skipped = 0
+    unsafe = 0
+    for name, text in files:
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("## ") or stripped.startswith("source:"):
+                continue
+            match = CONSTRAINT.match(raw)
+            if not match:
+                skipped += 1
+                continue
+            if not acceptable(match):
+                unsafe += 1
+            kind, body, layer = match.group(1).lower(), match.group(2).strip(), match.group(3).lower()
+            group = groups.setdefault(
+                (kind, layer, normalize_body(body)),
+                {"kind": kind, "body": body, "layer": layer, "files": []},
+            )
+            if name not in group["files"]:
+                group["files"].append(name)
+
+    entries = list(groups.values())
+    notes: list[str] = []
+    for neg in entries:
+        if neg["kind"] != "never" and not NEGATIVE_RETRY.search(neg["body"]):
+            continue
+        for aff in entries:
+            if aff is neg or aff["kind"] == "never" or NEGATIVE_RETRY.search(aff["body"]):
+                continue
+            if not AFFIRM_RETRY.search(aff["body"]):
+                continue
+            shared = conflict_tokens(neg["body"]) & conflict_tokens(aff["body"])
+            if shared:
+                note = (
+                    f"kept distinct: {', '.join(neg['files'])} vs {', '.join(aff['files'])}"
+                    f" on token {', '.join(sorted(shared))}"
+                )
+                if note not in notes:
+                    notes.append(note)
+
+    lines = [
+        "# Working set",
+        "Generated by `dream --promote` from the dated archive. Agents read it; do not edit it.",
+        "",
+        f"digest: {inputs_digest(files)}",
+        f"source: {', '.join(name for name, _text in files)}",
+        f"skipped: {skipped}",
+        f"carried-unsafe: {unsafe}",
+        "",
+    ]
+    for group in entries:
+        lines.append(f"- {group['kind']}: {group['body']} [{group['layer']}]")
+        lines.append(f"  source: {', '.join(group['files'])}")
+    if notes:
+        lines.append("")
+        lines.extend(notes)
+    return "\n".join(lines) + "\n"
+
+
+def archive_files(learnings: Path) -> list[tuple[str, str]]:
+    """Dated archive files only (not pending, working.md, or strays), in name order."""
+    if not learnings.is_dir():
+        return []
+    names = sorted(
+        p.name for p in learnings.glob("*.md") if DATED_NAME.fullmatch(p.name) and p.is_file()
+    )
+    return [(name, (learnings / name).read_text(errors="replace")) for name in names]
+
+
+def working_status(memory: Path) -> str:
+    """current, stale (digest differs), missing (no working.md), or empty (no archive)."""
+    learnings = memory / "learnings"
+    files = archive_files(learnings)
+    if not files:
+        return "empty"
+    path = learnings / WORKING_NAME
+    try:
+        found = DIGEST_LINE.search(path.read_text(errors="replace"))
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "stale"
+    return "current" if found and found.group(1) == inputs_digest(files) else "stale"
+
+
+def refresh_working(memory: Path) -> bool:
+    """Rewrite working.md from the archive if its digest differs. True when it wrote."""
+    target = assert_working_target(memory, memory / "learnings" / WORKING_NAME)
+    learnings = target.parent
+    files = archive_files(learnings)
+    digest = inputs_digest(files)
+    # A separate lock file: renaming over working.md replaces its inode, so a
+    # flock on working.md itself would not serialize writers.
+    lock_fd = os.open(learnings / WORKING_LOCK, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        changed = 0
+        while True:
+            fresh = archive_files(learnings)
+            fresh_digest = inputs_digest(fresh)
+            if fresh_digest == digest:
+                break
+            changed += 1
+            if changed >= 2:
+                raise SystemExit("refusing to write working.md; the archive changed twice while compacting")
+            files, digest = fresh, fresh_digest
+        try:
+            found = DIGEST_LINE.search(target.read_text(errors="replace"))
+        except OSError:
+            found = None
+        if found and found.group(1) == digest:
+            return False
+        text = compact_texts(files)
+        stamp = now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+        text = text.replace(f"digest: {digest}\n", f"digest: {digest}\nupdated: {stamp}\n", 1)
+        # Not *.md: a crash leftover must not look like a lesson file.
+        fd, tmp_name = tempfile.mkstemp(dir=learnings, prefix=".working-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(tmp_name, 0o644)
+            os.replace(tmp_name, target)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        return True
+    finally:
+        os.close(lock_fd)
+
+
+def append_payload(data: bytes, block: str) -> bytes:
+    """The bytes append_if_same adds after existing file bytes."""
+    prefix = ""
+    if data and not data.endswith(b"\n"):
+        prefix += "\n"
+    if data and not data.endswith(b"\n\n"):
+        prefix += "\n"
+    return (prefix + block.rstrip() + "\n").encode()
+
+
 def append_if_same(path: Path, prior: str | None, block: str) -> bool:
     """Append block if the file's hash is still prior. prior None means the file was absent."""
     existed = path.exists()
@@ -1020,12 +1257,7 @@ def append_if_same(path: Path, prior: str | None, block: str) -> bool:
             current = hashlib.sha256(data).hexdigest()
         if current != prior:
             return False
-        prefix = ""
-        if data and not data.endswith(b"\n"):
-            prefix += "\n"
-        if data and not data.endswith(b"\n\n"):
-            prefix += "\n"
-        payload = (prefix + block.rstrip() + "\n").encode()
+        payload = append_payload(data, block)
         os.lseek(fd, 0, os.SEEK_END)
         os.write(fd, payload)
         return True
@@ -1064,21 +1296,63 @@ def pending_problem(text: str) -> str | None:
     return None
 
 
+def append_pending(memory: Path, path: Path) -> Path:
+    """Append one pending file onto its dated file, then consume it. Raises SystemExit/OSError."""
+    target = memory / "learnings" / path.name
+    assert_learnings_target(memory, target)
+    block = path.read_text(errors="replace")
+    for attempt in (1, 2):
+        if append_if_same(target, sha256_file(target), block):
+            path.unlink()
+            return target
+        if attempt == 2:
+            raise SystemExit(f"refusing to append to {target}; it changed twice before the write")
+    raise SystemExit(f"refusing to append to {target}")
+
+
+def virtual_working(memory: Path, pending: list[Path]) -> str:
+    """The working set as it would read after appending pending onto the dated files."""
+    texts = dict(archive_files(memory / "learnings"))
+    for path in pending:
+        existing = texts.get(path.name, "").encode()
+        block = path.read_text(errors="replace")
+        texts[path.name] = (existing + append_payload(existing, block)).decode(errors="replace")
+    return compact_texts(sorted(texts.items()))
+
+
 def promote(memory: Path, dry_run: bool, yes: bool) -> int:
     pending = sorted((memory / "learnings" / PENDING_DIR).glob("*.md"))
     pending = [path for path in pending if DATED_NAME.fullmatch(path.name)]
     if not pending:
         print("nothing pending")
+        status = working_status(memory)
+        if status in ("missing", "stale"):
+            print(f"working set is stale ({status}); run: dream --promote --yes")
+        if dry_run:
+            print(f"--- {memory / 'learnings' / WORKING_NAME} (working set after promote; nothing written)")
+            sys.stdout.write(compact_texts(archive_files(memory / "learnings")))
+            return 0
+        if status in ("missing", "stale") and yes:
+            try:
+                refresh_working(memory)
+            except (SystemExit, OSError) as error:
+                print(f"could not rebuild {WORKING_NAME}: {error}", file=sys.stderr)
+                return 1
+            print(memory / "learnings" / WORKING_NAME)
         return 0
+    # Pending text goes to stderr on a dry run so stdout is the working set alone.
+    shown = sys.stderr if dry_run else sys.stdout
     for path in pending:
         text = path.read_text(errors="replace")
         problem = pending_problem(text)
-        print(f"--- {path}")
-        sys.stdout.write(text if text.endswith("\n") else text + "\n")
+        print(f"--- {path}", file=shown)
+        shown.write(text if text.endswith("\n") else text + "\n")
         if problem:
             print(f"refusing to promote {path.name}: {problem}", file=sys.stderr)
             return 1
     if dry_run:
+        print(f"--- {memory / 'learnings' / WORKING_NAME} (working set after promote; nothing written)")
+        sys.stdout.write(virtual_working(memory, pending))
         return 0
     if not yes:
         if not sys.stdin.isatty():
@@ -1087,18 +1361,36 @@ def promote(memory: Path, dry_run: bool, yes: bool) -> int:
         if input("promote these lines to durable memory? [y/N] ").strip().lower() not in ("y", "yes"):
             print("not promoted")
             return 1
+    appended = 0
+    failure = ""
     for path in pending:
-        target = memory / "learnings" / path.name
-        assert_learnings_target(memory, target)
-        block = path.read_text(errors="replace")
-        for attempt in (1, 2):
-            if append_if_same(target, sha256_file(target), block):
-                break
-            if attempt == 2:
-                print(f"refusing to append to {target}; it changed twice before the write", file=sys.stderr)
-                return 1
-        path.unlink()
-        print(target)
+        try:
+            print(append_pending(memory, path))
+            appended += 1
+        except (SystemExit, OSError) as error:
+            failure = str(error)
+            break
+    if failure:
+        print(failure, file=sys.stderr)
+        if appended:
+            try:
+                refresh_working(memory)
+                print(
+                    f"archive updated for {appended} pending file(s); {WORKING_NAME} refreshed, "
+                    "the rest was refused and stays pending",
+                    file=sys.stderr,
+                )
+            except (SystemExit, OSError) as error:
+                print(
+                    f"archive updated but {WORKING_NAME} may be stale: {error}", file=sys.stderr
+                )
+        return 1
+    try:
+        refresh_working(memory)
+    except (SystemExit, OSError) as error:
+        print(f"archive updated but {WORKING_NAME} is stale: {error}", file=sys.stderr)
+        return 1
+    print(memory / "learnings" / WORKING_NAME)
     return 0
 
 
@@ -1122,7 +1414,7 @@ def main(argv: list[str] | None = None) -> int:
         help=f"drafting model, provider/model (default {DEFAULT_MODEL})",
     )
     parser.add_argument("--timeout", type=int, default=180, help="seconds to wait for opencode run")
-    parser.add_argument("--promote", action="store_true", help="review pending lines and append them to the learnings agents read")
+    parser.add_argument("--promote", action="store_true", help="review pending lines, append them to the dated learnings, then compact the archive into learnings/working.md")
     parser.add_argument("--yes", action="store_true", help="with --promote: confirm without a prompt")
     args = parser.parse_args(argv)
 
