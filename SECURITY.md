@@ -31,7 +31,9 @@ for anything sensitive. Please do not open a public issue for it.
   rules match the command text, so a redirection into core is forbidden by
   the Memory section of `AGENTS.md` rather than by a path-shaped shell rule.
 - `bin/dream` appends only to `memory/learnings/YYYY-MM-DD.md`. It refuses a
-  path that resolves under `memory/core/`.
+  path that resolves under `memory/core/`. `dream --promote` also rewrites
+  only `memory/learnings/working.md` (a compaction of the dated archive), and
+  never `memory/core/`.
 - CI is required to pass before anything lands on `main`.
 
 ## Platform scope
