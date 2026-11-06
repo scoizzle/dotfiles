@@ -241,8 +241,9 @@ Fix on a machine that hits it: run `./setup.sh` (it puts the dotnetup-managed SD
 - `main` is protected: pull request required, four required CI checks (shell and
   installer, on Ubuntu and macOS), linear history, no force-push, no deletion.
 - Secret scanning and push protection are enabled; Dependabot security updates are on.
-- Dependabot tracks `global.json` (`dotnet-sdk`) and GitHub Actions. Pinned global
-  tools that Dependabot cannot see are checked weekly by `.github/workflows/tools.yml`.
+- Dependabot tracks GitHub Actions; there is deliberately no `dotnet-sdk` entry
+  (`global.json`'s version is a floor, not a target). Pinned global tools that
+  Dependabot cannot see are checked weekly by `.github/workflows/tools.yml`.
 - Security reports: see [`SECURITY.md`](SECURITY.md).
 
 ## Known machine-specific bits

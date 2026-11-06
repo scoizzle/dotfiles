@@ -1,7 +1,8 @@
 name: tools
 
-# Dependabot covers global.json (dotnet-sdk ecosystem) and GitHub Actions, but it has
-# no ecosystem for global .NET tools: `dotnet tool install -g roslynk` writes outside
+# Dependabot covers GitHub Actions. There is deliberately no dotnet-sdk entry:
+# global.json's sdk.version is a floor, and Dependabot would raise it. There is no
+# Dependabot ecosystem for global .NET tools: `dotnet tool install -g roslynk` writes outside
 # the repo, so nothing is scanned. This workflow closes that gap by comparing the pin
 # in tools.json against NuGet.
 
