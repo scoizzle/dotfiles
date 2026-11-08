@@ -389,7 +389,13 @@ def main() -> int:
         fail("explore: edit must be deny; it is the read-only swarm")
 
     orchestrator = agents.get("orchestrator")
-    if orchestrator is not None:
+    if orchestrator is None:
+        fail("orchestrator: agents/orchestrator.md is missing; it is an opt-in primary")
+    else:
+        if config.get("default_agent") == "orchestrator":
+            fail("orchestrator: must stay opt-in; default_agent is build")
+        if effective(orchestrator, "read", "src/x.cs") != "allow":
+            fail("orchestrator: read must stay allowed; it reads PROOF hunks")
         for action in ("edit", "shell", "webfetch", "websearch",
                        "opencode_session_rename", "opencode_worktree_create",
                        "opencode_worktree_remove", "opencode_session_move",
@@ -399,9 +405,8 @@ def main() -> int:
                        "roslynk_rename_parameter", "roslynk_remove_unused_usings"):
             if effective(orchestrator, action, "src/x.cs") != "deny":
                 fail(f"orchestrator: {action} must be deny; it is a no-hands dispatcher")
-        for target in ("general", "implement-deep"):
-            if effective(orchestrator, "subagent", target) != "allow":
-                fail(f"orchestrator: subagent {target} must stay allowed; it is a dispatch target")
+        if effective(orchestrator, "subagent", "*") != "deny":
+            fail("orchestrator: subagent must be deny; dispatch goes through T3")
         if effective(orchestrator, "execute", "*") != "allow":
             fail("orchestrator: execute must stay allowed; T3 delegation is reached through it")
 

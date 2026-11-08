@@ -82,12 +82,13 @@ the command and its output tail is not proof.
 
 ### Dispatch tiers
 
-The orchestrator picks one tier per unit and names it in the scope:
+The orchestrator picks one implementation tier per unit and names it in the
+scope:
 
 | Tier | Pin | Use it for |
 | --- | --- | --- |
-| builder | `opencode-go/deepseek-v4.1-flash#high` | volume, T0/T1, a named test oracle |
-| deep | `claude-agent/sonnet#medium` | T2 after plan lock, cross-cutting work, no cheap oracle |
+| `deepseek` | `opencode-go/deepseek-v4.1-flash#high` | volume, T0/T1, a named test oracle |
+| `sonnet` | `claude-agent/sonnet#medium` | T2 after plan lock, cross-cutting work, no cheap oracle |
 
 ### Safety
 

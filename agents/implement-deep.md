@@ -136,5 +136,5 @@ it did not.
 Return the `PROOF` block from the global AGENTS.md, plus one PASS/FAIL line per
 done-when item. In `checks:`, name the red command and its failure first, then
 the green command and its output tail; they are separate entries. The commit sha
-in `diff:` is optional: you cannot stage or commit. Put blockers and scope gaps
-under `risks:`. Do not claim a check passed unless you ran it.
+in `diff:` is optional: you cannot stage, commit, or push. Put blockers and scope
+gaps under `risks:`. Do not claim a check passed unless you ran it.
