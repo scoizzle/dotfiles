@@ -96,7 +96,7 @@ jobs:
       - name: managed paths are symlinks that resolve
         run: |
           set -eu
-          for p in AGENTS.md opencode.json agents commands skills bin evals; do
+          for p in AGENTS.md opencode.json agents commands skills bin evals memory; do
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
@@ -105,15 +105,11 @@ jobs:
             test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
           done
           test -f "$HOME/.config/opencode/skills/roslynk-rules/SKILL.md"
-          # memory is a real sparse git clone, not a link
-          m="$HOME/.config/opencode/memory"
-          test -d "$m"
-          test ! -L "$m"
-          test "$(git -C "$m" rev-parse --is-inside-work-tree)" = true
-          test -f "$m/INDEX.md"
-          test -f "$m/core/conventions.md"
-          test -f "$m/core/safety.md"
-          test -f "$m/learnings/README.md"
+          # memory is a symlink into the sparse clone at .memory
+          test -d "$HOME/.config/opencode/.memory"
+          test "$(git -C "$HOME/.config/opencode/.memory" rev-parse --is-inside-work-tree)" = true
+          test -f "$HOME/.config/opencode/memory/INDEX.md"
+          test -f "$HOME/.config/opencode/.memory/memory/core/safety.md"
 
       # A wrong skill header fails silently in opencode, so assert the contract:
       # name matches the directory and is a valid slug, description within bounds.
@@ -141,7 +137,7 @@ jobs:
           sys.exit(0 if all(checks.values()) else 1)
           PY
 
-      - name: memory install (sparse clone)
+      - name: memory install (sparse clone + link)
         run: python3 tests/memory_install.py
 
       - name: memory nightly

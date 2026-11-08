@@ -6,8 +6,10 @@
 //   ./install.cs --copy      copy instead of link (one-way, for odd machines)
 //   ./install.cs --home DIR  install under DIR instead of $HOME (tests, sandboxes)
 //
-// memory/ is not linked: ~/.config/opencode/memory is a sparse git clone of this
-// repo (only /memory/), so agent-written learnings can be committed from there.
+// memory/ is not linked into the repo: ~/.config/opencode/.memory is a sparse git
+// clone of this repo (only /memory/ and /.gitignore) and ~/.config/opencode/memory
+// is a symlink to .memory/memory, so agent-written learnings can be committed from
+// there and a deleted checkout loses nothing.
 // --memory-remote URL (or MEMORY_REMOTE) overrides the clone source; the default
 // is this repo's origin.
 //
@@ -439,16 +441,13 @@ static string MakeBackupRoot(string home)
 }
 
 // ---------------------------------------------------------------------------
-// memory: a sparse git clone, not a link
+// memory: ~/.config/opencode/.memory is a sparse git clone of this repo; the
+// managed path ~/.config/opencode/memory is a symlink to .memory/memory.
 // ---------------------------------------------------------------------------
 static string MigratingMarkerName() => ".migrating";
 
-static (string Name, string Target, bool IsDir)[] MemoryLinks() =>
-[
-    ("INDEX.md", "memory/INDEX.md", false),
-    ("core", "memory/core", true),
-    ("learnings", "memory/learnings", true),
-];
+static string MemoryCloneName() => ".memory";
+static string MemoryLinkTarget() => ".memory/memory";
 
 static string? ResolveMemoryRemote(string repoRoot, string? arg)
 {
@@ -508,10 +507,13 @@ static bool SameRemote(string a, string b)
     return string.Equals(Norm(a), Norm(b), StringComparison.Ordinal);
 }
 
+static bool HasDotGit(string dir) =>
+    Directory.Exists(Path.Combine(dir, ".git")) || File.Exists(Path.Combine(dir, ".git"));
+
 static bool IsCloneDir(string dest) =>
     Directory.Exists(dest)
     && !(TryAttrs(dest, out var attrs) && IsLink(dest, attrs))
-    && (Directory.Exists(Path.Combine(dest, ".git")) || File.Exists(Path.Combine(dest, ".git")))
+    && HasDotGit(dest)
     && Git(dest, 15000, "rev-parse", "--is-inside-work-tree") == "true";
 
 static HashSet<string> SparsePatterns(string dest) =>
@@ -527,67 +529,33 @@ static bool SparseHasPatterns(string dest)
     return set.Contains("/memory/") && set.Contains("/.gitignore");
 }
 
-// Returns hard problems; fills `missing` with links that are simply absent.
-static List<string> InspectMemoryLinks(string dest, List<string> missing)
+// Where learnings live inside a memory source: <src>/memory/learnings when the
+// source is a clone (or repo root), <src>/learnings when it is a memory/ dir.
+static string LearningsDirOf(string source)
 {
-    List<string> problems = [];
-    foreach (var (name, target, _) in MemoryLinks())
-    {
-        var path = Path.Combine(dest, name);
-        if (!TryAttrs(path, out var attrs)) { missing.Add(name); continue; }
-        if (!IsLink(path, attrs) || LinkTargetOf(path) != target)
-            problems.Add($"{name} exists but is not a link to {target}");
-    }
-    return problems;
+    var nested = Path.Combine(source, "memory", "learnings");
+    return Directory.Exists(nested) ? nested : Path.Combine(source, "learnings");
 }
 
-static string ExcludeFile(string dest)
+static bool MemoryLinkOk(string targetRoot)
 {
-    var rel = Git(dest, 15000, "rev-parse", "--git-path", "info/exclude") ?? ".git/info/exclude";
-    return Path.GetFullPath(rel, dest);
-}
-
-static List<string> MissingExcludes(string dest)
-{
-    var file = ExcludeFile(dest);
-    var have = File.Exists(file)
-        ? File.ReadAllLines(file).Select(l => l.Trim()).ToHashSet()
-        : [];
-    return MemoryLinks().Select(l => "/" + l.Name).Where(e => !have.Contains(e)).ToList();
-}
-
-static void EnsureMemoryLinks(string dest)
-{
-    foreach (var (name, target, isDir) in MemoryLinks())
-    {
-        var path = Path.Combine(dest, name);
-        if (TryAttrs(path, out _)) continue;
-        CreateLink(path, target, isDir);
-    }
-
-    var missing = MissingExcludes(dest);
-    if (missing.Count == 0) return;
-    var file = ExcludeFile(dest);
-    Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-    var text = File.Exists(file) ? File.ReadAllText(file) : "";
-    if (text.Length > 0 && !text.EndsWith('\n')) text += "\n";
-    File.WriteAllText(file, text + string.Join("\n", missing) + "\n");
+    var link = Path.Combine(targetRoot, "memory");
+    return TryAttrs(link, out var attrs) && IsLink(link, attrs)
+        && SameLinkTarget(link, Path.Combine(targetRoot, MemoryCloneName(), "memory"));
 }
 
 static bool VerifyMemory(string targetRoot)
 {
-    var dest = Path.Combine(targetRoot, "memory");
-    if (!IsCloneDir(dest)) return false;
-    if (!SparseHasPatterns(dest)) return false;
-    if (!File.Exists(Path.Combine(dest, "memory", "INDEX.md"))) return false;
-    var missing = new List<string>();
-    return InspectMemoryLinks(dest, missing).Count == 0 && missing.Count == 0;
+    var clone = Path.Combine(targetRoot, MemoryCloneName());
+    if (!IsCloneDir(clone)) return false;
+    if (!SparseHasPatterns(clone)) return false;
+    if (!File.Exists(Path.Combine(clone, "memory", "INDEX.md"))) return false;
+    return MemoryLinkOk(targetRoot) && File.Exists(Path.Combine(targetRoot, "memory", "INDEX.md"));
 }
 
 static (bool Drift, bool Failed) ProvisionMemory(
     string home, string targetRoot, string repoRoot, string? remoteArg, bool checkOnly, ref string? backupRoot)
 {
-    var dest = Path.Combine(targetRoot, "memory");
     var remote = ResolveMemoryRemote(repoRoot, remoteArg);
     if (remote is null)
     {
@@ -595,36 +563,43 @@ static (bool Drift, bool Failed) ProvisionMemory(
         return (false, true);
     }
 
-    var exists = TryAttrs(dest, out var attrs);
-    var isLink = exists && IsLink(dest, attrs);
+    var clone = ProvisionMemoryClone(home, targetRoot, remote, checkOnly, ref backupRoot);
+    if (clone.Failed) return (clone.Drift, true);
 
-    if (exists && !isLink && IsCloneDir(dest))
-    {
-        var rec = ReconcileMemoryClone(dest, remote, checkOnly);
-        if (rec.Failed) return rec;
-        var pending = FinishInterruptedMigrations(home, dest, checkOnly);
-        return (rec.Drift || pending > 0, false);
-    }
+    var link = ProvisionMemoryLink(home, targetRoot, checkOnly, ref backupRoot);
+    if (link.Failed) return (clone.Drift || link.Drift, true);
+
+    var pending = FinishInterruptedMigrations(home, Path.Combine(targetRoot, MemoryCloneName()), checkOnly);
+    return (clone.Drift || link.Drift || pending > 0, false);
+}
+
+// The clone at <targetRoot>/.memory: create, verify, or repair its sparse set.
+static (bool Drift, bool Failed) ProvisionMemoryClone(
+    string home, string targetRoot, string remote, bool checkOnly, ref string? backupRoot)
+{
+    var dest = Path.Combine(targetRoot, MemoryCloneName());
+    var exists = TryAttrs(dest, out _);
+
+    if (exists && IsCloneDir(dest))
+        return ReconcileMemoryClone(dest, remote, checkOnly);
 
     // A .git that git cannot read is not "no clone": replacing it could destroy history.
-    if (exists && !isLink && (Directory.Exists(Path.Combine(dest, ".git")) || File.Exists(Path.Combine(dest, ".git"))))
+    if (exists && HasDotGit(dest) && !(TryAttrs(dest, out var da) && IsLink(dest, da)))
     {
-        Console.WriteLine($"  FAILED  memory at {dest} has a .git that git cannot read; fix or move it manually");
+        Console.WriteLine($"  FAILED  memory: {dest} has a .git that git cannot read; fix or move it manually");
         return (false, true);
     }
 
     if (checkOnly)
     {
-        Console.WriteLine($"  would {(exists ? "migrate" : "create")} memory (clone {remote})");
+        Console.WriteLine($"  would create memory (clone {remote})");
         return (true, false);
     }
 
-    // Clone beside the destination first, so a failed clone never costs the
-    // existing memory its place.
+    // Clone beside the destination first, so a failed clone never costs an existing
+    // directory its place.
     var tmp = Path.Combine(targetRoot, $".memory-clone-{Environment.ProcessId}");
-    string? movedBak = null;      // old memory directory now sitting in the backup
-    string? linkRestore = null;   // old memory symlink target, removed from dest
-    string? markerPath = null;
+    string? movedBak = null;
     try
     {
         if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
@@ -643,18 +618,84 @@ static (bool Drift, bool Failed) ProvisionMemory(
         if (!File.Exists(Path.Combine(tmp, "memory", "INDEX.md")))
             throw new InvalidOperationException($"{remote} has no memory/INDEX.md on its checked-out branch");
 
-        string? migrateFrom = null;
-        var danglingLink = false;
+        if (exists)
+        {
+            backupRoot ??= MakeBackupRoot(home);
+            var bak = Path.Combine(backupRoot, "memory-src");
+            MovePath(dest, bak);
+            movedBak = bak;
+            Console.WriteLine($"  saved   {MemoryCloneName()} -> {Path.GetRelativePath(home, bak)}");
+        }
+
+        Directory.Move(tmp, dest);
+        Console.WriteLine($"  create  memory (clone {remote})");
+        return (true, false);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAILED  memory: {ex.Message}");
+        try { if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true); } catch { }
+        if (movedBak is not null)
+        {
+            try
+            {
+                if (!TryAttrs(dest, out _))
+                {
+                    MovePath(movedBak, dest);
+                    Console.WriteLine($"  restore {MemoryCloneName()} (rolled back from {movedBak})");
+                }
+            }
+            catch (Exception rex)
+            {
+                Console.WriteLine($"  FAILED  memory: rollback failed ({rex.Message}); the old {MemoryCloneName()} is at {movedBak}");
+            }
+        }
+        return (true, true);
+    }
+}
+
+// The managed path <targetRoot>/memory: a relative symlink to .memory/memory.
+// Whatever sits there instead is moved to the backup and its learnings copied in.
+static (bool Drift, bool Failed) ProvisionMemoryLink(
+    string home, string targetRoot, bool checkOnly, ref string? backupRoot)
+{
+    var link = Path.Combine(targetRoot, "memory");
+    var exists = TryAttrs(link, out var attrs);
+    var isLink = exists && IsLink(link, attrs);
+
+    if (MemoryLinkOk(targetRoot))
+    {
+        Console.WriteLine("  ok memory (link)");
+        return (false, false);
+    }
+
+    if (checkOnly)
+    {
+        Console.WriteLine(exists
+            ? "  would link memory (existing memory is moved to the backup)"
+            : "  would link memory");
+        return (true, false);
+    }
+
+    var cloneDir = Path.Combine(targetRoot, MemoryCloneName());
+    string? movedBak = null;      // old memory file/directory now sitting in the backup
+    string? linkRestore = null;   // old memory symlink target, removed from link
+    string? markerPath = null;
+    string? migrateFrom = null;
+    var danglingLink = false;
+    var committed = false;
+    try
+    {
         if (exists)
         {
             backupRoot ??= MakeBackupRoot(home);
             if (isLink)
             {
-                var raw = LinkTargetOf(dest)!;
+                var raw = LinkTargetOf(link)!;
                 File.WriteAllText(Path.Combine(backupRoot, "memory.link-target"), raw + "\n");
                 var resolved = Path.GetFullPath(raw, targetRoot);
                 danglingLink = !Directory.Exists(resolved);
-                migrateFrom = Path.Combine(resolved, "learnings");
+                migrateFrom = LearningsDirOf(resolved);
                 markerPath = Path.Combine(backupRoot, "memory", MigratingMarkerName());
                 if (!danglingLink)
                 {
@@ -662,57 +703,56 @@ static (bool Drift, bool Failed) ProvisionMemory(
                     Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
                     File.WriteAllText(markerPath, migrateFrom + "\n");
                 }
-                DeleteLink(dest); // the link only, never what it points at
+                DeleteLink(link); // the link only, never what it points at
                 linkRestore = raw;
                 Console.WriteLine($"  saved   memory link target -> {Path.GetRelativePath(home, Path.Combine(backupRoot, "memory.link-target"))}");
             }
             else
             {
                 var bak = Path.Combine(backupRoot, "memory");
-                markerPath = Path.Combine(bak, MigratingMarkerName());
-                // Written inside the old memory first so it travels into the backup with the move.
-                File.WriteAllText(Path.Combine(dest, MigratingMarkerName()), "");
-                MovePath(dest, bak);
+                if (Directory.Exists(link))
+                {
+                    markerPath = Path.Combine(bak, MigratingMarkerName());
+                    // Written inside the old memory first so it travels into the backup with the move.
+                    File.WriteAllText(Path.Combine(link, MigratingMarkerName()), "");
+                }
+                var wasDir = Directory.Exists(link);
+                MovePath(link, bak);
                 movedBak = bak;
-                migrateFrom = Path.Combine(bak, "learnings");
+                if (wasDir) migrateFrom = LearningsDirOf(bak);
                 Console.WriteLine($"  saved   memory -> {Path.GetRelativePath(home, bak)}");
             }
         }
 
-        Directory.Move(tmp, dest);
-        movedBak = null; linkRestore = null; // the destination is live; a failure from here is finished by the next run
-        EnsureMemoryLinks(dest);
-        Console.WriteLine($"  create  memory (clone {remote})");
+        CreateLink(link, MemoryLinkTarget(), isDir: true);
+        committed = true; // the link is live; a failure from here is finished by the next run
+        Console.WriteLine($"  link    memory -> {MemoryLinkTarget()}");
 
         if (danglingLink)
             Console.WriteLine("  warn    memory was a dangling symlink; nothing to migrate");
         else if (migrateFrom is not null)
-            MigrateLearnings(migrateFrom, Path.Combine(dest, "memory", "learnings"));
+            MigrateLearnings(migrateFrom, Path.Combine(cloneDir, "memory", "learnings"));
 
         if (markerPath is not null && File.Exists(markerPath)) File.Delete(markerPath);
-        FinishInterruptedMigrations(home, dest, checkOnly: false);
         return (true, false);
     }
     catch (Exception ex)
     {
         Console.WriteLine($"  FAILED  memory: {ex.Message}");
-        try { if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true); } catch { }
+        if (committed) return (true, true);
         try
         {
-            var destFree = !TryAttrs(dest, out _)
-                || (Directory.Exists(dest) && !Directory.EnumerateFileSystemEntries(dest).Any());
+            var destFree = !TryAttrs(link, out _);
             if (movedBak is not null && destFree)
             {
-                if (Directory.Exists(dest)) Directory.Delete(dest);
-                MovePath(movedBak, dest);
-                var stray = Path.Combine(dest, MigratingMarkerName());
+                MovePath(movedBak, link);
+                var stray = Path.Combine(link, MigratingMarkerName());
                 if (File.Exists(stray)) File.Delete(stray);
                 Console.WriteLine($"  restore memory (rolled back from {movedBak})");
             }
             else if (linkRestore is not null && destFree)
             {
-                if (Directory.Exists(dest)) Directory.Delete(dest);
-                CreateLink(dest, linkRestore, true);
+                CreateLink(link, linkRestore, true);
                 if (markerPath is not null && File.Exists(markerPath)) File.Delete(markerPath);
                 Console.WriteLine("  restore memory (symlink recreated)");
             }
@@ -731,8 +771,8 @@ static (bool Drift, bool Failed) ProvisionMemory(
 
 // Finishes learnings copies that a previous run began and did not complete. Each
 // opencode.bak-*/memory/.migrating marker names (first line) the learnings source,
-// defaulting to the backup's own learnings/. Idempotent; copies never clobber.
-static int FinishInterruptedMigrations(string home, string dest, bool checkOnly)
+// defaulting to the backup's own learnings. Idempotent; copies never clobber.
+static int FinishInterruptedMigrations(string home, string cloneDir, bool checkOnly)
 {
     var configDir = Path.Combine(home, ".config");
     if (!Directory.Exists(configDir)) return 0;
@@ -750,9 +790,9 @@ static int FinishInterruptedMigrations(string home, string dest, bool checkOnly)
         try
         {
             var first = File.ReadLines(marker).FirstOrDefault()?.Trim();
-            var from = string.IsNullOrEmpty(first) ? Path.Combine(bak, "memory", "learnings") : first;
+            var from = string.IsNullOrEmpty(first) ? LearningsDirOf(Path.Combine(bak, "memory")) : first;
             Console.WriteLine($"  resume  interrupted memory migration ({Path.GetRelativePath(home, bak)})");
-            MigrateLearnings(from, Path.Combine(dest, "memory", "learnings"));
+            MigrateLearnings(from, Path.Combine(cloneDir, "memory", "learnings"));
             File.Delete(marker);
         }
         catch (Exception ex)
@@ -777,8 +817,8 @@ static (bool Drift, bool Failed) ReconcileMemoryClone(string dest, string remote
         Console.WriteLine("  FAILED  memory: sparse-checkout does not contain /memory/");
         return (false, true);
     }
-    // An older clone predates the /.gitignore pattern; repairing it is drift,
-    // not a failure. Never reset, clean, or switch its branch, and never fetch.
+    // A clone that predates the /.gitignore pattern (or lost it) is repaired as
+    // drift, not a failure. Never reset, clean, or switch its branch, and never fetch.
     var sparseDrift = !sparse.Contains("/.gitignore");
     if (sparseDrift)
     {
@@ -801,38 +841,8 @@ static (bool Drift, bool Failed) ReconcileMemoryClone(string dest, string remote
         return (false, true);
     }
 
-    var missing = new List<string>();
-    var problems = InspectMemoryLinks(dest, missing);
-    if (problems.Count > 0)
-    {
-        foreach (var p in problems) Console.WriteLine($"  FAILED  memory: {p}");
-        return (false, true);
-    }
-
-    var excludes = MissingExcludes(dest);
-    if (missing.Count == 0 && excludes.Count == 0)
-    {
-        Console.WriteLine("  ok memory (clone)");
-        return (sparseDrift, false);
-    }
-
-    if (checkOnly)
-    {
-        Console.WriteLine($"  would link memory ({string.Join(' ', missing.Concat(excludes))})");
-        return (true, false);
-    }
-
-    try
-    {
-        EnsureMemoryLinks(dest);
-        Console.WriteLine($"  link    memory ({string.Join(' ', missing.Concat(excludes))})");
-        return (true, false);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  FAILED  memory: {ex.Message}");
-        return (true, true);
-    }
+    if (!sparseDrift) Console.WriteLine("  ok memory (clone)");
+    return (sparseDrift, false);
 }
 
 // Copies learnings/** (dated, pending, working.md) without clobbering. The source
