@@ -22,6 +22,23 @@ One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 `~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
 [`docs/security-model.md`](docs/security-model.md).
 
+## Orchestrator primary
+
+In opencode, the top-level `build` agent is the orchestrator: it plans, scopes,
+and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`
+(checkpoint and integrate units run shared and commit locally), then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
+`.opencode/agents/build.md` symlink is the project override opencode loads. It does not edit or run mutating shell
+itself. `implementor` is the direct-work agent (`opencode --agent implementor`);
+delegated units follow the `ROLE: implementor unit | review unit | check unit | checkpoint unit | integrate unit`
+branch in `agents/build.md`.
+
+Run the orchestrator in `auto` or `full-access` so children can edit:
+`approval-required` pauses each child at its first write or command, and the
+orchestrator cannot approve it.
+The no-hands rule is the agent prompt, not a T3 fence. Plan mode is a read-only
+planning phase and cannot spawn a writable child; use it to explore, then switch
+the thread to `build`.
+
 ## Install on a new machine
 
 **From a bare box** (no git, no dotnet — just a shell and curl):
@@ -90,7 +107,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | --------------- | ------------------------------------------------- | ------- |
 | `AGENTS.md`     | global workflow, routing table, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
-| `agents/`       | subagent prompts (opencode format); the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
+| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; the four read-only reviewers are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |

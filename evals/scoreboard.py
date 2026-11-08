@@ -18,9 +18,10 @@ What it reports, and what it cannot:
   (`~/.config/opencode/reviews.jsonl`), not from `session_v2`. Reviewer
   transcripts are not persisted for `opencode run` sessions, so those metrics are
   logged at the source. If the ledger is absent, that section is skipped.
-- Gate coverage is a proxy: reviewer launches over `build` sessions in the window.
-  `build` is the primary that does work, so it stands in for "tasks that should
-  have been reviewed". Treat the number as a floor, not an audit.
+- Gate coverage is a proxy: reviewer launches over `build` and `implementor`
+  sessions in the window. `build` is the orchestrator primary and `implementor`
+  does the work, so together they stand in for "tasks that should have been
+  reviewed". Treat the number as a floor, not an audit.
 
 Cost delta from `cost.py` during a run is a different measurement; this is the
 standing view.
