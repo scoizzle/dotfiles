@@ -390,12 +390,20 @@ def main() -> int:
 
     orchestrator = agents.get("orchestrator")
     if orchestrator is not None:
-        for action in ("edit", "shell", "execute", "opencode_worktree_remove",
-                       "roslynk_apply_patch", "roslynk_rename_symbol"):
+        for action in ("edit", "shell", "webfetch", "websearch",
+                       "opencode_session_rename", "opencode_worktree_create",
+                       "opencode_worktree_remove", "opencode_session_move",
+                       "roslynk_apply_patch", "roslynk_apply_code_fix",
+                       "roslynk_apply_code_action", "roslynk_change_signature",
+                       "roslynk_extract_method", "roslynk_rename_symbol",
+                       "roslynk_rename_parameter", "roslynk_remove_unused_usings"):
             if effective(orchestrator, action, "src/x.cs") != "deny":
                 fail(f"orchestrator: {action} must be deny; it is a no-hands dispatcher")
-        if effective(orchestrator, "subagent", "general") != "allow":
-            fail("orchestrator: subagent must stay allowed; dispatch is its only action")
+        for target in ("general", "implement-deep"):
+            if effective(orchestrator, "subagent", target) != "allow":
+                fail(f"orchestrator: subagent {target} must stay allowed; it is a dispatch target")
+        if effective(orchestrator, "execute", "*") != "allow":
+            fail("orchestrator: execute must stay allowed; T3 delegation is reached through it")
 
     check_policy(agents)
     check_shared_surfaces()

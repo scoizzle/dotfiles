@@ -63,20 +63,31 @@ later floors at T2 is re-run as T2.
 
 ### Proof of work
 
-Every **dispatched unit** returns a `PROOF` block, never a prose summary. A
-review unit returns its findings and the bundle path instead; it runs nothing.
+Every **dispatched unit that changes or checks the tree** returns a `PROOF`
+block, never a prose summary. A read-only search unit returns its findings and
+sources; a review unit returns its findings and the bundle path; a check unit
+(`verifier`) returns its Coverage block and the checks it ran.
 
 - `commands:` every command run, verbatim, with its exit code.
 - `diff:` `git diff --stat` and the key hunks, or the commit sha when the unit
   could commit.
 - `checks:` the tail of the red and green test or build output, with the command
-  that produced it.
+  that produced it, or `none` when the unit has no test oracle.
 - `not done:` work the brief named that was skipped, and why.
 - `risks:` what could still be wrong, and what would prove it.
 
 A dispatch reply missing any line is rejected and re-dispatched with the gap
 named; the orchestrator does not fill the gap itself. "All tests pass" without
 the command and its output tail is not proof.
+
+### Dispatch tiers
+
+The orchestrator picks one tier per unit and names it in the scope:
+
+| Tier | Pin | Use it for |
+| --- | --- | --- |
+| builder | `opencode-go/deepseek-v4.1-flash#high` | volume, T0/T1, a named test oracle |
+| deep | `claude-agent/sonnet#medium` | T2 after plan lock, cross-cutting work, no cheap oracle |
 
 ### Safety
 
@@ -118,6 +129,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | --- | --- | --- | --- | --- |
 | explore, review-light | repo map, grep, T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
 | build, plan, general | the session itself, T0/T1 edits | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
+| orchestrator | opt-in dispatcher: scope, tier, accept; no hands-on work | `opencode` | `xai/grok-4.7` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `xai/grok-4.7` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `xai/grok-4.7` | `variant=high` |
