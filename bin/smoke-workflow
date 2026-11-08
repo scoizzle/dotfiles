@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Smoke-test the default OpenCode workflow.
+"""Smoke-test the implementor workflow.
 
 Creates a throwaway git repo under $OPENCODE_TMP, runs four prompts through the
-default agent, and checks:
-  - the agent announces the expected tier;
-  - it launches the expected fixed-model subagents;
-  - it does not launch the wrong tier's agents;
-  - the second-opinion prompt does not contain the review-deep report marker;
+implementor agent, and checks:
+  - the requested edit lands;
   - the repo's test.sh passes and the expected output contract holds;
   - on the C# repo, it opens the solution with Roslynk before editing, and uses
     Roslynk navigation rather than grep for the rename.
+
+The orchestrator dispatch path is not exercised here: `opencode run` has no T3
+tools, so a `build` session cannot dispatch. The T3 trial covers that path. This
+script covers the direct-edit agent the orchestrator dispatches to.
 
 The C# case is the only one that needs the .NET SDK and the Roslynk MCP server.
 It runs against its own scratch repo (`smoke-workflow-cs`) and asserts tool
@@ -21,6 +22,7 @@ Run it before the workflow change (it should fail) and after (it should pass).
 
     ./smoke-workflow
     ./smoke-workflow --timeout 1200
+    ./smoke-workflow --agent implementor
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ import time
 # See bin/review-bundle: a literal /private/var path is macOS-only.
 DEFAULT_TMP = os.path.join(os.environ.get("TMPDIR") or "/tmp", "opencode")
 REVIEW_DEEP_MARKER = "REVIEW-DEEP REPORT"
+AGENT = "implementor"
 
 T0 = (
     "Fix the typo in README.md: change 'helo' to 'hello'. "
@@ -94,6 +97,24 @@ def write(path: str, body: str, mode: int = 0o644) -> None:
     with open(path, "w") as handle:
         handle.write(body)
     os.chmod(path, mode)
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def install_agent(root: str) -> None:
+    """Seat the agent under test in the scratch repo's project config.
+
+    The scratch repo has no install of this branch; without this, `opencode run
+    --agent implementor` falls back to the global config and reports an unknown
+    agent.
+    """
+    source = os.path.join(REPO_ROOT, "agents", AGENT + ".md")
+    if not os.path.exists(source):
+        return
+    dest = os.path.join(root, ".opencode", "agents")
+    os.makedirs(dest, exist_ok=True)
+    shutil.copyfile(source, os.path.join(dest, AGENT + ".md"))
 
 
 def setup_repo(root: str) -> None:
@@ -288,7 +309,8 @@ def announced_tier(raw: str) -> str | None:
 
 def run_prompt(root: str, prompt: str, timeout: int) -> tuple[subprocess.CompletedProcess, str, list[dict], str | None]:
     result = run(
-        ["opencode", "run", "--standalone", "--format", "json", "--auto", prompt],
+        ["opencode", "run", "--standalone", "--format", "json", "--agent", AGENT,
+         "--auto", prompt],
         cwd=root,
         timeout=timeout,
     )
@@ -405,6 +427,7 @@ def check_case(
     calls_check=None,
 ) -> bool:
     reset_repo(root)
+    install_agent(root)
     result, text, calls, tier = run_prompt(root, prompt, timeout)
     agents = [agent["agent"] for agent in subagents(calls)]
     problems: list[str] = []
@@ -455,8 +478,11 @@ def check_case(
 
 
 def main() -> int:
+    global AGENT
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--timeout", type=int, default=900, help="seconds per prompt")
+    parser.add_argument("--agent", default="implementor",
+                        help="agent to smoke-test (default: implementor)")
     parser.add_argument(
         "--case",
         action="append",
@@ -467,6 +493,8 @@ def main() -> int:
         os.environ.get("OPENCODE_TMP", DEFAULT_TMP), "smoke-workflow"
     ))
     args = parser.parse_args()
+
+    AGENT = args.agent
 
     temp_root = os.path.realpath(os.environ.get("OPENCODE_TMP", DEFAULT_TMP))
     root = os.path.realpath(args.root)
@@ -481,6 +509,7 @@ def main() -> int:
 
     print(f"smoke repo: {args.root}")
     setup_repo(args.root)
+    install_agent(args.root)
     started = time.time()
     selected = set(args.case or ["T0", "T1", "T2", "CS"])
     cs_root = args.root + "-cs"
@@ -491,17 +520,20 @@ def main() -> int:
             return 2
         print(f"smoke C# repo: {cs_root}")
         setup_cs_repo(cs_root)
+        install_agent(cs_root)
     cases = [
-        (args.root, "T0", T0, "T0", [], [
+        (args.root, "T0", T0, None, [], [
             "plan-review-deep", "review-light", "review-deep",
             "second-opinion", "implement-deep",
         ], check_t0, None),
-        (args.root, "T1", T1, "T1", ["review-light"], [
-            "plan-review-deep", "review-deep", "second-opinion", "implement-deep",
+        (args.root, "T1", T1, None, [], [
+            "plan-review-deep", "review-light", "review-deep",
+            "second-opinion", "implement-deep",
         ], check_t1, None),
-        (args.root, "T2", T2, "T2",
-         ["plan-review-deep", "implement-deep", "review-deep", "second-opinion"],
-         ["review-light"], check_t2, None),
+        (args.root, "T2", T2, None, [], [
+            "plan-review-deep", "review-light", "review-deep",
+            "second-opinion", "implement-deep",
+        ], check_t2, None),
         (cs_root, "CS", CS, None, [], [], check_cs, check_roslynk),
     ]
     results = [

@@ -399,6 +399,11 @@ def main() -> int:
     if build is None:
         fail("build: agents/build.md is missing; it is the orchestrator primary")
     else:
+        build_text = (ROOT / "agents" / "build.md").read_text()
+        if not re.search(r"^model:\s*opencode-go/deepseek-v4\.1-flash#high\s*$",
+                         build_text, flags=re.M):
+            fail("build: model must be opencode-go/deepseek-v4.1-flash#high; "
+                 "the orchestrator runs on the builder band")
         if config.get("default_agent") != "build":
             fail("build: default_agent must be build; it is the orchestrator primary")
         if effective(build, "read", "src/x.cs") != "allow":
@@ -447,6 +452,10 @@ def main() -> int:
                 fail(f"implementor: {action} must stay allowed; it does the work")
         if effective(implementor, "subagent", "*") != "deny":
             fail("implementor: subagent must be deny; it is a unit, not a dispatcher")
+        if effective(implementor, "execute", "*") != "deny":
+            fail("implementor: execute must be deny; only the orchestrator has the T3 channel")
+        if effective(implementor, "execute", "*") != "deny":
+            fail("implementor: execute must be deny; only build has the T3 delegation channel")
 
     check_policy(agents)
     check_shared_surfaces()

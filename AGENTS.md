@@ -129,7 +129,10 @@ manual shell-based deep check, not the default review path.
 ### Orchestrator primary
 
 In opencode, the top-level `build` agent is the orchestrator (`agents/build.md`,
-linked as `.opencode/agents/build.md`, the file opencode actually loads).
+linked as `.opencode/agents/build.md`). Both the repo link and the installed
+`~/.config/opencode/agents/build.md` resolve to that one file, so either load path
+is the same prompt; `opencode debug agents` in the repo shows the orchestrator
+`system` on `build`.
 It plans, scopes, dispatches every unit through T3 `delegate_task` with
 `isolation: "worktree"`, and accepts only a verified `PROOF`. It never edits files
 or runs mutating shell itself. A delegated unit follows its `ROLE:` line:
@@ -141,6 +144,14 @@ The no-hands rule is the agent prompt, not a T3 permission: T3 session rules
 override agent deny rules. Run the orchestrator in `auto` or `full-access` so
 units can edit; `approval-required` stalls them at the first write or command, and
 the orchestrator cannot approve it.
+
+`execute` is allowed in `agents/build.md` only because T3 `delegate_task` is
+reached through it. The `EXECUTE ALLOWLIST: delegate_task` line is the contract,
+and `bin/lint-config` fails if it drifts. The nested-tool surface inside `execute`
+is not covered by the agent denies; the allowlist and the human gate are the
+mitigation. Worker agents (including `implementor`) deny `execute`. The direct-edit
+smoke test runs as `implementor`; the orchestrator path is exercised by the T3
+trial, not by `opencode run`.
 
 `plan` interaction mode is a read-only planning phase, not this role: a plan-mode
 parent cannot spawn a writable child (`interaction_mode_escalation_denied`). Use
@@ -154,7 +165,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | Band | Work | providerInstanceId | model | options |
 | --- | --- | --- | --- | --- |
 | explore, review-light | repo map, grep, T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
-| build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `claude-agent/opus` | `variant=high` |
+| build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/grok-4.7` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
@@ -185,7 +196,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 - The advisor pin is spent at three moments only: (1) T2 plan lock before the
   plan is fixed; (2) the same error or failing assertion twice in a row, passing
   both attempts; (3) T2 sign-off, with `second-opinion` in parallel. A T1 retry
-  stays on the builder band.
+  stays on the builder band. At sign-off, cap dispatches: one `review-deep` and
+  one `second-opinion` in parallel, then one re-review after a fix. A third is a
+  human escalation; do not cap reviewer steps, only dispatches.
 - `agents/*.md` are the native fallback, not the routing source, and a pin must
   name an enabled instance in `policy/providers.json`. `grok-4.5` has no
   clean-case gate, so the verifier stays on `grok-4.7`.
