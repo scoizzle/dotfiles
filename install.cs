@@ -540,8 +540,10 @@ static string LearningsDirOf(string source)
 static bool MemoryLinkOk(string targetRoot)
 {
     var link = Path.Combine(targetRoot, "memory");
+    // The contract is the relative spelling; an absolute link to the same place is drift.
     return TryAttrs(link, out var attrs) && IsLink(link, attrs)
-        && SameLinkTarget(link, Path.Combine(targetRoot, MemoryCloneName(), "memory"));
+        && LinkTargetOf(link) is { } raw
+        && string.Equals(raw.Replace('\\', '/').TrimEnd('/'), MemoryLinkTarget(), StringComparison.Ordinal);
 }
 
 static bool VerifyMemory(string targetRoot)
@@ -563,8 +565,16 @@ static (bool Drift, bool Failed) ProvisionMemory(
         return (false, true);
     }
 
-    var clone = ProvisionMemoryClone(home, targetRoot, remote, checkOnly, ref backupRoot);
+    string? cloneMigrateFrom = null;
+    var clone = ProvisionMemoryClone(home, targetRoot, remote, checkOnly, ref backupRoot, ref cloneMigrateFrom);
     if (clone.Failed) return (clone.Drift, true);
+
+    // Learnings from a replaced non-clone .memory; runs even when the memory link is already fine.
+    if (cloneMigrateFrom is not null)
+    {
+        try { MigrateLearnings(cloneMigrateFrom, Path.Combine(targetRoot, MemoryCloneName(), "memory", "learnings")); }
+        catch (Exception ex) { Console.WriteLine($"  warn    could not migrate learnings from {cloneMigrateFrom}: {ex.Message}"); }
+    }
 
     var link = ProvisionMemoryLink(home, targetRoot, checkOnly, ref backupRoot);
     if (link.Failed) return (clone.Drift || link.Drift, true);
@@ -575,10 +585,17 @@ static (bool Drift, bool Failed) ProvisionMemory(
 
 // The clone at <targetRoot>/.memory: create, verify, or repair its sparse set.
 static (bool Drift, bool Failed) ProvisionMemoryClone(
-    string home, string targetRoot, string remote, bool checkOnly, ref string? backupRoot)
+    string home, string targetRoot, string remote, bool checkOnly, ref string? backupRoot, ref string? migrateFrom)
 {
     var dest = Path.Combine(targetRoot, MemoryCloneName());
-    var exists = TryAttrs(dest, out _);
+    var exists = TryAttrs(dest, out var destAttrs);
+
+    // A symlink is never a clone and is never replaced: same posture as an unreadable .git.
+    if (exists && IsLink(dest, destAttrs))
+    {
+        Console.WriteLine($"  FAILED  memory-src at {dest} is a symlink; move it or fix by hand");
+        return (false, true);
+    }
 
     if (exists && IsCloneDir(dest))
         return ReconcileMemoryClone(dest, remote, checkOnly);
@@ -628,6 +645,8 @@ static (bool Drift, bool Failed) ProvisionMemoryClone(
         }
 
         Directory.Move(tmp, dest);
+        if (movedBak is not null && Directory.Exists(Path.Combine(movedBak, "memory", "learnings")))
+            migrateFrom = Path.Combine(movedBak, "memory", "learnings");
         Console.WriteLine($"  create  memory (clone {remote})");
         return (true, false);
     }
@@ -695,13 +714,18 @@ static (bool Drift, bool Failed) ProvisionMemoryLink(
                 File.WriteAllText(Path.Combine(backupRoot, "memory.link-target"), raw + "\n");
                 var resolved = Path.GetFullPath(raw, targetRoot);
                 danglingLink = !Directory.Exists(resolved);
-                migrateFrom = LearningsDirOf(resolved);
-                markerPath = Path.Combine(backupRoot, "memory", MigratingMarkerName());
-                if (!danglingLink)
+                // an absolute spelling of the clone's own memory/ has nothing to migrate
+                var selfLink = SameLinkTarget(link, Path.Combine(cloneDir, "memory"));
+                if (!selfLink)
+                {
+                    migrateFrom = LearningsDirOf(resolved);
+                    markerPath = Path.Combine(backupRoot, "memory", MigratingMarkerName());
+                }
+                if (!danglingLink && !selfLink)
                 {
                     // The marker records where the learnings live, so a later run can finish the copy.
-                    Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
-                    File.WriteAllText(markerPath, migrateFrom + "\n");
+                    Directory.CreateDirectory(Path.GetDirectoryName(markerPath!)!);
+                    File.WriteAllText(markerPath!, migrateFrom + "\n");
                 }
                 DeleteLink(link); // the link only, never what it points at
                 linkRestore = raw;

@@ -504,6 +504,67 @@ def case_non_clone_memory_dir():
     require((bak / "stray.txt").read_text() == "stray\n", "old .memory not preserved in backup")
 
 
+def case_symlink_memory_src():
+    source = make_source()
+    home = fresh("symsrc")
+    target = home / "elsewhere"
+    target.mkdir()
+    (target / "keep.txt").write_text("keep\n")
+    c = clonedir(home)
+    c.parent.mkdir(parents=True)
+    c.symlink_to(target)
+    p = install(home, source, check=False)
+    require(p.returncode != 0 and "FAILED" in p.stdout and "is a symlink" in p.stdout, p.stdout)
+    require(c.is_symlink() and os.readlink(c) == str(target), ".memory symlink was touched")
+    require((target / "keep.txt").read_text() == "keep\n" and sorted(x.name for x in target.iterdir()) == ["keep.txt"],
+            "symlink target was disturbed or cloned into")
+    require(not list((home / ".config").glob("opencode.bak-*")), "a backup was made")
+    require(not memdir(home).exists() and not memdir(home).is_symlink(), "memory link created")
+
+
+def case_non_clone_with_learnings():
+    source = make_source()
+    home = fresh("plainlearn")
+    c = clonedir(home)
+    (c / "memory" / "learnings").mkdir(parents=True)
+    (c / "memory" / "learnings" / "2026-03-03.md").write_text("# old dated\n")
+    install(home, source)
+    require((learnings(home) / "2026-03-03.md").read_text() == "# old dated\n", "learnings not migrated")
+    bak = next((home / ".config").glob("opencode.bak-*")) / "memory-src"
+    require((bak / "memory" / "learnings" / "2026-03-03.md").is_file(), "old .memory not in backup")
+
+
+def case_replaced_clone_link_ok():
+    source = make_source()
+    home = fresh("replaced")
+    install(home, source)
+    c = clonedir(home)
+    shutil.rmtree(c)
+    (c / "memory" / "learnings").mkdir(parents=True)
+    (c / "memory" / "learnings" / "2026-04-04.md").write_text("# kept\n")
+    require(os.readlink(memdir(home)) == ".memory/memory", "precondition: link intact")
+    install(home, source)
+    require((c / ".git").exists() and (learnings(home) / "2026-04-04.md").read_text() == "# kept\n",
+            "migration skipped when the link was already ok")
+
+
+def case_absolute_link():
+    source = make_source()
+    home = fresh("abslink")
+    install(home, source)
+    m = memdir(home)
+    abs_target = clonedir(home) / "memory"
+    m.unlink()
+    m.symlink_to(abs_target)
+    p = install(home, source, "--check", check=False)
+    require(p.returncode == 1 and "would link memory" in p.stdout, p.stdout)
+    p = install(home, source)
+    require(os.readlink(m) == ".memory/memory", f"link not relative: {os.readlink(m)}\n{p.stdout}")
+    rec = next((home / ".config").glob("opencode.bak-*")) / "memory.link-target"
+    require(rec.read_text().strip() == str(abs_target), f"target not recorded: {rec.read_text()!r}")
+    require((abs_target / "INDEX.md").is_file(), "link target disturbed")
+
+
 def case_temp_env_override():
     source = make_source()
     home = fresh("tmpenv")
@@ -533,6 +594,10 @@ CASES = [
     case_migration_conflict,
     case_unreadable_git,
     case_non_clone_memory_dir,
+    case_symlink_memory_src,
+    case_non_clone_with_learnings,
+    case_replaced_clone_link_ok,
+    case_absolute_link,
     case_real_clone,
     case_check,
     case_second_install,
@@ -551,7 +616,8 @@ CASES = [
 ]
 NAMES = [
     "home flag validation", "memory-remote flag validation", "interrupted migration", "migration conflict",
-    "unreadable git", "non-clone .memory", "real clone", "check", "second install", "missing and wrong link",
+    "unreadable git", "non-clone .memory",
+    "symlink .memory", "non-clone with learnings", "replaced clone link ok", "absolute link", "real clone", "check", "second install", "missing and wrong link",
     "remote mismatch", "repair sparse set", "no remote",
     "dream writes in clone", "worktree deleted", "migrate dir", "migrate symlink", "migrate old clone",
     "migrate collision and dangling", "home isolation", "temp env override",
