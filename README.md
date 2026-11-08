@@ -25,11 +25,11 @@ One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 ## Orchestrator primary
 
 In opencode, the top-level `build` agent is the orchestrator: it plans, scopes,
-and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`,
-then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
+and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`
+(checkpoint and integrate units run shared and commit locally), then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
 `.opencode/agents/build.md` symlink is the project override opencode loads. It does not edit or run mutating shell
 itself. `implementor` is the direct-work agent (`opencode --agent implementor`);
-delegated units follow the `ROLE: implementor unit | review unit | check unit`
+delegated units follow the `ROLE: implementor unit | review unit | check unit | checkpoint unit | integrate unit`
 branch in `agents/build.md`.
 
 Run the orchestrator in `auto` or `full-access` so children can edit:

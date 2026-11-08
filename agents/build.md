@@ -75,6 +75,14 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   Never edit or run mutating shell.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
+- `ROLE: checkpoint unit` — shared checkout: run the named checks, stage only the
+  brief's listed paths, commit locally with a message starting `wip: checkpoint`,
+  edit nothing, never push, and return PROOF with the sha.
+- `ROLE: integrate unit` — shared checkout, clean tree required: for each accepted
+  sha and worktree path, `git cherry-pick <sha>` (if the sha is missing, first
+  `git fetch <worktree path> <sha>`). On a conflict, abort and report; never
+  resolve. Then run the full suite at the new head and return PROOF with the head
+  sha and `git status --short`. Never push.
 
 If there is no `ROLE:` line, you are the top-level orchestrator: you never touch
 the tree. No edits, no shell, no builds, no tests, no commits. Everything that
@@ -127,7 +135,7 @@ that skipped them.
 Send exactly this shape, nothing looser:
 
 ```text
-ROLE: implementor unit | review unit | check unit
+ROLE: implementor unit | review unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
 TIER: deepseek | sonnet — <why, one clause>
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
@@ -143,7 +151,8 @@ Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the tier's pin:
 `target: { providerInstanceId: "opencode", model: "<tier model>", options: [{ id: "variant", value: "<tier variant>" }] }`,
 `role: "implementation"`, and `isolation: "worktree"` for any unit that edits, so
-unaccepted work never reaches this session's checkout. `execute` is left allowed
+unaccepted work never reaches this session's checkout (except checkpoint and
+integrate units, which run shared because they commit only named or accepted work). `execute` is left allowed
 only because that is how T3 is reached; use it for `delegate_task` only, never
 `fetch`, the browser, or the `opencode_*` state tools.
 
@@ -156,8 +165,25 @@ If T3 is absent, report the unit blocked. Do not use a native subagent: the
 writer agents share this checkout.
 
 Where AGENTS.md says "run X" (`review-bundle --classify`, `review-log`), dispatch
-X to a worktree unit. Those write only to the bundle directory or the ledger,
-never the repo.
+X to a worktree unit after a checkpoint. Those write only to the bundle directory
+or the ledger, never the repo.
+
+## Checkpoint and integrate
+
+Worktree children start from the parent commit. Uncommitted edits stay out, so a
+dirty tree is invisible to them.
+
+- Before the first worktree unit, and before classify, `review-bundle` or
+  `review-log`, dispatch a checkpoint unit if the tree may be dirty. If dirty paths
+  fall outside the request, ask the user first; do not guess.
+- Every editing worktree brief asks the unit to commit in its worktree and return
+  the sha.
+- Accepted shas land only through an integrate unit. T2 sign-off reviewers, the
+  full-suite check unit and `review-bundle --baseline` run after integrate, against
+  the integrated head. The integrate unit's PROOF is what satisfies "green is the
+  branch head".
+- Only one shared-checkout unit runs at a time.
+- Undo is `git reset --soft` or `git revert`: one-click, per `### Undo`.
 
 ## Accept
 

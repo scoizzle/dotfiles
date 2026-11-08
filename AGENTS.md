@@ -98,7 +98,7 @@ scope:
 ### Safety
 
 - Reviewers are read-only; never give them shell or edit.
-- Do not stage, commit, or push unless asked. `git push` is `ask` in
+- Do not stage, commit, or push unless asked (the orchestrator's checkpoint and integrate units may commit locally, never push, as part of a requested change). `git push` is `ask` in
   `opencode.json`; force, delete, mirror, and `+refspec` pushes are denied. Never
   run an unattended session with `--auto`: it approves every `ask`.
 - Keep diffs minimal and consistent with the surrounding code.
@@ -133,7 +133,8 @@ linked as `.opencode/agents/build.md`, the file opencode actually loads).
 It plans, scopes, dispatches every unit through T3 `delegate_task` with
 `isolation: "worktree"`, and accepts only a verified `PROOF`. It never edits files
 or runs mutating shell itself. A delegated unit follows its `ROLE:` line:
-implementor, review, or check. `implementor` is the agent for direct work in plain
+implementor, review, check, checkpoint, or integrate (the last two run shared and
+commit locally, never push). `implementor` is the agent for direct work in plain
 opencode.
 
 The no-hands rule is the agent prompt, not a T3 permission: T3 session rules
