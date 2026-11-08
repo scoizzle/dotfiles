@@ -53,9 +53,11 @@ without overwriting, a differing local file kept under `learnings/.conflict/`. A
 existing `memory` directory is moved to `~/.config/opencode.bak-<stamp>/memory/`
 and its learnings copied the same way. A `.memory` that is not a clone is moved to
 `~/.config/opencode.bak-<stamp>/memory-src/`, and its `memory/learnings/**` are
-copied into the new clone the same way; the old directory stays there. An
-interrupted migration resumes on the next run: the old tree stays in the backup and
-the next run finishes the copy.
+copied into the new clone the same way; the old directory stays there. A `.memory`
+that is a symlink is refused with a clear failed line rather than replaced. An
+interrupted `memory/` migration resumes on the next run: the old tree stays in the
+backup and the next run finishes the copy; a `memory-src` copy has no marker and
+is not retried.
 `./install.cs --check` compares the clone's `origin` URL, its sparse set, and its
 required files and link, with no network. `--copy` changes the other managed
 entries only; memory is the same clone and symlink in both modes.

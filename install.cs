@@ -593,7 +593,7 @@ static (bool Drift, bool Failed) ProvisionMemoryClone(
     // A symlink is never a clone and is never replaced: same posture as an unreadable .git.
     if (exists && IsLink(dest, destAttrs))
     {
-        Console.WriteLine($"  FAILED  memory-src at {dest} is a symlink; move it or fix by hand");
+        Console.WriteLine($"  FAILED  .memory at {dest} is a symlink; move it or fix by hand");
         return (false, true);
     }
 
@@ -691,7 +691,9 @@ static (bool Drift, bool Failed) ProvisionMemoryLink(
     if (checkOnly)
     {
         Console.WriteLine(exists
-            ? "  would link memory (existing memory is moved to the backup)"
+            ? (isLink
+                ? "  would link memory (existing memory link is recorded and removed)"
+                : "  would link memory (existing memory is moved to the backup)")
             : "  would link memory");
         return (true, false);
     }

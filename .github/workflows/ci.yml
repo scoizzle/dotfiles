@@ -112,6 +112,7 @@ jobs:
           git -C "$HOME/.config/opencode/.memory" sparse-checkout list | grep -qx /memory/
           test "$(git -C "$HOME/.config/opencode/.memory" rev-parse --is-inside-work-tree)" = true
           test -f "$HOME/.config/opencode/memory/INDEX.md"
+          test "$(readlink "$HOME/.config/opencode/memory")" = .memory/memory
           test -f "$HOME/.config/opencode/.memory/memory/core/safety.md"
 
       # A wrong skill header fails silently in opencode, so assert the contract:
