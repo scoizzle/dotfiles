@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Collect the complete uncommitted change of a repo into a bundle directory.
 
-Usage: review-bundle <repo> [--show <path>]... [--baseline]
-       review-bundle <repo> --classify [--paths <path>...]
+Usage: review-bundle <repo> [--show <path>]... [--baseline] [--base <rev>]
+       review-bundle <repo> --classify [--paths <path>...] [--base <rev>]
+
+--base <rev> diffs against <rev> instead of HEAD (default HEAD), e.g. to bundle
+already-integrated commits. The rev is resolved once; a bad rev exits 2 before
+anything is written. A baseline taken with --base is not comparable to one taken
+without.
 
 Writes section files under $OPENCODE_TMP/review-bundles/<name>-<stamp>/ and prints
 the directory on success. Section files:
   00-status.txt      git status --short
-  01-diffstat.txt    git diff --stat HEAD
-  02-diff-NN.txt     git diff HEAD
+  01-diffstat.txt    git diff --stat <base>   (default HEAD)
+  02-diff-NN.txt     git diff <base>          (default HEAD)
   03-untracked-NN.txt the contents of every untracked, non-ignored, non-secret file
-  04-show-NN.txt     the contents of each --show <path> at HEAD
+  04-show-NN.txt     the contents of each --show <path> at <base> (default HEAD)
   05-baseline.json   diff hash and untracked git hashes for a later delta re-review
   99-omitted.txt     binary, non-UTF-8, secret, and unreadable files, with reason and size
 
@@ -23,6 +28,7 @@ in 99-omitted.txt.
 reason per line. It is a ratchet, not a verdict: the caller may raise the tier but
 never lower it. It reads the current diff, or the planned files named by --paths
 (no line count is known before the edit, so only the file rules apply there).
+With --paths, --base is validated but ignored for classification.
 
 Read-only: only `status`, `diff`, `ls-files`, `show`, `rev-parse`, and
 `hash-object` run, with optional locks disabled. Nothing is staged and the index
@@ -149,7 +155,7 @@ def is_sensitive(rel):
     return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in SENSITIVE)
 
 
-def classify(repo, planned):
+def classify(repo, planned, ref="HEAD"):
     """Return (floor, reasons). T2 when any rule trips; otherwise T1."""
     lines = 0
     if planned:
@@ -157,10 +163,10 @@ def classify(repo, planned):
     else:
         paths = [
             p
-            for p in (git_ok(repo, ["diff", "--name-only", "HEAD"]).stdout or "").splitlines()
+            for p in (git_ok(repo, ["diff", "--name-only", ref]).stdout or "").splitlines()
             if p
         ]
-        for row in (git_ok(repo, ["diff", "--numstat", "HEAD"]).stdout or "").splitlines():
+        for row in (git_ok(repo, ["diff", "--numstat", ref]).stdout or "").splitlines():
             added, removed, _name = (row.split("\t") + ["", "", ""])[:3]
             lines += int(added) if added.isdigit() else 0
             lines += int(removed) if removed.isdigit() else 0
@@ -190,11 +196,12 @@ def is_binary(data):
 
 def main(argv):
     if not argv:
-        print("usage: review-bundle <repo> [--show <path>]... [--baseline] | --classify [--paths <path>...]", file=sys.stderr)
+        print("usage: review-bundle <repo> [--show <path>]... [--baseline] [--base <rev>] | --classify [--paths <path>...] [--base <rev>]", file=sys.stderr)
         return 2
     repo = os.path.abspath(argv[0])
     shows = []
     baseline = False
+    base_rev = None
     classify_only = False
     planned = []
     rest = argv[1:]
@@ -213,6 +220,12 @@ def main(argv):
                 return 2
             shows.append(rest[1])
             rest = rest[2:]
+        elif rest[0] == "--base":
+            if len(rest) < 2:
+                print("--base needs a rev", file=sys.stderr)
+                return 2
+            base_rev = rest[1]
+            rest = rest[2:]
         elif rest[0] == "--baseline":
             baseline = True
             rest = rest[1:]
@@ -224,8 +237,17 @@ def main(argv):
         print(f"not a git repo: {repo}", file=sys.stderr)
         return 2
 
+    base_sha = None
+    if base_rev is not None:
+        res = git(repo, ["rev-parse", "--verify", f"{base_rev}^{{commit}}"])
+        if res.returncode != 0 or not (res.stdout or "").strip():
+            print(f"bad --base: {base_rev}", file=sys.stderr)
+            return 2
+        base_sha = res.stdout.strip()
+    ref = base_sha or "HEAD"
+
     if classify_only:
-        floor, reasons = classify(repo, planned)
+        floor, reasons = classify(repo, planned, ref)
         print(floor)
         for reason in reasons:
             print(f"  {reason}")
@@ -250,12 +272,12 @@ def main(argv):
     with open(os.path.join(root, "00-status.txt"), "w") as fh:
         fh.write(status)
 
-    diffstat = git_ok(repo, ["diff", "--stat", "HEAD", "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    diffstat = git_ok(repo, ["diff", "--stat", ref, "--", ".", *SECRET_PATHSPECS]).stdout or ""
     with open(os.path.join(root, "01-diffstat.txt"), "w") as fh:
         fh.write(diffstat)
 
-    diff = git_ok(repo, ["diff", "HEAD", "--", ".", *SECRET_PATHSPECS]).stdout or ""
-    for rel in (git_ok(repo, ["diff", "--name-only", "HEAD"]).stdout or "").splitlines():
+    diff = git_ok(repo, ["diff", ref, "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    for rel in (git_ok(repo, ["diff", "--name-only", ref]).stdout or "").splitlines():
         if os.path.basename(rel) == ".env.example":
             omitted.append(f"{rel} (excluded by env glob; not secret)")
         elif is_secret(rel):
@@ -298,15 +320,16 @@ def main(argv):
         total += write_parts(root, "03-untracked", "".join(flat))
 
     show_parts = []
+    at = "base" if base_sha else "HEAD"
     for rel in shows:
-        res = git(repo, ["show", f"HEAD:{rel}"], text=False)
+        res = git(repo, ["show", f"{ref}:{rel}"], text=False)
         if res.returncode != 0 or res.stdout is None:
-            show_parts.append(f"### show: {rel}\nabsent at HEAD\n")
+            show_parts.append(f"### show: {rel}\nabsent at {at}\n")
             continue
         data = res.stdout
         if is_binary(data):
-            omitted.append(f"{rel} (binary baseline at HEAD, {len(data)} bytes)")
-            show_parts.append(f"### show: {rel}\nbinary at HEAD; see 99-omitted.txt\n")
+            omitted.append(f"{rel} (binary baseline at {at}, {len(data)} bytes)")
+            show_parts.append(f"### show: {rel}\nbinary at {at}; see 99-omitted.txt\n")
             continue
         try:
             text = data.decode("utf-8")
@@ -339,6 +362,8 @@ def main(argv):
             "untracked": untracked_hashes,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
+        if base_sha:
+            payload["base"] = base_sha
         path = os.path.join(root, "05-baseline.json")
         with open(path, "w") as fh:
             json.dump(payload, fh, indent=2)
