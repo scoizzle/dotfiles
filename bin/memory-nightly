@@ -8,9 +8,9 @@
 The memory directory is a sparse git clone (memory/ only). The commit is built
 with plumbing against a temporary index. The fast-forward of the base branch
 may move HEAD (only when the clone is clean on that branch); the checked-out
-branch is never switched. Only an allowlist of paths is published (README,
-.gitkeep, dated files, pending dated files); dated files are never deleted from
-the branch. Pending files are validated before publishing. Never force-pushes,
+branch is never switched. Only an allowlist of paths is published (dated files
+that extend upstream, pending dated files); dated files are never deleted from
+the branch. --drop-pending NAME removes a pending file from the branch. Pending files are validated before publishing. Never force-pushes,
 resets or cleans. Exit 75 when another run holds the lock.
 """
 
@@ -64,10 +64,6 @@ def allowlisted(a):
     """Existing worktree files eligible for publishing, as (repo-relative path, abs path)."""
     root = os.path.join(a.repo, LEARN)
     out = []
-    for name in (".gitkeep", "README.md"):
-        f = os.path.join(root, name)
-        if os.path.isfile(f):
-            out.append((f"{LEARN}/{name}", f))
     for sub, prefix in (("", LEARN), ("pending", f"{LEARN}/pending")):
         d = os.path.join(root, sub) if sub else root
         if not os.path.isdir(d):
@@ -77,6 +73,12 @@ def allowlisted(a):
             if DATED.match(name) and os.path.isfile(f) and not os.path.islink(f):
                 out.append((f"{prefix}/{name}", f))
     return out
+
+
+def show(repo, rev, rel):
+    """Bytes of rev:rel, or None when absent."""
+    p = subprocess.run(["git", "-C", repo, "show", f"{rev}:{rel}"], capture_output=True)
+    return p.stdout if p.returncode == 0 else None
 
 
 def load_dream(path):
@@ -89,14 +91,17 @@ def load_dream(path):
 
 def validate(a, files):
     problems = []
-    try:
-        dream = load_dream(a.dream_path)
-    except Exception as e:  # noqa: BLE001
-        raise Fatal(f"cannot load dream from {a.dream_path} to validate pending: {e}")
+    dream = None
+    if any("/pending/" in rel for rel, _ in files):
+        try:
+            dream = load_dream(a.dream_path)
+        except BaseException as e:  # noqa: BLE001
+            msg = (str(e).splitlines() or [type(e).__name__])[0]
+            raise Fatal(f"cannot load dream from {a.dream_path} to validate pending: {msg}")
     for rel, f in files:
         with open(f, errors="replace") as fh:
             text = fh.read()
-        if "/pending/" in rel:
+        if dream is not None and "/pending/" in rel:
             why = dream.pending_problem(text)
             if why:
                 problems.append(f"{rel}: {why}")
@@ -188,9 +193,28 @@ def build_commit(a, base):
     os.unlink(tmp_index)  # git creates it; an empty file is an invalid index
     try:
         env = {"GIT_INDEX_FILE": tmp_index}
-        files = allowlisted(a)
+        drop = {f"{LEARN}/pending/{n}" for n in (a.drop_pending or [])}
+        files = []
+        for rel, f in allowlisted(a):
+            if rel in drop:
+                continue
+            if "/pending/" not in rel:
+                ref = show(r, f"{a.remote}/{a.base}", rel)
+                if ref is None:
+                    ref = show(r, base, rel)
+                if ref is not None:
+                    with open(f, "rb") as fh:
+                        local = fh.read()
+                    if local == ref:
+                        continue
+                    if not local.startswith(ref):
+                        print(f"warning: {rel} diverged from upstream; resolve manually", file=sys.stderr)
+                        continue
+            files.append((rel, f))
         validate(a, files)
         git(r, "read-tree", base, env=env)
+        for rel in sorted(drop):
+            git(r, "update-index", "--force-remove", "--", rel, env=env)
         for rel, _ in files:
             git(r, "add", "-f", "--", rel, env=env)
         present = {rel for rel, _ in files}
@@ -220,6 +244,27 @@ def build_commit(a, base):
 def changed_files(a, base, commit):
     out = git(a.repo, "diff", "--name-status", base, commit).stdout
     return out.strip()
+
+
+def unblock_ff(a):
+    """Delete untracked learnings files that upstream already has byte-for-byte."""
+    out = git(a.repo, "status", "--porcelain", "-uall", "--", LEARN).stdout
+    for line in out.splitlines():
+        if not line.startswith("?? "):
+            continue
+        rel = line[3:].strip().strip('"')
+        f = os.path.join(a.repo, rel)
+        if not os.path.isfile(f) or os.path.islink(f):
+            continue
+        up = git(a.repo, "rev-parse", "--verify", "-q", f"{a.remote}/{a.base}:{rel}", check=False)
+        if up.returncode != 0:
+            continue
+        mine = git(a.repo, "hash-object", "--", f, check=False).stdout.strip()
+        if mine and mine == up.stdout.strip():
+            os.unlink(f)
+        else:
+            print(f"warning: {rel} differs from {a.remote}/{a.base}; not deleting, fast-forward will be skipped",
+                  file=sys.stderr)
 
 
 def publish(a):
@@ -278,7 +323,13 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--skip-dream", action="store_true")
     ap.add_argument("--no-pr", action="store_true")
+    ap.add_argument("--drop-pending", action="append", default=[], metavar="NAME",
+                    help="remove pending/NAME (YYYY-MM-DD.md) from the branch; local file kept")
     a = ap.parse_args(argv)
+    for n in a.drop_pending:
+        if not DATED.match(n):
+            print(f"error: --drop-pending {n!r} is not YYYY-MM-DD.md", file=sys.stderr)
+            return 1
     a.repo = os.path.realpath(os.path.expanduser(a.repo))
     dream = os.path.expanduser(a.dream)
     a.dream_path = dream
@@ -322,8 +373,10 @@ def main(argv=None):
         if p.returncode != 0:
             raise Fatal(f"offline or fetch failed; nothing pushed: {p.stderr.strip()}")
 
-        status = git(a.repo, "status", "--porcelain").stdout.strip()
         cur = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        if cur == a.base:
+            unblock_ff(a)
+        status = git(a.repo, "status", "--porcelain").stdout.strip()
         if status or cur != a.base:
             print(f"warning: worktree dirty/untracked or not on {a.base}; skipping fast-forward", file=sys.stderr)
         else:

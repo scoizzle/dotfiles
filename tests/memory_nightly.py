@@ -305,6 +305,105 @@ def main():
                   and not any("/pending/" in f for f in mfiles), f"{ok1} {ok2} {files} {mfiles}")
         finally:
             fx3.cleanup()
+        # (ff_after_merge)
+        fx5 = Fixture()
+        try:
+            fx5.pending("2027-03-01.md")
+            fx5.run("--no-pr")
+            l5 = fx5.clone / "memory" / "learnings"
+            (l5 / "2027-03-01.md").write_text((l5 / "pending" / "2027-03-01.md").read_text())
+            (l5 / "pending" / "2027-03-01.md").unlink()
+            fx5.run("--no-pr")
+            sh("git", "-C", str(fx5.seed), "fetch", "origin", env=fx5.env)
+            sh("git", "-C", str(fx5.seed), "merge", "--no-edit", "origin/memory/dream", env=fx5.env)
+            sh("git", "-C", str(fx5.seed), "push", "origin", "main", env=fx5.env)
+            sh("git", "-C", str(fx5.seed), "push", "origin", "--delete", "memory/dream", env=fx5.env)
+            (fx5.seed / "memory" / "core" / "later.md").write_text("later\n")
+            sh("git", "-C", str(fx5.seed), "add", "-A", env=fx5.env)
+            sh("git", "-C", str(fx5.seed), "commit", "-m", "later", env=fx5.env)
+            sh("git", "-C", str(fx5.seed), "push", "origin", "main", env=fx5.env)
+            head0 = sh("git", "-C", str(fx5.clone), "rev-parse", "HEAD", env=fx5.env).stdout
+            p = fx5.run("--no-pr")
+            head1 = sh("git", "-C", str(fx5.clone), "rev-parse", "HEAD", env=fx5.env).stdout
+            check("ff_after_merge",
+                  p.returncode == 0 and head0 != head1 and (fx5.clone / "memory" / "core" / "later.md").exists()
+                  and "skipping fast-forward" not in p.stderr, p.stdout + p.stderr)
+        finally:
+            fx5.cleanup()
+
+        def push_main(fxx, rel, text):
+            f = fxx.seed / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(text)
+            sh("git", "-C", str(fxx.seed), "add", "-A", env=fxx.env)
+            sh("git", "-C", str(fxx.seed), "commit", "-m", "up", env=fxx.env)
+            sh("git", "-C", str(fxx.seed), "push", "origin", "main", env=fxx.env)
+
+        # (stale_readme_not_published)
+        fx6 = Fixture()
+        try:
+            push_main(fx6, "memory/learnings/README.md", "readme v2\n")
+            (fx6.clone / "memory" / "core" / "a.md").write_text("dirty\n")  # blocks the fast-forward
+            fx6.pending("2027-04-01.md")
+            p = fx6.run("--no-pr")
+            readme = sh("git", "-C", str(fx6.remote), "show", "memory/dream:memory/learnings/README.md",
+                        env=fx6.env, check=False).stdout
+            check("stale_readme_not_published", p.returncode == 0 and readme == "readme v2\n",
+                  p.stdout + p.stderr + repr(readme))
+        finally:
+            fx6.cleanup()
+
+        # (stale_dated_not_reverted)
+        fx7 = Fixture()
+        try:
+            push_main(fx7, "memory/learnings/2027-05-10.md", "- known: A [harness]\n- known: B [harness]\n")
+            (fx7.clone / "memory" / "learnings" / "2027-05-10.md").write_text("- known: A [harness]\n")
+            p = fx7.run("--no-pr")
+            check("stale_dated_not_reverted",
+                  p.returncode == 0 and "diverged from upstream" in p.stderr and not fx7.remote_log(),
+                  p.stdout + p.stderr)
+        finally:
+            fx7.cleanup()
+
+        # (append_publishes)
+        fx8 = Fixture()
+        try:
+            push_main(fx8, "memory/learnings/2027-05-10.md", "- known: A [harness]\n")
+            full = "- known: A [harness]\n- known: B [harness]\n"
+            (fx8.clone / "memory" / "learnings" / "2027-05-10.md").write_text(full)
+            p = fx8.run("--no-pr")
+            got = sh("git", "-C", str(fx8.remote), "show", "memory/dream:memory/learnings/2027-05-10.md",
+                     env=fx8.env, check=False).stdout
+            check("append_publishes", p.returncode == 0 and got == full, p.stdout + p.stderr + repr(got))
+        finally:
+            fx8.cleanup()
+
+        # (drop_pending)
+        fx9 = Fixture()
+        try:
+            fx9.pending("2026-11-09.md")
+            fx9.run("--no-pr")
+            ok1 = "memory/learnings/pending/2026-11-09.md" in tree_files(fx9, "memory/dream")
+            p = fx9.run("--no-pr", "--drop-pending", "2026-11-09.md")
+            gone = "memory/learnings/pending/2026-11-09.md" not in tree_files(fx9, "memory/dream")
+            kept = (fx9.clone / "memory" / "learnings" / "pending" / "2026-11-09.md").exists()
+            bad = fx9.run("--no-pr", "--drop-pending", "notes.md")
+            check("drop_pending", ok1 and p.returncode == 0 and gone and kept and bad.returncode != 0,
+                  p.stdout + p.stderr + bad.stderr)
+        finally:
+            fx9.cleanup()
+
+        # (missing_dream)
+        fx10 = Fixture()
+        try:
+            fx10.pending("2027-06-01.md")
+            p = sh(sys.executable, str(SCRIPT), "--repo", str(fx10.clone), "--skip-dream", "--no-pr",
+                   "--dream", "/nonexistent/dream", env=fx10.env, check=False)
+            check("missing_dream",
+                  p.returncode != 0 and "Traceback" not in p.stderr and p.stderr.startswith("error:")
+                  and len(p.stderr.strip().splitlines()) == 1 and not fx10.remote_log(), p.stdout + p.stderr)
+        finally:
+            fx10.cleanup()
     finally:
         fx.cleanup()
     return 1 if failures else 0
