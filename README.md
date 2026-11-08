@@ -22,6 +22,32 @@ One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 `~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
 [`docs/security-model.md`](docs/security-model.md).
 
+## Orchestrator seat
+
+An opt-in, no-hands orchestrator. With `.orchestrator-seat` at a worktree root, the
+top-level session follows `AGENTS.md`'s **Orchestrator seat** section: it plans and
+splits the work, dispatches each unit only through T3 `delegate_task` with
+`isolation: "worktree"`, checks the returned `PROOF`, and never edits files or runs
+mutating shell itself. Without the marker, that section is ignored.
+
+Create the marker in a dedicated seat worktree only, never the main checkout, with
+`touch .orchestrator-seat` at that root before launching the thread, so its first turn
+sees it; `git check-ignore -q .orchestrator-seat` must exit 0. It is untracked and
+gitignored (`/.orchestrator-seat`, enforced by `bin/lint-config`), so a worktree from
+committed state never has it. Launch the seat with T3 `t3_thread_launch`, binding that
+worktree (`root` would be the main checkout) on the orchestrator band:
+
+```js
+workspaceStrategy: { type: "existing_worktree", worktreePath: "<seat path>" },
+modelSelection: { instanceId: "opencode", model: "xai/grok-4.7",
+                  options: [{ id: "variant", value: "high" }] },
+runtimeMode: "auto-accept-edits",
+```
+
+`auto-accept-edits` is the recommended `runtimeMode`: a child cannot start above the
+seat's mode and children must edit, so `approval-required` would stall each child; the
+mode does not stop the seat editing, that rule is the `AGENTS.md` seat contract.
+
 ## Install on a new machine
 
 **From a bare box** (no git, no dotnet — just a shell and curl):
