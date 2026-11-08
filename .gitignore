@@ -6,8 +6,9 @@ service.json
 cli.json
 reviews.jsonl
 
-# Agent-written lessons. ~/.config/opencode/memory is a sparse git clone of this
-# repo (install.cs), and dream writes into its memory/learnings/.
+# Agent-written lessons. ~/.config/opencode/.memory is the sparse git clone of this
+# repo (install.cs); ~/.config/opencode/memory is the symlink to .memory/memory, and
+# dream writes into memory/learnings/ through it.
 # Dated files (YYYY-MM-DD.md) travel with git; README.md and .gitkeep stay tracked.
 # pending/ is force-added only on the memory/dream staging branch.
 memory/learnings/*

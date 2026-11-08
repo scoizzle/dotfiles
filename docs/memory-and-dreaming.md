@@ -46,11 +46,15 @@ checkout you edit.
 
 `./install.cs` provisions it: clone beside `.memory`, set the sparse set to
 `/memory/` and `/.gitignore`, then move it in and link `memory` to
-`.memory/memory`. Re-running is idempotent, and a failed clone never costs the
-existing memory its place. An existing `memory` directory or symlink is moved to
-`~/.config/opencode.bak-<stamp>/`; `learnings/**` are copied into the clone
-without overwriting, and a differing local file is kept under
-`learnings/.conflict/`. An interrupted migration resumes on the next run.
+`.memory/memory`. Re-running is idempotent. An existing `memory` symlink has its
+raw target recorded in `memory.link-target` in the backup and the link is removed;
+the target is left untouched, and its `learnings/**` are copied into the clone
+without overwriting, a differing local file kept under `learnings/.conflict/`. An
+existing `memory` directory is moved to `~/.config/opencode.bak-<stamp>/memory/`
+and its learnings copied the same way. A `.memory` that is not a clone is moved to
+`~/.config/opencode.bak-<stamp>/memory-src/`; its learnings stay there. An
+interrupted migration resumes on the next run: the old tree stays in the backup and
+the next run finishes the copy.
 `./install.cs --check` compares the clone's `origin` URL, its sparse set, and its
 required files and link, with no network. `--copy` changes the other managed
 entries only; memory is the same clone and symlink in both modes.
@@ -140,10 +144,12 @@ reuses a single **draft** PR against `main`:
 ```
 
 `--repo`, `--branch`, `--base`, `--remote`, and `--dream` override the defaults
-(`~/.config/opencode/.memory`, `memory/dream`, `main`, `origin`, and the installed
-`dream`). `--repo` accepts the clone root or the `memory` symlink into it; it
-resolves the clone root itself. It refuses a repo that is not a work tree or not
-sparse to `/memory/`.
+(`~/.config/opencode/memory`, `memory/dream`, `main`, `origin`, and the installed
+`dream`). The default `--repo` is the consumer path: the `memory` symlink after
+install, or the clone itself in the older layout, and the nightly resolves the
+clone root from either, so a scheduled run works before and after `install.cs`.
+`--repo` also accepts the clone root directly. It refuses a repo that is not a
+work tree or not sparse to `/memory/`.
 
 What it publishes is an allowlist: dated `YYYY-MM-DD.md` files and
 `pending/YYYY-MM-DD.md`. `memory/learnings/README.md` and `.gitkeep` are never

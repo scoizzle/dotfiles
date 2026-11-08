@@ -141,11 +141,15 @@ checkout you edit.
 `install.cs` provisions the clone, links `memory` into it, and
 `./install.cs --check` verifies it without network: the `origin` URL matches this
 repo, the sparse set contains `/memory/`, and the payload and the `memory` symlink
-are in place. An existing `memory` directory or symlink is moved to
-`~/.config/opencode.bak-<stamp>/`, and `learnings/**` are copied into the clone
-without overwriting, keeping a differing local file under `learnings/.conflict/`.
-An interrupted migration resumes on the next run, so a failed install never costs
-the existing memory its place. Re-running is idempotent.
+are in place. If `memory` is already a symlink, its raw target is recorded in
+`memory.link-target` in the backup and the link is removed; the target is left
+untouched. An existing `memory` directory is moved to
+`~/.config/opencode.bak-<stamp>/memory/`, and `learnings/**` are copied into the
+clone without overwriting, keeping a differing local file under
+`learnings/.conflict/`. A `.memory` that is not a clone is moved to
+`~/.config/opencode.bak-<stamp>/memory-src/`; its learnings stay there. An
+interrupted migration resumes on the next run: the old tree stays in the backup
+and the next run finishes the copy. Re-running is idempotent.
 
 The three tiers decide what travels:
 

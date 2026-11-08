@@ -5,9 +5,10 @@
     memory-nightly --skip-dream    # publish whatever is already staged
     memory-nightly --dry-run       # print the commands, change nothing
 
-The repo is a sparse git clone at ~/.config/opencode/.memory (memory/ only);
-~/.config/opencode/memory is a symlink to .memory/memory. --repo accepts either. The commit is built
-with plumbing against a temporary index. The fast-forward of the base branch
+--repo defaults to ~/.config/opencode/memory, the consumer path: a symlink to
+.memory/memory after install.cs, or the clone itself in the older layout. The
+clone root is resolved from it, so the default works before and after install.
+The commit is built with plumbing against a temporary index. The fast-forward of the base branch
 may move HEAD (only when the clone is clean on that branch); the checked-out
 branch is never switched. Only an allowlist of paths is published (dated files
 that extend upstream, pending dated files); dated files are never deleted from
@@ -316,8 +317,9 @@ def ensure_pr(a, files):
 def main(argv=None):
     here = os.path.dirname(os.path.realpath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--repo", default="~/.config/opencode/.memory",
-                    help="memory clone root, or the memory symlink into it")
+    ap.add_argument("--repo", default="~/.config/opencode/memory",
+                    help="consumer path (clone or memory symlink into it); default "
+                         "~/.config/opencode/memory works in both layouts")
     ap.add_argument("--branch", default="memory/dream")
     ap.add_argument("--base", default="main")
     ap.add_argument("--remote", default="origin")

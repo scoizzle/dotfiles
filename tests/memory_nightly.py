@@ -280,6 +280,34 @@ def main():
         check("repo_invalid_one_line", bad.returncode == 1 and bad.stderr.startswith("error:")
               and len(bad.stderr.strip().splitlines()) == 1, bad.stderr)
 
+        # (default_repo_*) no --repo: the default consumer path works before and after install
+        def default_repo_case(name, rel, link):
+            fxd = Fixture()
+            try:
+                cfg = Path(fxd.env["HOME"]) / ".config" / "opencode"
+                cfg.mkdir(parents=True)
+                clone = cfg / rel
+                sh("git", "clone", "--no-checkout", str(fxd.remote), str(clone), env=fxd.env)
+                sh("git", "-C", str(clone), "sparse-checkout", "set", "--no-cone",
+                   "/memory/", "/.gitignore", env=fxd.env)
+                sh("git", "-C", str(clone), "checkout", "main", env=fxd.env)
+                if link:
+                    os.symlink(".memory/memory", cfg / "memory")
+                pending = clone / "memory" / "learnings" / "pending"
+                pending.mkdir(exist_ok=True)
+                (pending / "2026-11-12.md").write_text("- known: x [harness]\n")
+                p = sh(sys.executable, str(SCRIPT), "--skip-dream", "--no-pr", env=fxd.env, check=False)
+                files = tree_files(fxd, "memory/dream")
+                nested = [q for q in (clone / "memory" / "memory",) if os.path.lexists(q)]
+                check(name, p.returncode == 0
+                      and "memory/learnings/pending/2026-11-12.md" in files and not nested,
+                      p.stdout + p.stderr + f" files={files} nested={nested}")
+            finally:
+                fxd.cleanup()
+
+        default_repo_case("default_repo_old_layout", "memory", False)
+        default_repo_case("default_repo_new_layout", ".memory", True)
+
         # (two clones) a fresh clone lacking A's dated file must not delete it
         fx2 = Fixture()
         try:
