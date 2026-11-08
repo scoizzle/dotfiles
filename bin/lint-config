@@ -294,6 +294,24 @@ def check_instructions() -> None:
     for needle in ("delegate_task", "orchestrator_capabilities", "never silently downgraded"):
         if needle not in text:
             fail(f"AGENTS.md: missing {needle!r}")
+    seat = re.search(r"^### Orchestrator seat[ \t]*$(.*?)(?=^#{1,3} |\Z)", text, flags=re.M | re.S)
+    if not seat:
+        fail("AGENTS.md: missing heading '### Orchestrator seat'")
+    elif ".orchestrator-seat" not in seat.group(1):
+        fail("AGENTS.md: '### Orchestrator seat' must name the .orchestrator-seat marker")
+    try:
+        ignored = subprocess.run(
+            ["git", "-C", str(ROOT), "check-ignore", "-q", ".orchestrator-seat"],
+            capture_output=True,
+        ).returncode == 0
+    except OSError:
+        ignored = False
+    if not ignored:
+        fail(".gitignore: .orchestrator-seat must be ignored; a delegated worktree must not "
+             "inherit the seat marker")
+    if "/.orchestrator-seat" not in (ROOT / ".gitignore").read_text().splitlines():
+        fail(".gitignore: needs a literal '/.orchestrator-seat' line; a user's global ignore "
+             "is not enough")
     section = re.search(r"^## Model routing\s*$(.*?)(?=^## )", text, flags=re.M | re.S)
     rows = [l for l in (section.group(1) if section else "").splitlines() if l.startswith("|")][2:]
     if not rows:

@@ -121,6 +121,35 @@ If the user has not answered, write the line as `pending`.
 `/verify` and `/second-opinion` are manual escape hatches; `verifier` is a
 manual shell-based deep check, not the default review path.
 
+### Orchestrator seat
+
+This section applies only when `.orchestrator-seat` exists at the root of this
+worktree, and only to the top-level session. Delegated and subagent roles follow
+their own prompts. The marker is untracked and gitignored, so a `delegate_task`
+worktree created from committed state never has it; create it only in a
+dedicated seat worktree, never in the main checkout.
+
+With the marker present, this session is the orchestrator:
+
+- Plan the work and split it into strictly scoped units, one outcome each.
+- Dispatch every unit only through T3 `delegate_task` with
+  `isolation: "worktree"`, choosing the tier from `### Dispatch tiers`
+  (DeepSeek Flash by default, `claude-agent/sonnet` for harder work).
+- Verify each returned `PROOF` block against `### Proof of work` before
+  accepting: read the diff and re-run the cited read-only commands
+  (`git status`, `git diff`, `git log`, `git show`, `git -C <child worktree> ...`).
+  Dispatch anything that writes, including tests, builds, lint,
+  `review-bundle --classify` and `review-log`, to a check unit. A missing line,
+  an uncited claim, or a diff outside the named files is a rejection.
+- Never edit files or run a mutating shell command yourself. Read tools and the
+  read-only commands above are fine.
+- If delegation fails or T3 is absent, stop and report the blocked unit. This
+  overrides the native-subagent fallback in Model routing: never "just do it"
+  yourself.
+- A seat cannot certify "green is the branch head"; it never runs the suite.
+
+Without the marker, ignore this section.
+
 ## Model routing
 
 Every delegated job runs on its band's pin, not the session's model. The pin
