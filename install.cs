@@ -35,6 +35,13 @@ string[] entries =
     "evals",
 ];
 
+var homeFlag = Array.IndexOf(args, "--home");
+if (homeFlag >= 0 && (homeFlag + 1 >= args.Length || args[homeFlag + 1].StartsWith('-')))
+{
+    Console.WriteLine("  FAILED  --home needs a directory value (not falling back to the real home)");
+    return 2;
+}
+
 var repoRoot = ResolveRepoRoot();
 var home = Path.GetFullPath(
     ArgValue("--home")
@@ -427,6 +434,8 @@ static string MakeBackupRoot(string home)
 // ---------------------------------------------------------------------------
 // memory: a sparse git clone, not a link
 // ---------------------------------------------------------------------------
+static string MigratingMarkerName() => ".migrating";
+
 static (string Name, string Target, bool IsDir)[] MemoryLinks() =>
 [
     ("INDEX.md", "memory/INDEX.md", false),
@@ -583,7 +592,19 @@ static (bool Drift, bool Failed) ProvisionMemory(
     var isLink = exists && IsLink(dest, attrs);
 
     if (exists && !isLink && IsCloneDir(dest))
-        return ReconcileMemoryClone(dest, remote, checkOnly);
+    {
+        var rec = ReconcileMemoryClone(dest, remote, checkOnly);
+        if (rec.Failed) return rec;
+        var pending = FinishInterruptedMigrations(home, dest, checkOnly);
+        return (rec.Drift || pending > 0, false);
+    }
+
+    // A .git that git cannot read is not "no clone": replacing it could destroy history.
+    if (exists && !isLink && (Directory.Exists(Path.Combine(dest, ".git")) || File.Exists(Path.Combine(dest, ".git"))))
+    {
+        Console.WriteLine($"  FAILED  memory at {dest} has a .git that git cannot read; fix or move it manually");
+        return (false, true);
+    }
 
     if (checkOnly)
     {
@@ -594,6 +615,9 @@ static (bool Drift, bool Failed) ProvisionMemory(
     // Clone beside the destination first, so a failed clone never costs the
     // existing memory its place.
     var tmp = Path.Combine(targetRoot, $".memory-clone-{Environment.ProcessId}");
+    string? movedBak = null;      // old memory directory now sitting in the backup
+    string? linkRestore = null;   // old memory symlink target, removed from dest
+    string? markerPath = null;
     try
     {
         if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
@@ -624,19 +648,32 @@ static (bool Drift, bool Failed) ProvisionMemory(
                 var resolved = Path.GetFullPath(raw, targetRoot);
                 danglingLink = !Directory.Exists(resolved);
                 migrateFrom = Path.Combine(resolved, "learnings");
+                markerPath = Path.Combine(backupRoot, "memory", MigratingMarkerName());
+                if (!danglingLink)
+                {
+                    // The marker records where the learnings live, so a later run can finish the copy.
+                    Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
+                    File.WriteAllText(markerPath, migrateFrom + "\n");
+                }
                 DeleteLink(dest); // the link only, never what it points at
+                linkRestore = raw;
                 Console.WriteLine($"  saved   memory link target -> {Path.GetRelativePath(home, Path.Combine(backupRoot, "memory.link-target"))}");
             }
             else
             {
                 var bak = Path.Combine(backupRoot, "memory");
+                markerPath = Path.Combine(bak, MigratingMarkerName());
+                // Written inside the old memory first so it travels into the backup with the move.
+                File.WriteAllText(Path.Combine(dest, MigratingMarkerName()), "");
                 MovePath(dest, bak);
+                movedBak = bak;
                 migrateFrom = Path.Combine(bak, "learnings");
                 Console.WriteLine($"  saved   memory -> {Path.GetRelativePath(home, bak)}");
             }
         }
 
         Directory.Move(tmp, dest);
+        movedBak = null; linkRestore = null; // the destination is live; a failure from here is finished by the next run
         EnsureMemoryLinks(dest);
         Console.WriteLine($"  create  memory (clone {remote})");
 
@@ -645,14 +682,78 @@ static (bool Drift, bool Failed) ProvisionMemory(
         else if (migrateFrom is not null)
             MigrateLearnings(migrateFrom, Path.Combine(dest, "memory", "learnings"));
 
+        if (markerPath is not null && File.Exists(markerPath)) File.Delete(markerPath);
+        FinishInterruptedMigrations(home, dest, checkOnly: false);
         return (true, false);
     }
     catch (Exception ex)
     {
         Console.WriteLine($"  FAILED  memory: {ex.Message}");
         try { if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true); } catch { }
+        try
+        {
+            var destFree = !TryAttrs(dest, out _)
+                || (Directory.Exists(dest) && !Directory.EnumerateFileSystemEntries(dest).Any());
+            if (movedBak is not null && destFree)
+            {
+                if (Directory.Exists(dest)) Directory.Delete(dest);
+                MovePath(movedBak, dest);
+                var stray = Path.Combine(dest, MigratingMarkerName());
+                if (File.Exists(stray)) File.Delete(stray);
+                Console.WriteLine($"  restore memory (rolled back from {movedBak})");
+            }
+            else if (linkRestore is not null && destFree)
+            {
+                if (Directory.Exists(dest)) Directory.Delete(dest);
+                CreateLink(dest, linkRestore, true);
+                if (markerPath is not null && File.Exists(markerPath)) File.Delete(markerPath);
+                Console.WriteLine("  restore memory (symlink recreated)");
+            }
+            else if (movedBak is not null)
+            {
+                Console.WriteLine($"  FAILED  memory: could not restore; the old memory is at {movedBak}");
+            }
+        }
+        catch (Exception rex)
+        {
+            Console.WriteLine($"  FAILED  memory: rollback failed ({rex.Message}); the old memory is at {movedBak ?? markerPath}");
+        }
         return (true, true);
     }
+}
+
+// Finishes learnings copies that a previous run began and did not complete. Each
+// opencode.bak-*/memory/.migrating marker names (first line) the learnings source,
+// defaulting to the backup's own learnings/. Idempotent; copies never clobber.
+static int FinishInterruptedMigrations(string home, string dest, bool checkOnly)
+{
+    var configDir = Path.Combine(home, ".config");
+    if (!Directory.Exists(configDir)) return 0;
+    var done = 0;
+    foreach (var bak in Directory.GetDirectories(configDir, "opencode.bak-*").OrderBy(d => d, StringComparer.Ordinal))
+    {
+        var marker = Path.Combine(bak, "memory", MigratingMarkerName());
+        if (!File.Exists(marker)) continue;
+        done++;
+        if (checkOnly)
+        {
+            Console.WriteLine($"  would finish interrupted memory migration ({Path.GetRelativePath(home, bak)})");
+            continue;
+        }
+        try
+        {
+            var first = File.ReadLines(marker).FirstOrDefault()?.Trim();
+            var from = string.IsNullOrEmpty(first) ? Path.Combine(bak, "memory", "learnings") : first;
+            Console.WriteLine($"  resume  interrupted memory migration ({Path.GetRelativePath(home, bak)})");
+            MigrateLearnings(from, Path.Combine(dest, "memory", "learnings"));
+            File.Delete(marker);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  warn    could not finish migration from {bak}: {ex.Message}");
+        }
+    }
+    return done;
 }
 
 static (bool Drift, bool Failed) ReconcileMemoryClone(string dest, string remote, bool checkOnly)
@@ -757,7 +858,12 @@ static void MigrateLearnings(string from, string to)
             if (File.Exists(dest))
             {
                 if (!File.ReadAllBytes(dest).AsSpan().SequenceEqual(File.ReadAllBytes(file)))
-                    Console.WriteLine($"  warn    kept existing learnings/{rel}; the original copy stays at {file}");
+                {
+                    var conflict = Path.Combine(to, ".conflict", rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(conflict)!);
+                    File.Copy(file, conflict, overwrite: true);
+                    Console.WriteLine($"  warn    kept existing learnings/{rel}; your local copy is saved at {conflict} (original also at {file})");
+                }
                 continue;
             }
 

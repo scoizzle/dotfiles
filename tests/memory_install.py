@@ -330,7 +330,87 @@ def case_home_isolation():
     require(memdir(home).is_dir(), "install did not land under --home")
 
 
+def install_raw(args, source: Path, shell_home: Path):
+    env = {
+        "MEMORY_REMOTE": str(source),
+        "HOME": str(shell_home),
+        "DOTNET_CLI_HOME": str(DOTNET_HOME),
+        "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+        "DOTNET_NOLOGO": "1",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+        "NUGET_PACKAGES": str(DOTNET_HOME / "nuget"),
+    }
+    shell_home.mkdir(parents=True, exist_ok=True)
+    return run([str(ROOT / "install.cs"), *args], env=env, cwd=ROOT, check=False)
+
+
+def case_home_flag_validation():
+    source = make_source()
+    for args in (["--home"], ["--home", "--check"]):
+        real = fresh("realhome")
+        p = install_raw(args, source, real)
+        require(p.returncode != 0, f"{args} exited 0\n{p.stdout}")
+        require("FAILED" in p.stdout, p.stdout)
+        touched = [x.name for x in real.iterdir() if x.name in (".config", ".claude", ".grok")]
+        require(touched == [], f"{args} touched the real home: {touched}")
+
+
+def case_interrupted_migration():
+    source = make_source()
+    home = fresh("interrupted")
+    install(home, source)
+    bak = home / ".config" / "opencode.bak-20260101-000000" / "memory"
+    (bak / "learnings" / "pending").mkdir(parents=True)
+    (bak / "learnings" / "2026-02-02.md").write_text("# interrupted dated\n")
+    (bak / "learnings" / "pending" / "2026-02-03.md").write_text("# interrupted pending\n")
+    (bak / ".migrating").write_text("")
+    p = install(home, source)
+    L = memdir(home) / "memory" / "learnings"
+    require((L / "2026-02-02.md").read_text() == "# interrupted dated\n", p.stdout)
+    require((L / "pending" / "2026-02-03.md").read_text() == "# interrupted pending\n", p.stdout)
+    require(not (bak / ".migrating").exists(), "marker not removed")
+    require((bak / "learnings" / "2026-02-02.md").is_file(), "backup source disturbed")
+    p = install(home, source)
+    require("done (0 path(s) changed)" in p.stdout, "not idempotent after resume\n" + p.stdout)
+
+
+def case_migration_conflict():
+    source = make_source()
+    home = fresh("conflict")
+    install(home, source)
+    L = memdir(home) / "memory" / "learnings"
+    (L / "2026-01-01.md").write_text("# clone version\n")
+    bak = home / ".config" / "opencode.bak-20260101-000000" / "memory"
+    (bak / "learnings").mkdir(parents=True)
+    (bak / "learnings" / "2026-01-01.md").write_text("# local version\n")
+    (bak / "learnings" / "2026-01-04.md").write_text("# same\n")
+    (L / "2026-01-04.md").write_text("# same\n")
+    (bak / ".migrating").write_text("")
+    p = install(home, source)
+    require((L / ".conflict" / "2026-01-01.md").read_text() == "# local version\n", p.stdout)
+    require((L / "2026-01-01.md").read_text() == "# clone version\n", "clone file was clobbered")
+    require(str(L / ".conflict" / "2026-01-01.md") in p.stdout, "warning must name the conflict path\n" + p.stdout)
+    require(not (L / ".conflict" / "2026-01-04.md").exists(), "identical file was copied to .conflict")
+
+
+def case_unreadable_git():
+    source = make_source()
+    home = fresh("brokengit")
+    m = memdir(home)
+    m.mkdir(parents=True)
+    (m / ".git").write_text("gitdir: /nonexistent/nowhere\n")
+    (m / "keep.txt").write_text("keep\n")
+    p = install(home, source, check=False)
+    require(p.returncode != 0 and "FAILED" in p.stdout and "cannot read" in p.stdout, p.stdout)
+    require((m / ".git").is_file() and (m / "keep.txt").read_text() == "keep\n", "broken clone was replaced")
+    require(not list((home / ".config").glob("opencode.bak-*")), "a backup was made")
+
+
 CASES = [
+    case_home_flag_validation,
+    case_interrupted_migration,
+    case_migration_conflict,
+    case_unreadable_git,
     case_real_clone,
     case_check,
     case_second_install,
@@ -345,6 +425,7 @@ CASES = [
     case_home_isolation,
 ]
 NAMES = [
+    "home flag validation", "interrupted migration", "migration conflict", "unreadable git",
     "real clone", "check", "second install", "repair and remote mismatch", "repair sparse set",
     "no remote",
     "dream writes in clone", "worktree deleted", "migrate dir", "migrate symlink",
