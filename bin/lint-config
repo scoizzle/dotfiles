@@ -396,7 +396,7 @@ def main() -> int:
             fail("orchestrator: must stay opt-in; default_agent is build")
         if effective(orchestrator, "read", "src/x.cs") != "allow":
             fail("orchestrator: read must stay allowed; it reads PROOF hunks")
-        for action in ("edit", "shell", "webfetch", "websearch",
+        for action in ("edit", "shell", "webfetch", "websearch", "browser",
                        "opencode_session_rename", "opencode_worktree_create",
                        "opencode_worktree_remove", "opencode_session_move",
                        "roslynk_apply_patch", "roslynk_apply_code_fix",
@@ -409,6 +409,11 @@ def main() -> int:
             fail("orchestrator: subagent must be deny; dispatch goes through T3")
         if effective(orchestrator, "execute", "*") != "allow":
             fail("orchestrator: execute must stay allowed; T3 delegation is reached through it")
+        allow = [line.strip() for line in (ROOT / "agents" / "orchestrator.md").read_text().splitlines()
+                 if line.strip().startswith("EXECUTE ALLOWLIST:")]
+        if len(allow) != 1 or allow[0].split(":", 1)[1].strip() != "delegate_task":
+            fail("orchestrator: needs exactly one 'EXECUTE ALLOWLIST: delegate_task' line; "
+                 "any other tool name on it is a bug")
 
     check_policy(agents)
     check_shared_surfaces()

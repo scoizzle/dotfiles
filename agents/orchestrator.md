@@ -17,6 +17,9 @@ permissions:
   - action: websearch
     resource: "*"
     effect: deny
+  - action: browser
+    resource: "*"
+    effect: deny
   - action: subagent
     resource: "*"
     effect: deny
@@ -117,6 +120,11 @@ Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 unaccepted work never reaches this session's checkout. `execute` is left allowed
 only because that is how T3 is reached; use it for `delegate_task` only, never
 `fetch`, the browser, or the `opencode_*` state tools.
+
+EXECUTE ALLOWLIST: delegate_task
+
+That line is the whole allowlist. Any other tool name added to it is a bug, and
+`bin/lint-config` fails when the line drifts.
 
 If T3 is absent, report the unit blocked. Do not use a native subagent: the
 writer agents share this checkout.
