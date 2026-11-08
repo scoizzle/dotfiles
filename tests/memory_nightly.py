@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
@@ -76,7 +77,7 @@ class Fixture:
         gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
         self.env["PATH"] = f"{self.bin}{os.pathsep}{self.env['PATH']}"
 
-    def pending(self, name, text="- known: x\n"):
+    def pending(self, name, text="- known: x [harness]\n"):
         d = self.clone / "memory" / "learnings" / "pending"
         d.mkdir(exist_ok=True)
         (d / name).write_text(text)
@@ -146,23 +147,24 @@ def main():
         pend = fx.clone / "memory" / "learnings" / "pending"
         line = (pend / "2026-11-08.md").read_text()
         (fx.clone / "memory" / "learnings" / "2026-11-08.md").write_text(line)
-        for f in pend.glob("*"):
-            f.unlink()
+        (pend / "2026-11-08.md").unlink()  # promote consumes only the promoted file
         p = fx.run()
         files = tree_files(fx, "memory/dream")
         check("e_promote_simulation",
               p.returncode == 0 and "memory/learnings/2026-11-08.md" in files
-              and not any("/pending/" in f for f in files) and len(fx.remote_log()) == 4,
+              and "memory/learnings/pending/2026-11-08.md" not in files
+               and "memory/learnings/pending/2026-11-09.md" in files and len(fx.remote_log()) == 4,
               p.stdout + p.stderr + f" files={files}")
 
         # (f) --dry-run changes nothing
         fx.pending("2026-11-10.md")
         before = fx.remote_log()
-        calls = len(fx.gh_calls())
+        calls = sum(1 for c in fx.gh_calls() if c.startswith("pr create"))
         p = fx.run("--dry-run")
         check("f_dry_run", p.returncode == 0 and fx.remote_log() == before and "would run" in p.stdout
               , p.stdout + p.stderr)
-        check("f_dry_run_no_push", fx.remote_log() == before and len(fx.gh_calls()) == calls)
+        check("f_dry_run_no_push", fx.remote_log() == before
+              and sum(1 for c in fx.gh_calls() if c.startswith("pr create")) == calls)
 
         # (g) --no-pr makes no gh call
         calls = len(fx.gh_calls())
@@ -183,18 +185,126 @@ def main():
               p.returncode != 0 and "delete the remote branch" in p.stderr and fx.remote_log() == before,
               p.stdout + p.stderr)
 
-        # (j) an untracked file must not block the fast-forward to a new upstream commit
+        # (j) an unpublished untracked dated file must BLOCK the fast-forward
         (fx.seed / "memory" / "core" / "new.md").write_text("new core\n")
         sh("git", "-C", str(fx.seed), "add", "-A", env=fx.env)
         sh("git", "-C", str(fx.seed), "commit", "-m", "upstream: new core", env=fx.env)
         sh("git", "-C", str(fx.seed), "push", "origin", "main", env=fx.env)
         untracked = fx.clone / "memory" / "learnings" / "2099-01-01.md"
-        untracked.write_text("- known: untracked dated file\n")
+        untracked.write_text("- known: untracked dated file [harness]\n")
         p = fx.run("--no-pr")
         merged = fx.clone / "memory" / "core" / "new.md"
-        check("j_ff_with_untracked",
-              p.returncode == 0 and merged.is_file() and untracked.is_file(),
+        check("j_untracked_blocks_ff",
+              p.returncode == 0 and not merged.exists() and untracked.is_file()
+              and untracked.read_text() == "- known: untracked dated file [harness]\n",
               p.stdout + p.stderr + f" merged={merged.exists()} untracked={untracked.exists()}")
+        untracked.unlink()
+
+        # (stray) strays never enter the published tree
+        learn = fx.clone / "memory" / "learnings"
+        (learn / "notes.md").write_text("stray\n")
+        (learn / ".DS_Store").write_text("x")
+        (learn / "x.bak").write_text("x")
+        fx.pending("2026-12-01.md")
+        p = fx.run("--no-pr")
+        files = tree_files(fx, "memory/dream")
+        check("stray_excluded",
+              p.returncode == 0 and "memory/learnings/pending/2026-12-01.md" in files
+              and not any(f.endswith(("notes.md", ".DS_Store", ".bak")) for f in files),
+              p.stdout + p.stderr + f" files={files}")
+        for n in ("notes.md", ".DS_Store", "x.bak"):
+            (learn / n).unlink()
+
+        # (branch main) refuses to target main
+        main_before = sh("git", "-C", str(fx.remote), "rev-parse", "main", env=fx.env).stdout
+        p = fx.run("--branch", "main")
+        p2 = fx.run("--branch", "memory/dream", "--base", "memory/dream")
+        check("branch_main_refused",
+              p.returncode != 0 and p2.returncode != 0
+              and sh("git", "-C", str(fx.remote), "rev-parse", "main", env=fx.env).stdout == main_before,
+              p.stdout + p.stderr)
+
+        # (lock) a held lock exits 75 and pushes nothing
+        gitdir = sh("git", "-C", str(fx.clone), "rev-parse", "--absolute-git-dir", env=fx.env).stdout.strip()
+        fx.pending("2026-12-02.md")
+        before = fx.remote_log()
+        with open(os.path.join(gitdir, "memory-nightly.lock"), "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                      pass_fds=[lk.fileno()])
+            p = fx.run("--no-pr")
+            holder.kill()
+            holder.wait()
+        check("lock_contention_75",
+              p.returncode == 75 and "another memory-nightly is running" in (p.stdout + p.stderr)
+              and fx.remote_log() == before, p.stdout + p.stderr)
+
+        # (machine path) refused, nothing pushed
+        fx.pending("2026-12-03.md", "- known: see /Users/x/y/file for details [harness]\n")
+        before = fx.remote_log()
+        p = fx.run("--no-pr")
+        check("machine_path_refused",
+              p.returncode == 1 and "2026-12-03.md" in p.stderr and fx.remote_log() == before,
+              p.stdout + p.stderr)
+        (learn / "pending" / "2026-12-03.md").unlink()
+
+        # (bad pending) hand-edited line refused
+        fx.pending("2026-12-04.md", "garbage line\n")
+        before = fx.remote_log()
+        p = fx.run("--no-pr")
+        check("bad_pending_refused",
+              p.returncode == 1 and "2026-12-04.md" in p.stderr and fx.remote_log() == before,
+              p.stdout + p.stderr)
+        (learn / "pending" / "2026-12-04.md").unlink()
+
+        # (dry-run output) resolved base and paths
+        p = fx.run("--dry-run")
+        check("dry_run_reports_base", "resolved base:" in p.stdout and "would publish:" in p.stdout,
+              p.stdout + p.stderr)
+
+        # (two clones) a fresh clone lacking A's dated file must not delete it
+        fx2 = Fixture()
+        try:
+            # fresh clone B against the same remote
+            clone_b = fx2.tmp / "cloneb"
+            sh("git", "clone", "--no-checkout", str(fx2.remote), str(clone_b), env=fx2.env)
+            sh("git", "-C", str(clone_b), "sparse-checkout", "set", "--no-cone", "/memory/", "/.gitignore", env=fx2.env)
+            sh("git", "-C", str(clone_b), "checkout", "main", env=fx2.env)
+            (fx2.clone / "memory" / "learnings" / "2027-01-01.md").write_text("- known: from A [harness]\n")
+            p = fx2.run("--no-pr")
+            ok_a = p.returncode == 0
+            (clone_b / "memory" / "learnings" / "2027-01-02.md").write_text("- known: from B [harness]\n")
+            p = sh(sys.executable, str(SCRIPT), "--repo", str(clone_b), "--skip-dream", "--no-pr",
+                   env=fx2.env, check=False)
+            files = tree_files(fx2, "memory/dream")
+            check("two_clones_both_dated",
+                  ok_a and p.returncode == 0 and "memory/learnings/2027-01-01.md" in files
+                  and "memory/learnings/2027-01-02.md" in files, p.stdout + p.stderr + f" files={files}")
+        finally:
+            fx2.cleanup()
+
+        # (promote-publish-merge)
+        fx3 = Fixture()
+        try:
+            fx3.pending("2027-02-01.md")
+            p = fx3.run("--no-pr")
+            ok1 = p.returncode == 0 and "memory/learnings/pending/2027-02-01.md" in tree_files(fx3, "memory/dream")
+            l3 = fx3.clone / "memory" / "learnings"
+            (l3 / "2027-02-01.md").write_text((l3 / "pending" / "2027-02-01.md").read_text())
+            (l3 / "pending" / "2027-02-01.md").unlink()
+            p = fx3.run("--no-pr")
+            files = tree_files(fx3, "memory/dream")
+            ok2 = (p.returncode == 0 and "memory/learnings/2027-02-01.md" in files
+                   and not any("/pending/" in f for f in files))
+            sh("git", "-C", str(fx3.seed), "fetch", "origin", env=fx3.env)
+            sh("git", "-C", str(fx3.seed), "merge", "--no-edit", "origin/memory/dream", env=fx3.env)
+            sh("git", "-C", str(fx3.seed), "push", "origin", "main", env=fx3.env)
+            mfiles = tree_files(fx3, "main")
+            check("promote_publish_merge",
+                  ok1 and ok2 and "memory/learnings/2027-02-01.md" in mfiles
+                  and not any("/pending/" in f for f in mfiles), f"{ok1} {ok2} {files} {mfiles}")
+        finally:
+            fx3.cleanup()
     finally:
         fx.cleanup()
     return 1 if failures else 0

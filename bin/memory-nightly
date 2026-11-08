@@ -6,8 +6,12 @@
     memory-nightly --dry-run       # print the commands, change nothing
 
 The memory directory is a sparse git clone (memory/ only). The commit is built
-with plumbing against a temporary index, so the clone's worktree, HEAD and
-branch are never touched. Never force-pushes, resets or cleans.
+with plumbing against a temporary index. The fast-forward of the base branch
+may move HEAD (only when the clone is clean on that branch); the checked-out
+branch is never switched. Only an allowlist of paths is published (README,
+.gitkeep, dated files, pending dated files); dated files are never deleted from
+the branch. Pending files are validated before publishing. Never force-pushes,
+resets or cleans. Exit 75 when another run holds the lock.
 """
 
 from __future__ import annotations
@@ -15,7 +19,10 @@ from __future__ import annotations
 import argparse
 import datetime
 import fcntl
+import importlib.machinery
+import importlib.util
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -28,12 +35,11 @@ IDENT = {
     "GIT_COMMITTER_NAME": "memory-nightly",
     "GIT_COMMITTER_EMAIL": "memory-nightly@localhost",
 }
-ADD_SPECS = [
-    "memory/learnings",
-    ":(exclude)memory/learnings/working.md",
-    ":(exclude)memory/learnings/.working.lock",
-    ":(exclude)memory/learnings/.working-*.tmp",
-]
+LEARN = "memory/learnings"
+DATED = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+MACHINE_PATH = re.compile(r"/(?:Users|home)/[^/\s]+/")
+PR_BODY_TAIL = ("draft: promote locally, run memory-nightly again to publish the archive "
+                "and drop pending, then merge; delete the branch after merge.")
 
 
 class Fatal(Exception):
@@ -52,6 +58,53 @@ def run(cmd, env=None, cwd=None, check=True):
 
 def git(repo, *args, env=None, check=True):
     return run(["git", "-C", repo, *args], env=env, check=check)
+
+
+def allowlisted(a):
+    """Existing worktree files eligible for publishing, as (repo-relative path, abs path)."""
+    root = os.path.join(a.repo, LEARN)
+    out = []
+    for name in (".gitkeep", "README.md"):
+        f = os.path.join(root, name)
+        if os.path.isfile(f):
+            out.append((f"{LEARN}/{name}", f))
+    for sub, prefix in (("", LEARN), ("pending", f"{LEARN}/pending")):
+        d = os.path.join(root, sub) if sub else root
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            f = os.path.join(d, name)
+            if DATED.match(name) and os.path.isfile(f) and not os.path.islink(f):
+                out.append((f"{prefix}/{name}", f))
+    return out
+
+
+def load_dream(path):
+    loader = importlib.machinery.SourceFileLoader("dreammod_nightly", path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def validate(a, files):
+    problems = []
+    try:
+        dream = load_dream(a.dream_path)
+    except Exception as e:  # noqa: BLE001
+        raise Fatal(f"cannot load dream from {a.dream_path} to validate pending: {e}")
+    for rel, f in files:
+        with open(f, errors="replace") as fh:
+            text = fh.read()
+        if "/pending/" in rel:
+            why = dream.pending_problem(text)
+            if why:
+                problems.append(f"{rel}: {why}")
+        for i, line in enumerate(text.splitlines(), 1):
+            if MACHINE_PATH.search(line):
+                problems.append(f"{rel}:{i}: machine path in lesson")
+    if problems:
+        raise Fatal("refusing to publish; fix or remove:\n  " + "\n  ".join(problems))
 
 
 def say_cmd(cmd):
@@ -76,8 +129,16 @@ def dry_run(a, dream):
     say_cmd(["git", "-C", r, "merge", "--ff-only", f"{a.remote}/{a.base}"])
     if shutil.which("gh"):
         say_cmd(["gh", "pr", "list", "--head", a.branch, "--state", "open", "--json", "number"])
+    try:
+        resolved = pick_base(a)
+    except Fatal as e:
+        resolved = f"(unresolved: {e})"
+    print(f"resolved base: {resolved}")
     say_cmd(["git", "-C", r, "read-tree", f"{a.remote}/{a.base}"])
-    say_cmd(["git", "-C", r, "add", "-A", "-f", "--", *ADD_SPECS])
+    paths = allowlisted(a)
+    for rel, _ in paths:
+        print(f"would publish: {rel}")
+    say_cmd(["git", "-C", r, "add", "-f", "--", *[rel for rel, _ in paths]])
     say_cmd(["git", "-C", r, "write-tree"])
     say_cmd(["git", "-C", r, "commit-tree", "<tree>", "-p", f"{a.remote}/{a.base}", "-m", "memory: dream <UTC date>"])
     say_cmd(["git", "-C", r, "push", a.remote, f"<commit>:refs/heads/{a.branch}"])
@@ -127,8 +188,18 @@ def build_commit(a, base):
     os.unlink(tmp_index)  # git creates it; an empty file is an invalid index
     try:
         env = {"GIT_INDEX_FILE": tmp_index}
+        files = allowlisted(a)
+        validate(a, files)
         git(r, "read-tree", base, env=env)
-        git(r, "add", "-A", "-f", "--", *ADD_SPECS, env=env)
+        for rel, _ in files:
+            git(r, "add", "-f", "--", rel, env=env)
+        present = {rel for rel, _ in files}
+        in_base = git(r, "ls-tree", "-r", "--name-only", base, "--", f"{LEARN}/pending/").stdout.split("\n")
+        for rel in filter(None, in_base):
+            name = os.path.basename(rel)
+            if (DATED.match(name) and rel not in present
+                    and os.path.isfile(os.path.join(r, LEARN, name))):
+                git(r, "update-index", "--force-remove", "--", rel, env=env)
         tree = git(r, "write-tree", env=env).stdout.strip()
     finally:
         if os.path.exists(tmp_index):
@@ -187,7 +258,7 @@ def ensure_pr(a, files):
         print("PR already open")
         return
     body = ("Staged learnings from memory-nightly.\n\nFiles staged:\n\n```\n" + files +
-            "\n```\n\nPromote locally (`dream --promote`), then merge.")
+            "\n```\n\n" + PR_BODY_TAIL)
     p = run(["gh", "pr", "create", "--draft", "--base", a.base, "--head", a.branch,
              "--title", "memory: dream staging", "--body", body], cwd=a.repo, check=False)
     if p.returncode != 0:
@@ -210,6 +281,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     a.repo = os.path.realpath(os.path.expanduser(a.repo))
     dream = os.path.expanduser(a.dream)
+    a.dream_path = dream
+
+    if not a.base.strip() or a.branch in (a.base, "main", "master"):
+        print(f"error: refusing --branch {a.branch!r} with --base {a.base!r}; the staging branch "
+              f"must differ from the base and never be main/master", file=sys.stderr)
+        return 1
 
     if a.dry_run:
         return dry_run(a, dream)
@@ -223,8 +300,8 @@ def main(argv=None):
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        print("already running")
-        return 0
+        print("another memory-nightly is running; nothing done", file=sys.stderr)
+        return 75
 
     try:
         if git(a.repo, "rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
@@ -245,10 +322,10 @@ def main(argv=None):
         if p.returncode != 0:
             raise Fatal(f"offline or fetch failed; nothing pushed: {p.stderr.strip()}")
 
-        status = git(a.repo, "status", "--porcelain", "--untracked-files=no").stdout.strip()
+        status = git(a.repo, "status", "--porcelain").stdout.strip()
         cur = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         if status or cur != a.base:
-            print(f"warning: worktree not clean on {a.base}; skipping fast-forward", file=sys.stderr)
+            print(f"warning: worktree dirty/untracked or not on {a.base}; skipping fast-forward", file=sys.stderr)
         else:
             m = git(a.repo, "merge", "--ff-only", f"{a.remote}/{a.base}", check=False)
             if m.returncode != 0:
