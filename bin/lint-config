@@ -454,14 +454,12 @@ def main() -> int:
             fail("implementor: subagent must be deny; it is a unit, not a dispatcher")
         if effective(implementor, "execute", "*") != "deny":
             fail("implementor: execute must be deny; only the orchestrator has the T3 channel")
-        if effective(implementor, "execute", "*") != "deny":
-            fail("implementor: execute must be deny; only build has the T3 delegation channel")
 
     check_policy(agents)
     check_shared_surfaces()
     check_instructions()
 
-    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle"):
+    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):
         target = ROOT / rel
         files = [target] if target.is_file() else sorted(p for p in target.rglob("*") if p.is_file())
         for file in files:
