@@ -201,7 +201,8 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   human escalation; do not cap reviewer steps, only dispatches.
 - `agents/*.md` are the native fallback, not the routing source, and a pin must
   name an enabled instance in `policy/providers.json`. `grok-4.5` has no
-  clean-case gate, so the verifier stays on `grok-4.7`.
+  clean-case gate and is not in the allowlist; re-add it only after one passes.
+  The verifier stays on `grok-4.7`.
 - Claude quota has headroom (2026-11-04): the advisor joins `implement-deep` on
   Claude.
 
