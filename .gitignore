@@ -1,10 +1,5 @@
 .DS_Store
 
-# Orchestrator seat marker. Create it only in a dedicated seat worktree; an
-# untracked, ignored file is absent from delegate_task worktrees (committed
-# state only), so a delegated child never inherits the seat.
-/.orchestrator-seat
-
 # Machine-local state. opencode writes these into ~/.config/opencode itself;
 # they hold a generated password / per-machine UI state and must not travel.
 service.json

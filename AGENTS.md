@@ -4,8 +4,9 @@ Repository `AGENTS.md` files are additive. Their build/test command lines win.
 
 ## Default workflow
 
-The default `build` agent runs this workflow for every request. Subagents follow
-their own role prompt.
+The default `build` agent is the orchestrator primary in opencode: it runs this
+workflow by dispatching units, not by editing. `implementor` is the agent that
+edits. Subagents follow their own role prompt.
 
 Before the first edit or subagent call, state the tier on its own line:
 `Tier: T0`, `Tier: T1`, or `Tier: T2`. A short read-only look at the repo is
@@ -20,34 +21,38 @@ floor and the reasons. You may raise the tier, never lower it; a T1 plan whose d
 later floors at T2 is re-run as T2.
 
 - **T0:** no behaviour change, or one obvious mechanical edit; no public
-  contract, data, security, or CI. Do it; run the check.
+  contract, data, security, or CI. Dispatch one deepseek unit; the unit runs the
+  check.
 - **T1:** one area, <=3 source files, <=400 lines, no public contract/data/
-  security/CI, test oracle exists. Plan in <=10 lines with done-when and the red
-  test; self-check the plan; implement; run the changed-area tests; delegate the
-  `review-light` band; fix once.
+  security/CI, test oracle exists. Write a <=10-line brief with done-when and the
+  red test; dispatch one deepseek unit; the unit runs the changed-area tests;
+  dispatch the `review-light` band; fix once.
 - **T2:** anything else, or "design/architecture/migration/security/data/schema/
-  enum/public API/be careful", or unsure. Write a plan with done-when; delegate the
-  `plan-review-deep` band; fix plan findings (cap 2); implement with the
-  `implement-deep` band; run checks; delegate the `review-deep` and `second-opinion` bands in
-  parallel; triage; fix (cap 2); full suite. Pins and the three advisor
-  moments are in Model routing.
+  enum/public API/be careful", or unsure. Write a plan with done-when; dispatch the
+  `plan-review-deep` band; fix plan findings (cap 2); dispatch the `implement-deep`
+  band; dispatch a check unit for the checks; dispatch the `review-deep` and
+  `second-opinion` bands in parallel with `ROLE: review unit`; triage; fix (cap 2);
+  dispatch a check unit for the full suite. Pins and the three advisor moments are
+  in Model routing.
 
 ### Evidence
 
 - **Test-first:** write the red test, run it red, record the command and output.
-- **One check owner:** the build agent/parent runs the changed-area tests and
-  the full suite; a repo `AGENTS.md` supplies the command lines. Never use a
-  review agent as a check runner. Reviewers never rebuild.
-- **Reviewers** read the `review-bundle` directory and the recorded check
-  output. `~/.config/opencode/bin/review-bundle` is not on PATH; call it by
-  absolute path. Outside git, pass the changed file list.
+- **One check owner:** the parent dispatches the changed-area tests and the full
+  suite to a check unit (`ROLE: check unit`) and records the output in the PROOF;
+  a repo `AGENTS.md` supplies the command lines. Never use a review agent as a
+  check runner. Reviewers never rebuild.
+- **Reviewers** are dispatched with `ROLE: review unit`; they read the
+  `review-bundle` directory and the recorded check output.
+  `~/.config/opencode/bin/review-bundle` is not on PATH; call it by absolute path.
+  Outside git, pass the changed file list.
 - **Baseline:** before fixing reviewer findings, run
   `~/.config/opencode/bin/review-bundle <repo> --baseline` and keep
   `05-baseline.json`. After the fix, run it again and pass both bundle
   directories to the re-reviewer.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
-  done-when. An unproven 🟠 gets a probe by the build agent or is downgraded and
-  reported; it is not fixed as confirmed.
+  done-when. An unproven 🟠 gets a probe by a check unit (or the implementor) or is
+  downgraded and reported; it is not fixed as confirmed.
 - **Handback:** a reproducible bug in hand is work, not a note: write its red
   test before the stream ends. A fix inside T1's limits stays T1 and the stream
   continues; a larger one is T2 on its bands. Only a person's ruling defers,
@@ -121,34 +126,24 @@ If the user has not answered, write the line as `pending`.
 `/verify` and `/second-opinion` are manual escape hatches; `verifier` is a
 manual shell-based deep check, not the default review path.
 
-### Orchestrator seat
+### Orchestrator primary
 
-This section applies only when `.orchestrator-seat` exists at the root of this
-worktree, and only to the top-level session. Delegated and subagent roles follow
-their own prompts. The marker is untracked and gitignored, so a `delegate_task`
-worktree created from committed state never has it; create it only in a
-dedicated seat worktree, never in the main checkout.
+In opencode, the top-level `build` agent is the orchestrator (`agents/build.md`,
+linked as `.opencode/agents/build.md`, the file opencode actually loads).
+It plans, scopes, dispatches every unit through T3 `delegate_task` with
+`isolation: "worktree"`, and accepts only a verified `PROOF`. It never edits files
+or runs mutating shell itself. A delegated unit follows its `ROLE:` line:
+implementor, review, or check. `implementor` is the agent for direct work in plain
+opencode.
 
-With the marker present, this session is the orchestrator:
+The no-hands rule is the agent prompt, not a T3 permission: T3 session rules
+override agent deny rules. Run the orchestrator in `auto` or `full-access` so
+units can edit; `approval-required` stalls them at the first write or command, and
+the orchestrator cannot approve it.
 
-- Plan the work and split it into strictly scoped units, one outcome each.
-- Dispatch every unit only through T3 `delegate_task` with
-  `isolation: "worktree"`, choosing the tier from `### Dispatch tiers`
-  (DeepSeek Flash by default, `claude-agent/sonnet` for harder work).
-- Verify each returned `PROOF` block against `### Proof of work` before
-  accepting: read the diff and re-run the cited read-only commands
-  (`git status`, `git diff`, `git log`, `git show`, `git -C <child worktree> ...`).
-  Dispatch anything that writes, including tests, builds, lint,
-  `review-bundle --classify` and `review-log`, to a check unit. A missing line,
-  an uncited claim, or a diff outside the named files is a rejection.
-- Never edit files or run a mutating shell command yourself. Read tools and the
-  read-only commands above are fine.
-- If delegation fails or T3 is absent, stop and report the blocked unit. This
-  overrides the native-subagent fallback in Model routing: never "just do it"
-  yourself.
-- A seat cannot certify "green is the branch head"; it never runs the suite.
-
-Without the marker, ignore this section.
+`plan` interaction mode is a read-only planning phase, not this role: a plan-mode
+parent cannot spawn a writable child (`interaction_mode_escalation_denied`). Use
+it to explore, then switch the thread to `build` to dispatch.
 
 ## Model routing
 
@@ -158,11 +153,11 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | Band | Work | providerInstanceId | model | options |
 | --- | --- | --- | --- | --- |
 | explore, review-light | repo map, grep, T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
-| build, plan, general | the session itself, T0/T1 edits | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
-| orchestrator | opt-in dispatcher: scope, tier, accept; no hands-on work | `opencode` | `xai/grok-4.7` | `variant=high` |
-| second-opinion | independent T2 second look | `opencode` | `xai/grok-4.7` | `variant=high` |
+| build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `claude-agent/opus` | `variant=high` |
+| implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
+| second-opinion | independent T2 second look | `opencode` | `opencode-go/grok-4.7` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
-| verifier | manual build, test and contract check | `opencode` | `xai/grok-4.7` | `variant=high` |
+| verifier | manual build, test and contract check | `opencode` | `opencode-go/grok-4.7` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
 
 - Call `orchestrator_capabilities` once per thread before the first delegation,

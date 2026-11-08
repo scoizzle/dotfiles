@@ -189,12 +189,12 @@ own section. The line is written once the user has answered the findings, becaus
 
 Two caveats on the numbers it does produce:
 
-- Gate coverage is a proxy — reviewer launches over `build` sessions in the window.
-  It reads `0%` whenever reviews were launched manually rather than by the gate,
-  which is correct but not a failure.
+- Gate coverage is a proxy — reviewer launches over `build` and `implementor`
+  sessions in the window. It reads `0%` whenever reviews were launched manually
+  rather than by the gate, which is correct but not a failure.
 - Do not read `time_updated - time_created` for primary agents as latency. `build`
-  averages hours because sessions idle and resume. It is only meaningful for
-  short-lived subagents such as the reviewer.
+  and `implementor` average hours because sessions idle and resume. It is only
+  meaningful for short-lived subagents such as the reviewer.
 
 ## What this measures, and what it does not
 

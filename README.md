@@ -22,33 +22,22 @@ One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 `~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
 [`docs/security-model.md`](docs/security-model.md).
 
-## Orchestrator seat
+## Orchestrator primary
 
-An opt-in, no-hands orchestrator. With `.orchestrator-seat` at a worktree root, the
-top-level session follows `AGENTS.md`'s **Orchestrator seat** section: it plans and
-splits the work, dispatches each unit only through T3 `delegate_task` with
-`isolation: "worktree"`, checks the returned `PROOF`, and never edits files or runs
-mutating shell itself. Without the marker, that section is ignored.
+In opencode, the top-level `build` agent is the orchestrator: it plans, scopes,
+and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`,
+then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
+`.opencode/agents/build.md` symlink is the project override opencode loads. It does not edit or run mutating shell
+itself. `implementor` is the direct-work agent (`opencode --agent implementor`);
+delegated units follow the `ROLE: implementor unit | review unit | check unit`
+branch in `agents/build.md`.
 
-Create the marker in a dedicated seat worktree only, never the main checkout, with
-`touch .orchestrator-seat` at that root before launching the thread, so its first turn
-sees it; `git check-ignore -q .orchestrator-seat` must exit 0. It is untracked and
-gitignored (`/.orchestrator-seat`, enforced by `bin/lint-config`), so a worktree from
-committed state never has it. Launch the seat with T3 `t3_thread_launch`, binding that
-worktree (`root` would be the main checkout) on the orchestrator band:
-
-```js
-workspaceStrategy: { type: "existing_worktree", worktreePath: "<seat path>" },
-modelSelection: { instanceId: "opencode", model: "xai/grok-4.7",
-                  options: [{ id: "variant", value: "high" }] },
-runtimeMode: "auto-accept-edits",
-```
-
-`auto-accept-edits` is the recommended `runtimeMode`: a child cannot start above the
-seat's mode and children must edit, so `approval-required` would stall each child; the
-mode does not stop the seat editing, that rule is the `AGENTS.md` seat contract. It
-approves edits, not shell: a child that runs `git` for its `PROOF` still waits for a
-command approval, so brief children to build the `PROOF` from read tools.
+Run the orchestrator in `auto` or `full-access` so children can edit:
+`approval-required` pauses each child at its first write or command, and the
+orchestrator cannot approve it.
+The no-hands rule is the agent prompt, not a T3 fence. Plan mode is a read-only
+planning phase and cannot spawn a writable child; use it to explore, then switch
+the thread to `build`.
 
 ## Install on a new machine
 

@@ -78,6 +78,9 @@
   ],
   "agents": {
     "build": {
+      "model": "claude-agent/opus#high"
+    },
+    "implementor": {
       "model": "opencode-go/deepseek-v4.1-flash#high"
     },
     "general": {
