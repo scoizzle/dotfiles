@@ -107,11 +107,6 @@
           "stdio"
         ],
         "codemode": false
-      },
-      "mslearn": {
-        "type": "remote",
-        "url": "https://learn.microsoft.com/api/mcp",
-        "disabled": true
       }
     }
   }

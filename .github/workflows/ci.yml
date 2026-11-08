@@ -145,6 +145,11 @@ jobs:
           test -d "$bundle"
           test -f "$bundle/00-status.txt"
           test -f "$bundle/01-diffstat.txt"
+          bundle="$(./bin/review-bundle . --base HEAD)"
+          echo "bundle (--base HEAD): $bundle"
+          test -d "$bundle"
+          test -f "$bundle/00-status.txt"
+          test -f "$bundle/01-diffstat.txt"
 
       - name: review-bundle exit codes
         run: |
@@ -155,6 +160,10 @@ jobs:
           [ "$rc" -eq 2 ] || { echo "bad flag should be 2, got $rc"; exit 1; }
           ./bin/review-bundle /tmp >/dev/null 2>&1; rc=$?
           [ "$rc" -eq 2 ] || { echo "non-git should be 2, got $rc"; exit 1; }
+          ./bin/review-bundle . --base 0000000000000000000000000000000000000000 >/dev/null 2>&1; rc=$?
+          [ "$rc" -eq 2 ] || { echo "bad --base should be 2, got $rc"; exit 1; }
+          ./bin/review-bundle . --base >/dev/null 2>&1; rc=$?
+          [ "$rc" -eq 2 ] || { echo "bare --base should be 2, got $rc"; exit 1; }
           echo "exit codes ok"
 
       # Bookshelf plus dream with no session store. dream must exit 0 and name

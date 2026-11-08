@@ -13,8 +13,6 @@
         "claude-agent/sonnet",
         "claude-agent/opus",
         "xai/grok-4.7",
-        "xai/grok-4.5",
-        "xai/grok-4.6",
         "opencode-go/grok-4.7"
       ],
       "optionIds": ["variant"],

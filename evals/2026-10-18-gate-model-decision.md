@@ -11,7 +11,7 @@
 > | `second-opinion` | `xai/grok-4.7#high` |
 > | `implement-deep` | `claude-agent/sonnet#medium` |
 > | `review-deep`, `plan-review-deep` | `claude-agent/sonnet#high` |
-> | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` is routable but has no clean-case gate |
+> | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` was dropped from the routable allowlist on 2026-11-08 for having no clean-case gate, and is re-added only after one passes |
 >
 > **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are
 > `session_v2.cost`, which opencode computes from list price, not an invoice.
