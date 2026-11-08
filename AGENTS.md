@@ -61,6 +61,25 @@ later floors at T2 is re-run as T2.
 - The **second-opinion prompt** contains the bundle directory, the plan/done-when,
   and the recorded check output, never the `review-deep` report.
 
+### Proof of work
+
+Every **dispatched unit that changes or checks the tree** returns a `PROOF`
+block, never a prose summary. A read-only search unit returns its findings and
+sources; a review unit returns its findings and the bundle path; a check unit
+(`verifier`) returns its Coverage block and the checks it ran.
+
+- `commands:` every command run, verbatim, with its exit code.
+- `diff:` `git diff --stat` and the key hunks, or the commit sha when the unit
+  could commit.
+- `checks:` the tail of the red and green test or build output, with the command
+  that produced it, or `none` when the unit has no test oracle.
+- `not done:` work the brief named that was skipped, and why.
+- `risks:` what could still be wrong, and what would prove it.
+
+A dispatch reply missing any line is rejected and re-dispatched with the gap
+named; the orchestrator does not fill the gap itself. "All tests pass" without
+the command and its output tail is not proof.
+
 ### Safety
 
 - Reviewers are read-only; never give them shell or edit.
