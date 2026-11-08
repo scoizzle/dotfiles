@@ -42,6 +42,13 @@ if (homeFlag >= 0 && (homeFlag + 1 >= args.Length || args[homeFlag + 1].StartsWi
     return 2;
 }
 
+var memoryRemoteFlag = Array.IndexOf(args, "--memory-remote");
+if (memoryRemoteFlag >= 0 && (memoryRemoteFlag + 1 >= args.Length || args[memoryRemoteFlag + 1].StartsWith('-')))
+{
+    Console.WriteLine("  FAILED  --memory-remote needs a URL value (not falling back to MEMORY_REMOTE or origin)");
+    return 2;
+}
+
 var repoRoot = ResolveRepoRoot();
 var home = Path.GetFullPath(
     ArgValue("--home")

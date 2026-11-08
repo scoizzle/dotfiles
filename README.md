@@ -151,20 +151,27 @@ The three tiers decide what travels:
   another machine.
 - `memory/learnings/YYYY-MM-DD.md` — dated and tracked. `bin/memory-nightly`
   publishes the clone's learnings state to the `memory/dream` branch as a draft PR,
-  so a clone elsewhere gets them after a person merges. Promote locally, run
-  `memory-nightly` again to publish the archive and drop the promoted `pending/`
-  file, then review and merge; merging the first publish leaves `pending/` on
-  `main`, which CI rejects.
+  so a clone elsewhere gets them after a person merges. A dated file is published
+  only as an append to the upstream copy; otherwise the run skips it with a warning.
+  Promote locally, run `memory-nightly` again to publish the archive and drop the
+  promoted `pending/` file, then review and merge; merging the first publish leaves
+  `pending/` on `main`, which CI rejects.
 - `memory/learnings/pending/` and `working.md` — local. `pending/` is force-added
-  only on the `memory/dream` branch, and CI exempts it only there, so an unmerged
-  draft never reaches `main`; `working.md` is rebuilt in each working copy by
-  `dream --promote`.
+  only on the `memory/dream` branch, and CI exempts it only there while the PR is a
+  draft, so an unmerged draft never reaches `main`; `working.md` is rebuilt in each
+  working copy by `dream --promote`. The nightly never publishes `README.md` or
+  `.gitkeep`, and `--drop-pending YYYY-MM-DD.md` removes a rejected pending file
+  from the branch.
 
 Someone who clones this repo gets `memory/INDEX.md`, `memory/core/`, and the dated
 learnings that have been promoted and merged. The pending queue and `working.md`
 live only on the staging branch and in a working copy. The clone tracks `origin`'s
 default branch, not your local `HEAD`; the nightly pushes this machine's learnings
-to that origin, so a fork without write access fails the push.
+to that origin, so a fork without write access fails the push. Use one machine per
+branch — `--branch memory/dream-<host>` when a machine needs its own — because two
+machines on one branch overwrite each other's draft. A missing or broken `--dream`
+blocks publishing, and a refused machine-path line names its `file:line` for
+`--drop-pending` or a hand edit.
 
 ## What it deliberately does not manage
 
@@ -177,9 +184,9 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `evals/canary-*/` — recorded model output from past eval runs.
 - `memory/learnings/pending/` and `memory/learnings/working.md` — the review queue
   and the generated working set. Dated `memory/learnings/YYYY-MM-DD.md` files are
-  tracked and do travel; `pending/` exists in git only on the `memory/dream` staging
-  branch (CI fails it anywhere else), and `working.md` is rebuilt by `dream
-  --promote` on each machine.
+  tracked and do travel; `pending/` exists in git only on a `memory/dream` staging
+  branch, and CI allows it only while that PR is a draft, and `working.md` is
+  rebuilt by `dream --promote` on each machine.
 
 Outside `~/.config/opencode`, also untracked on purpose:
 

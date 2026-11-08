@@ -17,11 +17,15 @@ automated step.
 The working copy is `~/.config/opencode/memory`, a sparse clone of this
 repository provisioned by `install.cs`, not a link to a checkout. Dated
 `learnings/YYYY-MM-DD.md` files are tracked, so a clone elsewhere gets them after a
-merge. `pending/` is tracked only on the `memory/dream` staging branch — CI rejects
-it on any other ref — and `working.md` is local, rebuilt by `dream --promote` on each
-machine. `bin/memory-nightly` publishes the staged lines to `memory/dream` as a draft
-PR; after a promote, run it again so the archive is published and `pending/` drops
-off the branch, then merge. Promotion and consolidation stay with a person.
+merge. `pending/` is tracked only on a `memory/dream` staging branch, and CI allows
+it only there and only while the PR is a draft; any other ref, including `main`
+after a merge, rejects it. `working.md` is local, rebuilt by `dream --promote` on
+each machine. `bin/memory-nightly` publishes the staged lines to a `memory/dream`
+branch as a draft PR; after a promote, run it again so the archive is published and
+`pending/` drops off the branch, then merge. A dated file is published only as an
+append to upstream, otherwise it is skipped with a warning. Use one machine per
+branch (`--branch memory/dream-<host>` when a machine needs its own); two machines
+on one branch overwrite each other. Promotion and consolidation stay with a person.
 
 ## Core
 

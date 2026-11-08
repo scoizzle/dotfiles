@@ -355,6 +355,18 @@ def case_home_flag_validation():
         require(touched == [], f"{args} touched the real home: {touched}")
 
 
+def case_memory_remote_flag_validation():
+    source = make_source()
+    for args in (["--memory-remote"], ["--memory-remote", "--check"]):
+        real = fresh("realhome")
+        p = install_raw(["--home", str(real), *args], source, real)
+        require(p.returncode != 0, f"{args} exited 0\n{p.stdout}")
+        require("FAILED" in p.stdout, p.stdout)
+        require("--memory-remote" in p.stdout, p.stdout)
+        touched = [x.name for x in real.iterdir() if x.name in (".config", ".claude", ".grok")]
+        require(touched == [], f"{args} touched the real home: {touched}")
+
+
 def case_interrupted_migration():
     source = make_source()
     home = fresh("interrupted")
@@ -408,6 +420,7 @@ def case_unreadable_git():
 
 CASES = [
     case_home_flag_validation,
+    case_memory_remote_flag_validation,
     case_interrupted_migration,
     case_migration_conflict,
     case_unreadable_git,
@@ -425,7 +438,7 @@ CASES = [
     case_home_isolation,
 ]
 NAMES = [
-    "home flag validation", "interrupted migration", "migration conflict", "unreadable git",
+    "home flag validation", "memory-remote flag validation", "interrupted migration", "migration conflict", "unreadable git",
     "real clone", "check", "second install", "repair and remote mismatch", "repair sparse set",
     "no remote",
     "dream writes in clone", "worktree deleted", "migrate dir", "migrate symlink",

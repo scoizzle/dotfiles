@@ -54,9 +54,10 @@ clone's `origin` URL, its sparse set, and its required files, with no network.
 modes.
 
 Dated `memory/learnings/YYYY-MM-DD.md` files are tracked, so they travel with git.
-`pending/` is ignored and force-added only on the `memory/dream` branch (CI fails
-it on any other ref); `working.md` is ignored and rebuilt by `dream --promote` in
-each working copy.
+`pending/` is ignored and force-added only on a `memory/dream` branch, and CI
+exempts it only there and only while the pull request is a draft; every other ref,
+including `main` after a merge, fails on tracked pending. `working.md` is ignored
+and rebuilt by `dream --promote` in each working copy.
 
 `opencode.json` denies `edit` on `memory/core/` (edit, write, and patch). Shell text is matched as a command, not as a path, so `AGENTS.md` is what forbids a redirection into core.
 
@@ -140,11 +141,16 @@ reuses a single **draft** PR against `main`:
 (`~/.config/opencode/memory`, `memory/dream`, `main`, `origin`, and the installed
 `dream`). It refuses a repo that is not a work tree or not sparse to `/memory/`.
 
-What it publishes is an allowlist: `memory/learnings/README.md`, `.gitkeep`, dated
-`YYYY-MM-DD.md` files, and `pending/YYYY-MM-DD.md`. A dated file is added or updated
-on the branch, never deleted. A pending file is removed from the branch only when
-its dated counterpart exists locally — the promote signal. `working.md`, the lock,
-and temp files are never staged.
+What it publishes is an allowlist: dated `YYYY-MM-DD.md` files and
+`pending/YYYY-MM-DD.md`. `memory/learnings/README.md` and `.gitkeep` are never
+published. A dated file is published only as an append to the upstream copy;
+otherwise it is skipped with a warning, so a machine never overwrites another
+branch's date. A pending file is removed from the branch only when its dated
+counterpart exists locally — the promote signal. `working.md`, the lock, and temp
+files are never staged.
+
+A missing or broken `--dream` blocks publishing with one `Fatal` line and pushes
+nothing, because the nightly loads dream to validate pending files.
 
 The branch commit is built with plumbing against a temporary index (`read-tree`,
 `add`, `write-tree`, `commit-tree`), so the clone's worktree is never switched or
@@ -166,6 +172,11 @@ It refuses, exits non-zero, and pushes nothing when:
 - any file in the allowlist contains a machine path, `/Users/<name>/` or
   `/home/<name>/`.
 
+The first nightly after upgrading may refuse lines containing `/Users/<name>/` or
+`/home/<name>/`. The refusal names the bad location as `file:line`; run
+`memory-nightly --drop-pending YYYY-MM-DD.md` to remove a rejected pending file
+from the branch, or hand-edit the line and publish again.
+
 Another run holding the clone's lock exits 75 and changes nothing.
 
 The branch is a staging area with a human gate:
@@ -183,12 +194,15 @@ The branch is a staging area with a human gate:
 
 Merging before step 2 leaves `pending/` on `main`. CI rejects that: the "no tracked
 file is ignored" step exempts `memory/learnings/pending/` only when the head ref is
-`memory/dream`, so it fails on `main` and on every other ref.
+`memory/dream` **and** the pull request is still a draft, so it fails on `main` and
+on every other ref.
 
-Two machines can share `memory/dream`. Both fetch and push the same branch, and the
-same UTC date writes the same `pending/YYYY-MM-DD.md` path, so a second machine
-appends to the file the first one staged. Delete the branch after the merge on
-whichever machine finished; until it is gone the next run on either machine refuses
+Use one machine per branch. A second machine on `memory/dream` overwrites the
+first: both fetch and push the same ref for the same UTC date, so the later run
+replaces the earlier commit and its open draft. A machine that needs its own
+staging queue passes its own branch, for example
+`--branch memory/dream-<host>`, and gets one draft PR per host. Delete each branch
+after its merge; until a branch is gone, the next run on that machine refuses
 because no PR is open.
 
 ### Cron

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -356,23 +357,24 @@ jobs:
 
       # .gitignore only stops new files; a tracked file stays tracked.
       # pending/ is force-added on the memory/dream staging branch only, so that
-      # path is exempt on that ref and on no other: merging before the second
-      # publish leaves pending/ on main, and this step fails there.
+      # path is exempt only when the event is a draft PR on memory/dream: any
+      # other ref, including main after a merge, fails on tracked pending.
       - name: no tracked file is ignored
         run: |
           set -eu
           ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+          draft="${{ github.event.pull_request.draft }}"
           bad="$(git ls-files -ci --exclude-standard)"
           staged=""
-          if [ "$ref" = "memory/dream" ]; then
+          if [ "$ref" = "memory/dream" ] && [ "$draft" = "true" ]; then
             staged="$(printf '%s\n' "$bad" | grep '^memory/learnings/pending/' || true)"
             bad="$(printf '%s\n' "$bad" | grep -v '^memory/learnings/pending/' | sed '/^$/d' || true)"
           fi
-          if [ -n "$staged" ]; then echo "staged-pending (memory/dream):"; echo "$staged"; fi
+          if [ -n "$staged" ]; then echo "staged-pending (memory/dream draft):"; echo "$staged"; fi
           if [ -n "$bad" ]; then
-            echo "tracked but ignored on ref '${ref:-<none>}':"
+            echo "tracked but ignored on ref '${ref:-<none>}' (draft='${draft:-<none>}'):"
             echo "$bad"
-            echo "only memory/dream may track memory/learnings/pending/; publish again after a promote, then merge"
+            echo "only a draft PR on memory/dream may track memory/learnings/pending/; publish again after a promote, then merge"
             exit 1
           fi
 
