@@ -355,15 +355,26 @@ jobs:
         run: ./bin/sync-harness --scope repo
 
       # .gitignore only stops new files; a tracked file stays tracked.
+      # pending/ is force-added on the memory/dream staging branch only, so that
+      # path is exempt on that ref and on no other: merging before the second
+      # publish leaves pending/ on main, and this step fails there.
       - name: no tracked file is ignored
         run: |
           set -eu
+          ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
           bad="$(git ls-files -ci --exclude-standard)"
-          # pending/ is force-added on the memory/dream staging branch only
-          staged="$(printf '%s\n' "$bad" | grep '^memory/learnings/pending/' || true)"
-          bad="$(printf '%s\n' "$bad" | grep -v '^memory/learnings/pending/' | sed '/^$/d' || true)"
-          if [ -n "$staged" ]; then echo "staged-pending:"; echo "$staged"; fi
-          if [ -n "$bad" ]; then echo "tracked but ignored:"; echo "$bad"; exit 1; fi
+          staged=""
+          if [ "$ref" = "memory/dream" ]; then
+            staged="$(printf '%s\n' "$bad" | grep '^memory/learnings/pending/' || true)"
+            bad="$(printf '%s\n' "$bad" | grep -v '^memory/learnings/pending/' | sed '/^$/d' || true)"
+          fi
+          if [ -n "$staged" ]; then echo "staged-pending (memory/dream):"; echo "$staged"; fi
+          if [ -n "$bad" ]; then
+            echo "tracked but ignored on ref '${ref:-<none>}':"
+            echo "$bad"
+            echo "only memory/dream may track memory/learnings/pending/; publish again after a promote, then merge"
+            exit 1
+          fi
 
       - name: review-bundle --classify tier floor
         run: |

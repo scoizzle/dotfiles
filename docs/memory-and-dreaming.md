@@ -54,8 +54,9 @@ clone's `origin` URL, its sparse set, and its required files, with no network.
 modes.
 
 Dated `memory/learnings/YYYY-MM-DD.md` files are tracked, so they travel with git.
-`pending/` is ignored and force-added only on the `memory/dream` branch;
-`working.md` is ignored and rebuilt by `dream --promote` in each working copy.
+`pending/` is ignored and force-added only on the `memory/dream` branch (CI fails
+it on any other ref); `working.md` is ignored and rebuilt by `dream --promote` in
+each working copy.
 
 `opencode.json` denies `edit` on `memory/core/` (edit, write, and patch). Shell text is matched as a command, not as a path, so `AGENTS.md` is what forbids a redirection into core.
 
@@ -137,27 +138,58 @@ reuses a single **draft** PR against `main`:
 
 `--repo`, `--branch`, `--base`, `--remote`, and `--dream` override the defaults
 (`~/.config/opencode/memory`, `memory/dream`, `main`, `origin`, and the installed
-`dream`). It refuses a repo that is not a work tree or not sparse to `/memory/`. The
-clone's worktree is never switched or reset; it is fast-forwarded only when it is
-clean and already on `main`. The branch commit is built with plumbing against a
-temporary index (`read-tree`, `add`, `write-tree`, `commit-tree`). It stages
-`memory/learnings` and excludes `working.md`, the lock, and its temp files. When the
-resulting tree matches the base tree it commits nothing.
+`dream`). It refuses a repo that is not a work tree or not sparse to `/memory/`.
 
-It never promotes, never writes `memory/core/`, never force-pushes, and never pushes
-to `main`. A rejected push is retried once against a fresh fetch; a second rejection
-is an error, not a force. `gh` is used when present; without it the branch is still
-pushed and the compare URL is printed so the PR can be opened by hand.
+What it publishes is an allowlist: `memory/learnings/README.md`, `.gitkeep`, dated
+`YYYY-MM-DD.md` files, and `pending/YYYY-MM-DD.md`. A dated file is added or updated
+on the branch, never deleted. A pending file is removed from the branch only when
+its dated counterpart exists locally — the promote signal. `working.md`, the lock,
+and temp files are never staged.
+
+The branch commit is built with plumbing against a temporary index (`read-tree`,
+`add`, `write-tree`, `commit-tree`), so the clone's worktree is never switched or
+reset; when the resulting tree matches the base tree it commits nothing. It is
+fast-forwarded to `origin/main` only when `git status --porcelain` is empty and it is
+already on `main`. `pending/` and `working.md` are ignored by git, so they do not
+block the fast-forward; an unpublished dated file does, by design.
+
+It never promotes, never writes `memory/core/`, never force-pushes, never deletes a
+ref, never pushes to `main`, and never enables auto-merge. The PR is always a draft.
+A rejected push is retried once against a fresh fetch; a second rejection is an
+error, not a force. `gh` is used when present; without it the branch is still pushed
+and the compare URL is printed so the PR can be opened by hand.
+
+It refuses, exits non-zero, and pushes nothing when:
+
+- `--branch` equals `--base`, `main`, or `master`;
+- a pending file fails `dream`'s own line rules (`dream.pending_problem`);
+- any file in the allowlist contains a machine path, `/Users/<name>/` or
+  `/home/<name>/`.
+
+Another run holding the clone's lock exits 75 and changes nothing.
 
 The branch is a staging area with a human gate:
 
-1. A person reads the draft PR.
-2. They run `~/.config/opencode/bin/dream --promote` locally, which appends the
-   reviewed lines to the dated files and rebuilds `working.md`.
-3. They merge the PR.
-4. They delete the `memory/dream` branch. If it still exists with no open PR, the
+1. A person reads the draft PR and runs `~/.config/opencode/bin/dream --promote`
+   locally, which appends the reviewed lines to the dated files and rebuilds
+   `working.md`.
+2. They run `~/.config/opencode/bin/memory-nightly` again. That second publish adds
+   the archive and drops the promoted `pending/` file from the branch.
+3. They review the updated PR diff.
+4. They merge it.
+5. They delete the `memory/dream` branch. If it still exists with no open PR, the
    next run refuses and prints the delete instruction, because a merged branch would
    otherwise be republished as a stale draft.
+
+Merging before step 2 leaves `pending/` on `main`. CI rejects that: the "no tracked
+file is ignored" step exempts `memory/learnings/pending/` only when the head ref is
+`memory/dream`, so it fails on `main` and on every other ref.
+
+Two machines can share `memory/dream`. Both fetch and push the same branch, and the
+same UTC date writes the same `pending/YYYY-MM-DD.md` path, so a second machine
+appends to the file the first one staged. Delete the branch after the merge on
+whichever machine finished; until it is gone the next run on either machine refuses
+because no PR is open.
 
 ### Cron
 
@@ -169,9 +201,13 @@ A nightly crontab entry, using the installed path:
 
 Pick one scheduler per machine: cron here or the T3 task below, never both.
 
+Either job pushes to the clone's configured `origin`, so it publishes to whatever
+remote `./install.cs` cloned — this machine's copy of the repository, not
+necessarily the checkout you edit. A fork without write access fails the push.
+
 ## Schedule it in T3
 
-T3 has its own scheduler, and that is what this machine uses instead of cron. The job is a T3 scheduled task in the `dotfiles` project: title `Daily dream pass (memory)`, `03:15` local every day, one new thread per run, with a prompt that runs `~/.config/opencode/bin/memory-nightly`, reports the coverage line, the files staged, and the draft PR, and stops if `opencode` is missing rather than hand-writing memory. Dream stages in `memory/learnings/pending/` and the nightly publishes it, so the run ends with a draft PR and a review queue: a person runs `dream --promote` before agents see any of it.
+T3 has its own scheduler, and that is what this machine uses instead of cron. The job is a T3 scheduled task in the `dotfiles` project: title `Daily dream pass (memory)`, `03:15` local every day, one new thread per run, with a prompt that runs `~/.config/opencode/bin/memory-nightly`, reports the coverage line, the files staged, and the draft PR, and stops if `opencode` is missing rather than hand-writing memory. Dream stages in `memory/learnings/pending/` and the nightly publishes it to the clone's configured `origin` (the remote `install.cs` cloned), so the run ends with a draft PR and a review queue: a person runs `dream --promote`, then `memory-nightly` again to publish the archive and drop `pending/`, before merging.
 
 It lives in T3's userdata, not in git, so it does not travel with this repo and a linked environment needs its own copy. List it from a session in that project, or open the Scheduled tab in T3.
 

@@ -151,14 +151,20 @@ The three tiers decide what travels:
   another machine.
 - `memory/learnings/YYYY-MM-DD.md` — dated and tracked. `bin/memory-nightly`
   publishes the clone's learnings state to the `memory/dream` branch as a draft PR,
-  so a clone elsewhere gets them after a person merges.
+  so a clone elsewhere gets them after a person merges. Promote locally, run
+  `memory-nightly` again to publish the archive and drop the promoted `pending/`
+  file, then review and merge; merging the first publish leaves `pending/` on
+  `main`, which CI rejects.
 - `memory/learnings/pending/` and `working.md` — local. `pending/` is force-added
-  only on the `memory/dream` branch, so an unmerged draft never reaches `main`, and
-  `working.md` is rebuilt in each working copy by `dream --promote`.
+  only on the `memory/dream` branch, and CI exempts it only there, so an unmerged
+  draft never reaches `main`; `working.md` is rebuilt in each working copy by
+  `dream --promote`.
 
 Someone who clones this repo gets `memory/INDEX.md`, `memory/core/`, and the dated
 learnings that have been promoted and merged. The pending queue and `working.md`
-live only on the staging branch and in a working copy.
+live only on the staging branch and in a working copy. The clone tracks `origin`'s
+default branch, not your local `HEAD`; the nightly pushes this machine's learnings
+to that origin, so a fork without write access fails the push.
 
 ## What it deliberately does not manage
 
@@ -172,7 +178,8 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `memory/learnings/pending/` and `memory/learnings/working.md` — the review queue
   and the generated working set. Dated `memory/learnings/YYYY-MM-DD.md` files are
   tracked and do travel; `pending/` exists in git only on the `memory/dream` staging
-  branch, and `working.md` is rebuilt by `dream --promote` on each machine.
+  branch (CI fails it anywhere else), and `working.md` is rebuilt by `dream
+  --promote` on each machine.
 
 Outside `~/.config/opencode`, also untracked on purpose:
 
