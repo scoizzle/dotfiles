@@ -25,7 +25,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = Path(tempfile.mkdtemp(prefix="memory-install-"))
 DOTNET_HOME = SCRATCH / "dotnet-home"
-DOTNET_HOME.mkdir()
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.test",
@@ -53,19 +52,56 @@ def make_source(name="source") -> Path:
     return src
 
 
-def install(home: Path, source: Path, *extra, shell_home: Path | None = None, check=True):
-    env = {
-        "MEMORY_REMOTE": str(source),
-        # dotnet writes caches under HOME; keep them out of the case's homes.
-        "HOME": str(shell_home or SCRATCH / "shell-home"),
-        "DOTNET_CLI_HOME": str(DOTNET_HOME),
-        "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
-        "DOTNET_NOLOGO": "1",
-        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-        "NUGET_PACKAGES": str(DOTNET_HOME / "nuget"),
+def child_env(source: Path | None, shell_home: Path | None = None) -> dict:
+    """Env for an install.cs child. HOME is inherited unless shell_home is given.
+
+    The dotnet host on Linux needs a real HOME (LocalApplicationData); --home
+    already isolates install.cs's writes, so only temp/cache dirs move to SCRATCH.
+    """
+    tmp = SCRATCH / "tmp"
+    dirs = {
+        "TMPDIR": tmp, "TMP": tmp, "TEMP": tmp,
+        "XDG_DATA_HOME": SCRATCH / "xdg-data",
+        "XDG_CACHE_HOME": SCRATCH / "xdg-cache",
+        "XDG_CONFIG_HOME": SCRATCH / "xdg-config",
+        "DOTNET_CLI_HOME": DOTNET_HOME,
+        "NUGET_PACKAGES": DOTNET_HOME / "nuget",
     }
-    Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
-    return run([str(ROOT / "install.cs"), "--home", str(home), *extra], env=env, cwd=ROOT, check=check)
+    env = {k: str(v) for k, v in dirs.items()}
+    for v in dirs.values():
+        v.mkdir(parents=True, exist_ok=True)
+    env.update({
+        "DOTNET_NOLOGO": "1",
+        "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    })
+    if source is not None:
+        env["MEMORY_REMOTE"] = str(source)
+    if shell_home is not None:
+        (shell_home / ".local" / "share").mkdir(parents=True, exist_ok=True)
+        (shell_home / ".dotnet").mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(shell_home)
+    return env
+
+
+def run_child(cmd, env, cwd, check=True):
+    e = dict(os.environ)
+    e.update(env)
+    if "MEMORY_REMOTE" not in env:
+        e.pop("MEMORY_REMOTE", None)
+    p = subprocess.run(cmd, env=e, cwd=cwd, text=True, capture_output=True)
+    if check and p.returncode != 0:
+        dump = "\n".join(f"{k}={v}" for k, v in sorted(e.items()))
+        raise AssertionError(
+            f"command: {cmd}\nreturncode: {p.returncode}\n--- stdout ---\n{p.stdout}\n"
+            f"--- stderr ---\n{p.stderr}\n--- child env ---\n{dump}"
+        )
+    return p
+
+
+def install(home: Path, source: Path, *extra, shell_home: Path | None = None, check=True):
+    return run_child([str(ROOT / "install.cs"), "--home", str(home), *extra],
+                     child_env(source, shell_home), ROOT, check)
 
 
 def fresh(name):
@@ -176,19 +212,11 @@ def case_repair_sparse_set():
 
 def case_no_remote():
     home = fresh("noremote")
-    env = {
-        "HOME": str(SCRATCH / "shell-home"), "DOTNET_CLI_HOME": str(DOTNET_HOME),
-        "DOTNET_NOLOGO": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-        "NUGET_PACKAGES": str(DOTNET_HOME / "nuget"),
-    }
-    e = dict(os.environ)
-    e.update(env)
-    e.pop("MEMORY_REMOTE", None)
     # a copy of the repo without an origin remote
     repo = SCRATCH / f"noorigin-{time.monotonic_ns()}"
     git("clone", "-q", str(ROOT), str(repo))
     git("-C", str(repo), "remote", "remove", "origin")
-    p = subprocess.run([str(repo / "install.cs"), "--home", str(home)], env=e, cwd=repo, text=True, capture_output=True)
+    p = run_child([str(repo / "install.cs"), "--home", str(home)], child_env(None), repo, check=False)
     require(p.returncode != 0 and "no clone remote" in p.stdout, p.stdout + p.stderr)
     require(not memdir(home).exists(), "memory created without a remote")
 
@@ -326,22 +354,13 @@ def case_home_isolation():
     home = fresh("iso")
     other = fresh("other-home")
     install(home, source, shell_home=other)
-    require(list(other.iterdir()) == [], f"--home leaked into HOME: {list(other.iterdir())}")
+    leaked = [x for x in (other / ".config" / "opencode", other / ".config" / "opencode" / "memory") if x.exists()]
+    require(not leaked, f"--home leaked into HOME: {leaked}")
     require(memdir(home).is_dir(), "install did not land under --home")
 
 
 def install_raw(args, source: Path, shell_home: Path):
-    env = {
-        "MEMORY_REMOTE": str(source),
-        "HOME": str(shell_home),
-        "DOTNET_CLI_HOME": str(DOTNET_HOME),
-        "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
-        "DOTNET_NOLOGO": "1",
-        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-        "NUGET_PACKAGES": str(DOTNET_HOME / "nuget"),
-    }
-    shell_home.mkdir(parents=True, exist_ok=True)
-    return run([str(ROOT / "install.cs"), *args], env=env, cwd=ROOT, check=False)
+    return run_child([str(ROOT / "install.cs"), *args], child_env(source, shell_home), ROOT, check=False)
 
 
 def case_home_flag_validation():
@@ -418,6 +437,28 @@ def case_unreadable_git():
     require(not list((home / ".config").glob("opencode.bak-*")), "a backup was made")
 
 
+def case_temp_env_override():
+    source = make_source()
+    home = fresh("tmpenv")
+    bogus = SCRATCH / "bogus-tmp-must-not-exist"
+    saved = {k: os.environ.get(k) for k in ("TMPDIR", "TMP", "TEMP")}
+    try:
+        for k in saved:
+            os.environ[k] = str(bogus)
+        env = child_env(source)
+        for k in saved:
+            require(env[k] == str(SCRATCH / "tmp"), f"child {k} not scratch: {env[k]}")
+        install(home, source)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    require(memdir(home).is_dir() and (memdir(home) / ".git").exists(), "no clone provisioned")
+    require(not bogus.exists(), "bogus temp path was created")
+
+
 CASES = [
     case_home_flag_validation,
     case_memory_remote_flag_validation,
@@ -436,13 +477,14 @@ CASES = [
     lambda: migrate_case("symlink"),
     case_migrate_collision_and_dangling,
     case_home_isolation,
+    case_temp_env_override,
 ]
 NAMES = [
     "home flag validation", "memory-remote flag validation", "interrupted migration", "migration conflict", "unreadable git",
     "real clone", "check", "second install", "repair and remote mismatch", "repair sparse set",
     "no remote",
     "dream writes in clone", "worktree deleted", "migrate dir", "migrate symlink",
-    "migrate collision and dangling", "home isolation",
+    "migrate collision and dangling", "home isolation", "temp env override",
 ]
 
 
