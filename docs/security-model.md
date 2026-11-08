@@ -23,6 +23,11 @@ that every later session trusts).
 | Drafted lessons are staged in `memory/learnings/pending/` and reach agents only through `dream --promote`, which needs a person | `bin/dream` | Human gate. |
 | `dream` never writes `memory/core/`; `--promote` also rewrites only `memory/learnings/working.md`, from the dated archive, after the same confirmation | `bin/dream` | Path allowlist in `assert_working_target`. |
 
+The nightly script (`bin/memory-nightly`) is a command-level path, not a tool-level
+one: it pushes only to the `memory/dream` branch as a draft PR, never to `main`, and
+never with force. The text it stages is validated and redacted (credentials and, now,
+home paths) before it leaves the machine, and promotion still needs a person.
+
 `bin/lint-config` runs in CI and evaluates concrete commands and paths against each
 agent's effective rules. It exists because a rule order bug is invisible by reading:
 the `verifier`'s `shell *: allow` used to erase every global shell deny.

@@ -98,6 +98,7 @@ REDACTIONS = (
     (re.compile(r"\bbearer\s+[A-Za-z0-9._~+/=-]{12,}", re.I), "Bearer [REDACTED]"),
     (re.compile(r"(?i)([a-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|credential)[a-z0-9_.-]*\s*[=:]\s*)\S+"), r"\1[REDACTED]"),
     (re.compile(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1[REDACTED]@"),
+    (re.compile(r"(?<![\w.-])/(?:Users|home)/[A-Za-z0-9._-]+"), "~"),
 )
 # A lesson is a short constraint. Anything that looks like a payload is dropped,
 # not repaired: URLs, shell fetch-and-run, prompt-injection phrasing, secrets talk.
@@ -972,8 +973,8 @@ def assert_learnings_target(memory: Path, target: Path) -> Path:
     """Refuse anything that is not a dated file inside learnings. Never touch core."""
     if not memory.is_dir():
         raise SystemExit(
-            f"memory is not installed at {memory}\n"
-            "run ./install.cs so memory/ is linked to ~/.config/opencode/memory"
+            f"memory is not provisioned at {memory}\n"
+            "run ./install.cs to provision it"
         )
     learnings = memory / "learnings"
     core = memory / "core"
@@ -1013,8 +1014,8 @@ def assert_working_target(memory: Path, target: Path) -> Path:
     """Allow only learnings/working.md. Never core, pending, README, or a dated file."""
     if not memory.is_dir():
         raise SystemExit(
-            f"memory is not installed at {memory}\n"
-            "run ./install.cs so memory/ is linked to ~/.config/opencode/memory"
+            f"memory is not provisioned at {memory}\n"
+            "run ./install.cs to provision it"
         )
     learnings = memory / "learnings"
     if not learnings.is_dir():
