@@ -48,9 +48,7 @@ runtimeMode: "auto-accept-edits",
 seat's mode and children must edit, so `approval-required` would stall each child; the
 mode does not stop the seat editing, that rule is the `AGENTS.md` seat contract. It
 approves edits, not shell: a child that runs `git` for its `PROOF` still waits for a
-command approval, so brief children to build the `PROOF` from read tools. It
-approves edits, not shell: a child that runs `git` for its PROOF still waits for a
-command approval, so brief children to build their PROOF from read tools.
+command approval, so brief children to build the `PROOF` from read tools.
 
 ## Install on a new machine
 
