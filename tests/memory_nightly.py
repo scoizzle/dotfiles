@@ -52,14 +52,14 @@ class Fixture:
         sh("git", "-C", str(seed), "commit", "-m", "seed", env=self.env)
         sh("git", "-C", str(seed), "push", "origin", "main", env=self.env)
         sh("git", "-C", str(self.remote), "symbolic-ref", "HEAD", "refs/heads/main", env=self.env)
-        self.clone = self.tmp / "clone"
+        self.oc = self.tmp / "oc"
+        self.oc.mkdir()
+        self.clone = self.oc / ".memory"
         sh("git", "clone", "--no-checkout", str(self.remote), str(self.clone), env=self.env)
         sh("git", "-C", str(self.clone), "sparse-checkout", "set", "--no-cone", "/memory/", "/.gitignore", env=self.env)
         sh("git", "-C", str(self.clone), "checkout", "main", env=self.env)
-        for link, target in (("INDEX.md", "memory/INDEX.md"), ("core", "memory/core"), ("learnings", "memory/learnings")):
-            os.symlink(target, self.clone / link)
-        with open(self.clone / ".git" / "info" / "exclude", "a") as f:
-            f.write("/INDEX.md\n/core\n/learnings\n")
+        self.link = self.oc / "memory"
+        os.symlink(".memory/memory", self.link)
         # stub gh
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
@@ -261,6 +261,24 @@ def main():
         p = fx.run("--dry-run")
         check("dry_run_reports_base", "resolved base:" in p.stdout and "would publish:" in p.stdout,
               p.stdout + p.stderr)
+
+        # (repo_via_symlink) --repo <memory symlink> behaves like the clone root
+        fx.pending("2026-12-05.md")
+        p = sh(sys.executable, str(SCRIPT), "--repo", str(fx.link), "--skip-dream", "--no-pr",
+               env=fx.env, check=False)
+        files = tree_files(fx, "memory/dream")
+        lock_ok = (fx.clone / ".git" / "memory-nightly.lock").exists()
+        stray = [q for q in (fx.link / "memory-nightly.lock", fx.link / ".git", fx.clone / "memory" / "memory")
+                 if os.path.lexists(q)]
+        check("repo_via_symlink",
+              p.returncode == 0 and "memory/learnings/pending/2026-12-05.md" in files
+              and lock_ok and not stray and not any(f.startswith("memory/memory") for f in files),
+              p.stdout + p.stderr + f" stray={stray}")
+        (learn / "pending" / "2026-12-05.md").unlink()
+        bad = sh(sys.executable, str(SCRIPT), "--repo", str(fx.tmp / "home"), "--skip-dream", "--no-pr",
+                 env=fx.env, check=False)
+        check("repo_invalid_one_line", bad.returncode == 1 and bad.stderr.startswith("error:")
+              and len(bad.stderr.strip().splitlines()) == 1, bad.stderr)
 
         # (two clones) a fresh clone lacking A's dated file must not delete it
         fx2 = Fixture()

@@ -5,7 +5,8 @@
     memory-nightly --skip-dream    # publish whatever is already staged
     memory-nightly --dry-run       # print the commands, change nothing
 
-The memory directory is a sparse git clone (memory/ only). The commit is built
+The repo is a sparse git clone at ~/.config/opencode/.memory (memory/ only);
+~/.config/opencode/memory is a symlink to .memory/memory. --repo accepts either. The commit is built
 with plumbing against a temporary index. The fast-forward of the base branch
 may move HEAD (only when the clone is clean on that branch); the checked-out
 branch is never switched. Only an allowlist of paths is published (dated files
@@ -129,7 +130,7 @@ def compare_url(repo, remote, base, branch):
 def dry_run(a, dream):
     r = a.repo
     if not a.skip_dream:
-        say_cmd([dream, "--memory", r])
+        say_cmd([dream, "--memory", a.memory_dir])
     say_cmd(["git", "-C", r, "fetch", a.remote, "--prune"])
     say_cmd(["git", "-C", r, "merge", "--ff-only", f"{a.remote}/{a.base}"])
     if shutil.which("gh"):
@@ -315,7 +316,8 @@ def ensure_pr(a, files):
 def main(argv=None):
     here = os.path.dirname(os.path.realpath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--repo", default="~/.config/opencode/memory")
+    ap.add_argument("--repo", default="~/.config/opencode/.memory",
+                    help="memory clone root, or the memory symlink into it")
     ap.add_argument("--branch", default="memory/dream")
     ap.add_argument("--base", default="main")
     ap.add_argument("--remote", default="origin")
@@ -330,7 +332,7 @@ def main(argv=None):
         if not DATED.match(n):
             print(f"error: --drop-pending {n!r} is not YYYY-MM-DD.md", file=sys.stderr)
             return 1
-    a.repo = os.path.realpath(os.path.expanduser(a.repo))
+    given = os.path.realpath(os.path.expanduser(a.repo))
     dream = os.path.expanduser(a.dream)
     a.dream_path = dream
 
@@ -339,14 +341,29 @@ def main(argv=None):
               f"must differ from the base and never be main/master", file=sys.stderr)
         return 1
 
+    # --repo may be the clone root or the memory symlink/dir inside it.
+    p = subprocess.run(["git", "-C", given, "rev-parse", "--show-toplevel"], capture_output=True, text=True) \
+        if os.path.isdir(given) else None
+    if p is None or p.returncode != 0:
+        print(f"error: {given} is not inside a git clone of the memory repo", file=sys.stderr)
+        return 1
+    a.repo = os.path.realpath(p.stdout.strip())
+    a.memory_dir = os.path.join(a.repo, "memory")
+    if not os.path.isdir(os.path.join(a.memory_dir, "learnings")):
+        print(f"error: {a.memory_dir}/learnings not found; --repo must be the memory clone "
+              f"(or its memory symlink)", file=sys.stderr)
+        return 1
+
     if a.dry_run:
         return dry_run(a, dream)
 
-    try:
-        gitdir = git(a.repo, "rev-parse", "--absolute-git-dir").stdout.strip()
-    except Fatal as e:
-        print(f"error: {a.repo} is not a git clone: {e}", file=sys.stderr)
-        return 1
+    gitdir = os.path.join(a.repo, ".git")
+    if not os.path.isdir(gitdir):
+        try:
+            gitdir = git(a.repo, "rev-parse", "--absolute-git-dir").stdout.strip()
+        except Fatal as e:
+            print(f"error: {a.repo} is not a git clone: {e}", file=sys.stderr)
+            return 1
     lock = open(os.path.join(gitdir, "memory-nightly.lock"), "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -365,7 +382,7 @@ def main(argv=None):
             print(f"warning: {a.repo} sparse set lacks /.gitignore; run install.cs to repair", file=sys.stderr)
 
         if not a.skip_dream:
-            p = run([dream, "--memory", a.repo], check=False)
+            p = run([dream, "--memory", a.memory_dir], check=False)
             if p.returncode != 0:
                 raise Fatal(f"dream failed ({p.returncode}): {p.stderr.strip()}")
 
