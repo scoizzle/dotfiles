@@ -388,6 +388,15 @@ def main() -> int:
     if explore is not None and effective(explore, "edit", "src/x.cs") != "deny":
         fail("explore: edit must be deny; it is the read-only swarm")
 
+    orchestrator = agents.get("orchestrator")
+    if orchestrator is not None:
+        for action in ("edit", "shell", "execute", "opencode_worktree_remove",
+                       "roslynk_apply_patch", "roslynk_rename_symbol"):
+            if effective(orchestrator, action, "src/x.cs") != "deny":
+                fail(f"orchestrator: {action} must be deny; it is a no-hands dispatcher")
+        if effective(orchestrator, "subagent", "general") != "allow":
+            fail("orchestrator: subagent must stay allowed; dispatch is its only action")
+
     check_policy(agents)
     check_shared_surfaces()
     check_instructions()
