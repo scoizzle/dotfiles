@@ -232,6 +232,9 @@ def main(argv=None):
         sparse = git(a.repo, "sparse-checkout", "list", check=False).stdout.split()
         if "/memory/" not in sparse:
             raise Fatal(f"{a.repo} is not sparse to /memory/ (sparse set: {sparse or 'none'})")
+        if "/.gitignore" not in sparse:
+            # Non-fatal: the nightly works without it; install.cs repairs the set.
+            print(f"warning: {a.repo} sparse set lacks /.gitignore; run install.cs to repair", file=sys.stderr)
 
         if not a.skip_dream:
             p = run([dream, "--memory", a.repo], check=False)

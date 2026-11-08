@@ -151,6 +151,29 @@ def case_missing_links_and_remote_mismatch():
     require(git("-C", str(m), "remote", "get-url", "origin").stdout.strip() == str(source), "remote was repointed")
 
 
+def case_repair_sparse_set():
+    source = make_source()
+    home = fresh("sparse")
+    install(home, source)
+    m = memdir(home)
+    # simulate a clone provisioned before install.cs asked for /.gitignore
+    git("-C", str(m), "sparse-checkout", "set", "--no-cone", "/memory/")
+    patterns = git("-C", str(m), "sparse-checkout", "list").stdout.split()
+    require("/.gitignore" not in patterns, f"sparse set still has .gitignore: {patterns}")
+    require(not (m / ".gitignore").exists(), ".gitignore still checked out")
+    p = install(home, source, "--check", check=False)
+    require(p.returncode == 1, f"--check exited {p.returncode}\n{p.stdout}")
+    require("would repair memory (sparse set)" in p.stdout, p.stdout)
+    p = install(home, source)
+    require(p.returncode == 0, f"repair exited {p.returncode}\n{p.stdout}")
+    require("repair  memory (sparse set)" in p.stdout, p.stdout)
+    patterns = git("-C", str(m), "sparse-checkout", "list").stdout.split()
+    require("/.gitignore" in patterns, f"sparse set not repaired: {patterns}")
+    require((m / ".gitignore").is_file(), ".gitignore not checked out after repair")
+    p = install(home, source, "--check", check=False)
+    require(p.returncode == 0 and "ok memory (clone)" in p.stdout, p.stdout)
+
+
 def case_no_remote():
     home = fresh("noremote")
     env = {
@@ -312,6 +335,7 @@ CASES = [
     case_check,
     case_second_install,
     case_missing_links_and_remote_mismatch,
+    case_repair_sparse_set,
     case_no_remote,
     case_dream_writes_in_clone,
     case_worktree_deleted,
@@ -321,7 +345,8 @@ CASES = [
     case_home_isolation,
 ]
 NAMES = [
-    "real clone", "check", "second install", "repair and remote mismatch", "no remote",
+    "real clone", "check", "second install", "repair and remote mismatch", "repair sparse set",
+    "no remote",
     "dream writes in clone", "worktree deleted", "migrate dir", "migrate symlink",
     "migrate collision and dangling", "home isolation",
 ]

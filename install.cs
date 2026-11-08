@@ -498,9 +498,18 @@ static bool IsCloneDir(string dest) =>
     && (Directory.Exists(Path.Combine(dest, ".git")) || File.Exists(Path.Combine(dest, ".git")))
     && Git(dest, 15000, "rev-parse", "--is-inside-work-tree") == "true";
 
-static bool SparseHasMemory(string dest) =>
+static HashSet<string> SparsePatterns(string dest) =>
     Git(dest, 15000, "sparse-checkout", "list") is { } list
-    && list.Split('\n').Select(l => l.Trim()).Contains("/memory/");
+        ? list.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToHashSet()
+        : [];
+
+// Both patterns are part of the clone's contract: /memory/ holds the data and
+// /.gitignore keeps dream's pending/ files out of `git status`.
+static bool SparseHasPatterns(string dest)
+{
+    var set = SparsePatterns(dest);
+    return set.Contains("/memory/") && set.Contains("/.gitignore");
+}
 
 // Returns hard problems; fills `missing` with links that are simply absent.
 static List<string> InspectMemoryLinks(string dest, List<string> missing)
@@ -553,7 +562,7 @@ static bool VerifyMemory(string targetRoot)
 {
     var dest = Path.Combine(targetRoot, "memory");
     if (!IsCloneDir(dest)) return false;
-    if (!SparseHasMemory(dest)) return false;
+    if (!SparseHasPatterns(dest)) return false;
     if (!File.Exists(Path.Combine(dest, "memory", "INDEX.md"))) return false;
     var missing = new List<string>();
     return InspectMemoryLinks(dest, missing).Count == 0 && missing.Count == 0;
@@ -654,10 +663,29 @@ static (bool Drift, bool Failed) ReconcileMemoryClone(string dest, string remote
         Console.WriteLine($"  FAILED  memory: origin is '{origin ?? "(none)"}', expected '{remote}' — not repointing; fix or remove it by hand");
         return (false, true);
     }
-    if (!SparseHasMemory(dest))
+    var sparse = SparsePatterns(dest);
+    if (!sparse.Contains("/memory/"))
     {
         Console.WriteLine("  FAILED  memory: sparse-checkout does not contain /memory/");
         return (false, true);
+    }
+    // An older clone predates the /.gitignore pattern; repairing it is drift,
+    // not a failure. Never reset, clean, or switch its branch, and never fetch.
+    var sparseDrift = !sparse.Contains("/.gitignore");
+    if (sparseDrift)
+    {
+        if (checkOnly)
+        {
+            Console.WriteLine("  would repair memory (sparse set)");
+            return (true, false);
+        }
+        var (code, _, err) = RunGit(dest, 60000, "sparse-checkout", "set", "--no-cone", "/memory/", "/.gitignore");
+        if (code != 0 || !SparseHasPatterns(dest))
+        {
+            Console.WriteLine($"  FAILED  memory: cannot repair the sparse set: {err.Trim()}");
+            return (false, true);
+        }
+        Console.WriteLine("  repair  memory (sparse set)");
     }
     if (!File.Exists(Path.Combine(dest, "memory", "INDEX.md")))
     {
@@ -677,7 +705,7 @@ static (bool Drift, bool Failed) ReconcileMemoryClone(string dest, string remote
     if (missing.Count == 0 && excludes.Count == 0)
     {
         Console.WriteLine("  ok memory (clone)");
-        return (false, false);
+        return (sparseDrift, false);
     }
 
     if (checkOnly)
