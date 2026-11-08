@@ -14,8 +14,9 @@ automated step.
 
 ## What travels, and where it lives
 
-The working copy is `~/.config/opencode/memory`, a sparse clone of this
-repository provisioned by `install.cs`, not a link to a checkout. Dated
+The working copy is `~/.config/opencode/.memory`, a sparse clone of this
+repository provisioned by `install.cs`; `~/.config/opencode/memory` is a symlink
+to `.memory/memory`, so every consumer path keeps resolving. Dated
 `learnings/YYYY-MM-DD.md` files are tracked, so a clone elsewhere gets them after a
 merge. `pending/` is tracked only on a `memory/dream` staging branch, and CI allows
 it only there and only while the PR is a draft; any other ref, including `main`

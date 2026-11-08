@@ -90,15 +90,16 @@ cd ~/dotfiles
 `install.cs` symlinks each managed path into `~/.config/opencode`. Symlinks mean
 there is exactly one copy of every file — edit it in either location, it's the
 same file, and `git status` in this repo shows the change immediately. Memory is
-the one exception: it is provisioned as a git clone, not a link. See
-[Memory: what travels](#memory-what-travels).
+the one exception: it is provisioned as a git clone at
+`~/.config/opencode/.memory`, with `~/.config/opencode/memory` symlinked into it.
+See [Memory: what travels](#memory-what-travels).
 
 Anything already sitting at a destination is **moved** to
 `~/.config/opencode.bak-<timestamp>/`, never deleted. Re-running is idempotent.
 
 `./install.cs --copy` copies instead of linking, for machines where symlinks are
 a problem. That mode is one-way: edits made in `~/.config/opencode` will not come
-back here. Memory is the same sparse clone in either mode.
+back here. Memory is the same sparse clone and `memory` symlink in either mode.
 
 ## What this repo manages
 
@@ -114,7 +115,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy, its test vectors, and the T3 provider snapshot the routing table is linted against | permissions reach all three via `bin/sync-harness`; the snapshot is read by `bin/lint-config` |
-| `memory/`       | bookshelf, read-only core, learnings format; provisioned as a sparse clone, not a link | opencode path, read by absolute path from the others |
+| `memory/`       | bookshelf, read-only core, learnings format; provisioned as a sparse clone at `~/.config/opencode/.memory`, symlinked as `~/.config/opencode/memory` | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
@@ -131,18 +132,20 @@ How the bookshelf and the out-of-band dream pass fit together is in
 
 ### Memory: what travels
 
-`~/.config/opencode/memory` is a real directory, and it is a git clone of this
-repository, sparse to `memory/` plus `.gitignore`. The payload sits at
-`<clone>/memory/`; at the clone root, `INDEX.md`, `core` and `learnings` are
-relative links into it, so every path a consumer already used keeps resolving. It
-is not a symlink to a checkout.
+`~/.config/opencode/.memory` is a git clone of this repository, sparse to
+`memory/` plus `.gitignore`. `~/.config/opencode/memory` is a symlink to
+`.memory/memory`, so every path a consumer already used — `memory/INDEX.md`,
+`memory/core/`, `memory/learnings/` — keeps resolving. The clone is not the
+checkout you edit.
 
-`install.cs` provisions the clone, and `./install.cs --check` verifies it without
-network: the `origin` URL matches this repo, the sparse set contains `/memory/`,
-and the payload and those three links are present. An existing directory is moved to
-`~/.config/opencode.bak-<stamp>/memory`, and an existing symlink is recorded there
-and removed without touching what it pointed at; in both cases `learnings/**` are
-copied into the clone without overwriting. Re-running is idempotent.
+`install.cs` provisions the clone, links `memory` into it, and
+`./install.cs --check` verifies it without network: the `origin` URL matches this
+repo, the sparse set contains `/memory/`, and the payload and the `memory` symlink
+are in place. An existing `memory` directory or symlink is moved to
+`~/.config/opencode.bak-<stamp>/`, and `learnings/**` are copied into the clone
+without overwriting, keeping a differing local file under `learnings/.conflict/`.
+An interrupted migration resumes on the next run, so a failed install never costs
+the existing memory its place. Re-running is idempotent.
 
 The three tiers decide what travels:
 

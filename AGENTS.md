@@ -208,8 +208,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 
 ## Memory
 
-Durable memory is `~/.config/opencode/memory/` (this repo's `memory/`, provisioned
-as a dedicated sparse clone by `install.cs`).
+Durable memory is `~/.config/opencode/memory/`: a dedicated sparse clone at
+`~/.config/opencode/.memory`, symlinked at `~/.config/opencode/memory` (this
+repo's `memory/`, provisioned by `install.cs`).
 
 Before heavy work, read `~/.config/opencode/memory/INDEX.md`, the bookshelf: a
 blurb per file. Load a memory file only when its blurb matches the task. Dated
