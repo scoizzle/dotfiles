@@ -4,7 +4,7 @@ Append-only memory. Agents may add dated files in this directory. They do not ed
 
 Lessons are constraints, not transcripts. A line is one fact the next session can apply. Do not paste session logs, diffs, or command output.
 
-Installed path: `~/.config/opencode/memory/learnings/`. The installer symlinks `memory/` from this repo, so a local dream writes into the checkout. Dated files are gitignored. `README.md` and `.gitkeep` stay tracked.
+Installed path: `~/.config/opencode/memory/learnings/`, inside the working copy — a sparse git clone of this repository that `install.cs` provisions, not a link to a checkout. Dated files (`YYYY-MM-DD.md`) are tracked, so they travel with git. `pending/` is ignored and force-added only on the `memory/dream` staging branch; `working.md` is ignored and rebuilt locally by `dream --promote`. `README.md` and `.gitkeep` stay tracked.
 
 ## Version header
 
