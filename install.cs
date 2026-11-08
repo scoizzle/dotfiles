@@ -596,7 +596,9 @@ static (bool Drift, bool Failed) ProvisionMemory(
         }
 
         Step(60000, "clone", "--no-checkout", remote, tmp);
-        Step(60000, "-C", tmp, "sparse-checkout", "set", "--no-cone", "/memory/");
+        // The repo's root .gitignore rides along: dream writes into memory/learnings/pending/,
+        // and without it the clone sees those files as untracked.
+        Step(60000, "-C", tmp, "sparse-checkout", "set", "--no-cone", "/memory/", "/.gitignore");
         Step(60000, "-C", tmp, "checkout");
         if (!File.Exists(Path.Combine(tmp, "memory", "INDEX.md")))
             throw new InvalidOperationException($"{remote} has no memory/INDEX.md on its checked-out branch");

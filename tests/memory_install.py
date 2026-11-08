@@ -101,6 +101,16 @@ def case_real_clone():
     for e in ("/INDEX.md", "/core", "/learnings"):
         require(e in exclude, f"{e} not excluded")
     require(git("-C", str(m), "status", "--porcelain").stdout.strip() == "", "clone dirty after install")
+    require((m / ".gitignore").is_file(), "clone did not get the repo's root .gitignore")
+    pending = m / "memory" / "learnings" / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+    probe = pending / "2099-01-01.md"
+    probe.write_text("- known: probe\n")
+    try:
+        status = git("-C", str(m), "status", "--porcelain").stdout.strip()
+        require(status == "", f"pending probe shows as untracked: {status}")
+    finally:
+        probe.unlink()
 
 
 def case_check():

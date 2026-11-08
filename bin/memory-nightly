@@ -242,7 +242,7 @@ def main(argv=None):
         if p.returncode != 0:
             raise Fatal(f"offline or fetch failed; nothing pushed: {p.stderr.strip()}")
 
-        status = git(a.repo, "status", "--porcelain").stdout.strip()
+        status = git(a.repo, "status", "--porcelain", "--untracked-files=no").stdout.strip()
         cur = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         if status or cur != a.base:
             print(f"warning: worktree not clean on {a.base}; skipping fast-forward", file=sys.stderr)

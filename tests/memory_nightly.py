@@ -37,8 +37,10 @@ class Fixture:
         self.remote = self.tmp / "remote.git"
         sh("git", "init", "--bare", "-b", "main", str(self.remote), env=self.env)
         seed = self.tmp / "seed"
+        self.seed = seed
         sh("git", "clone", str(self.remote), str(seed), env=self.env, check=False)
         sh("git", "-C", str(seed), "checkout", "-B", "main", env=self.env)
+        (seed / ".gitignore").write_text("memory/learnings/pending/\n")
         mem = seed / "memory"
         (mem / "core").mkdir(parents=True)
         (mem / "learnings").mkdir()
@@ -51,12 +53,12 @@ class Fixture:
         sh("git", "-C", str(self.remote), "symbolic-ref", "HEAD", "refs/heads/main", env=self.env)
         self.clone = self.tmp / "clone"
         sh("git", "clone", "--no-checkout", str(self.remote), str(self.clone), env=self.env)
-        sh("git", "-C", str(self.clone), "sparse-checkout", "set", "--no-cone", "/memory/", env=self.env)
+        sh("git", "-C", str(self.clone), "sparse-checkout", "set", "--no-cone", "/memory/", "/.gitignore", env=self.env)
         sh("git", "-C", str(self.clone), "checkout", "main", env=self.env)
         for link, target in (("INDEX.md", "memory/INDEX.md"), ("core", "memory/core"), ("learnings", "memory/learnings")):
             os.symlink(target, self.clone / link)
         with open(self.clone / ".git" / "info" / "exclude", "a") as f:
-            f.write("/INDEX.md\n/core\n/learnings\n/memory/learnings/*\n!/memory/learnings/README.md\n")
+            f.write("/INDEX.md\n/core\n/learnings\n")
         # stub gh
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
@@ -180,6 +182,19 @@ def main():
         check("h_closed_pr_refuses",
               p.returncode != 0 and "delete the remote branch" in p.stderr and fx.remote_log() == before,
               p.stdout + p.stderr)
+
+        # (j) an untracked file must not block the fast-forward to a new upstream commit
+        (fx.seed / "memory" / "core" / "new.md").write_text("new core\n")
+        sh("git", "-C", str(fx.seed), "add", "-A", env=fx.env)
+        sh("git", "-C", str(fx.seed), "commit", "-m", "upstream: new core", env=fx.env)
+        sh("git", "-C", str(fx.seed), "push", "origin", "main", env=fx.env)
+        untracked = fx.clone / "memory" / "learnings" / "2099-01-01.md"
+        untracked.write_text("- known: untracked dated file\n")
+        p = fx.run("--no-pr")
+        merged = fx.clone / "memory" / "core" / "new.md"
+        check("j_ff_with_untracked",
+              p.returncode == 0 and merged.is_file() and untracked.is_file(),
+              p.stdout + p.stderr + f" merged={merged.exists()} untracked={untracked.exists()}")
     finally:
         fx.cleanup()
     return 1 if failures else 0
