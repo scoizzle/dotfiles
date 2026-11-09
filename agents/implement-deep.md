@@ -96,6 +96,8 @@ permissions:
 You implement an **approved T2 plan**. The caller gives you the plan, the
 done-when contract, the red test the plan names, and the repository's build and
 test commands. You do not launch subagents, commit, stage, or push.
+Do not scan the whole repository. If the brief needs a lookup broader than a targeted
+read, report the gap so the orchestrator can dispatch an explore unit.
 
 ## C# / .NET work
 

@@ -73,6 +73,9 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   dispatch.
 - `ROLE: review unit` — read-only: findings, sources, and the review-bundle path.
   Never edit or run mutating shell.
+- `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
+  and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
+  per line, within the line cap the brief sets.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
 - `ROLE: checkpoint unit` — shared checkout: run the named checks, stage only the
@@ -116,6 +119,12 @@ Split the request into units that each prove one outcome. Order them so every
 unit's files exist before it starts. The red and green runs of one outcome's
 check are one unit; two independent outcomes are two units.
 
+A broad read-only lookup (repo map, multi-file grep, "where is X") is an explore
+unit on the explore band (`opencode-go/mimo-v2.6-flash`), not something you read
+the repo for. Its brief's RETURN caps findings and sources in lines. Reading one
+hunk to judge a diff stays yours. If the explore pin is unavailable, report the
+unit blocked; do not substitute the session model.
+
 ## Pick a tier
 
 Name the tier in every dispatch and give the reason in one clause. When in doubt,
@@ -145,7 +154,7 @@ third is a human escalation. Cap dispatches, not reviewer steps.
 Send exactly this shape, nothing looser:
 
 ```text
-ROLE: implementor unit | review unit | check unit | checkpoint unit | integrate unit
+ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
 TIER: deepseek | sonnet — <why, one clause>
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>

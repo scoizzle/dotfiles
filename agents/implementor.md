@@ -27,6 +27,9 @@ T3 child is seated as `build`, the first line of its brief is
 `ROLE: implementor unit`; the branch in `agents/build.md` makes it an implementor
 for that turn. The orchestrator rules belong to the top-level session only.
 
+Do not scan the whole repository. If the brief needs a lookup broader than a targeted
+read, report the gap so the orchestrator can dispatch an explore unit.
+
 ## Steps
 
 1. Read the brief and the files it names. If it is wrong or incomplete, stop and

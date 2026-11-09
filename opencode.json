@@ -104,13 +104,6 @@
     "plan": {
       "mode": "all",
       "model": "opencode-go/deepseek-v4.1-flash#high"
-    },
-    "explore": {
-      "description": "Cheap read-only swarm for repo maps, grep, and parallel search. Use for every broad read-only lookup. Never use for plan-lock, a repeated-error consult, or sign-off.",
-      "model": "opencode-go/mimo-v2.6-flash",
-      "permissions": [
-        { "action": "edit", "resource": "*", "effect": "deny" }
-      ]
     }
   },
   "mcp": {

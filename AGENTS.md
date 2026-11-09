@@ -102,8 +102,10 @@ scope:
   `opencode.json`; force, delete, mirror, and `+refspec` pushes are denied. Never
   run an unattended session with `--auto`: it approves every `ask`.
 - Keep diffs minimal and consistent with the surrounding code.
-- Use `explore` for broad searches; do not read the whole repo in the main
-  context.
+- Route broad read-only lookups through `explore`: spawn the subagent when the
+  agent has one, otherwise dispatch an explore unit on the explore band. The brief
+  caps the return at findings + sources. An agent that can do neither reports the
+  gap instead of scanning. Do not read the whole repo in the main context.
 
 ### Undo
 
@@ -294,7 +296,7 @@ If no solution exists (file-based apps such as `install.cs`, `.csproj`-only
 trees), say so in one line and use normal file reads. If `open_solution` fails,
 say so in one line and fall back. Never imply Roslynk answered when it did not.
 
-Read-only agents (the four reviewer agent files) use only the read-only Roslynk tools listed in
+Read-only agents (the four reviewer agent files and `explore`) use only the read-only Roslynk tools listed in
 the `roslynk-rules` skill, never the ones that write.
 
 `get_diagnostics` is a compile check, not a test run. Tests still go through the
