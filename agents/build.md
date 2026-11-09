@@ -125,10 +125,10 @@ unit's files exist before it starts. The red and green runs of one outcome's
 check are one unit; two independent outcomes are two units.
 
 A broad read-only lookup (repo map, multi-file grep, "where is X") is an explore
-unit on the explore band (`opencode-go/mimo-v2.6-flash`), not something you read
-the repo for. Its brief's RETURN caps findings and sources in lines. Reading one
-hunk to judge a diff stays yours. If the explore pin is unavailable, report the
-unit blocked; do not substitute the session model.
+unit on the explore band (`opencode-go/deepseek-v4.1-flash`, `variant=low`), not
+something you read the repo for. Its brief's RETURN caps findings and sources in
+lines. Reading one hunk to judge a diff stays yours. If the explore pin is
+unavailable, report the unit blocked; do not substitute the session model.
 
 ## Pick a tier
 
@@ -139,9 +139,10 @@ start on `deepseek`; move up only for the reasons in the table.
 | --- | --- | --- |
 | `deepseek` | `opencode-go/deepseek-v4.1-flash`, `variant=high` | volume, T0/T1, a named test oracle, mechanical or well-scoped work |
 | `sonnet` | `claude-agent/sonnet`, `variant=medium` | T2 after plan lock, cross-cutting edits, no cheap oracle, or a cheap attempt already failed |
-| `explore` | `opencode-go/mimo-v2.6-flash`, no variant | read-only repo maps and multi-file grep |
+| `explore` | `opencode-go/deepseek-v4.1-flash`, `variant=low` | read-only repo maps and multi-file grep |
 
-An explore dispatch passes no `variant` option: `options` is omitted or empty.
+An explore dispatch passes `variant=low`: pass it in `options` as
+`[{ id: "variant", value: "low" }]`.
 
 A second cheap attempt at the same failure is not a tier choice; it is a stop.
 Move to `sonnet` or escalate.
