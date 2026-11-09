@@ -132,9 +132,13 @@ Move to `sonnet` or escalate.
 Reviews are not a tier. Dispatch `plan-review-deep` before a T2 plan locks, and
 `review-deep` plus `second-opinion` at T2 sign-off, on their Model routing pins.
 Run `verifier` when the contract needs a shell probe. Do not accept a T2 unit
-that skipped them. At sign-off, one `review-deep` and one `second-opinion`
-dispatch run in parallel; after a fix, one re-review. A third is a human
-escalation. Cap dispatches, not reviewer steps.
+that skipped them. On a critical T2 (`review-bundle --classify` names security,
+data, or a public contract, or the change touches auth or a schema/data
+migration) dispatch `review-critical` (Opus 5.5) instead of `review-deep`; it is
+`review-deep`'s prompt on the Opus pin. Record the trigger in the dispatch. At
+sign-off one `review-deep` (`review-critical` on a critical T2) and one
+`second-opinion` run in parallel; after a fix, one re-review on the same pin. A
+third is a human escalation. Cap dispatches, not reviewer steps.
 
 ## Dispatch template
 

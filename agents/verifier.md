@@ -1,7 +1,7 @@
 ---
-description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not an advisor moment. Go-plan Grok and slow, about 10 minutes a run, so use it on request only. Use for T1/T2 changes and for plan contracts.
+description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not an advisor moment. Runs on Sonnet 5.5; its independence comes from the shell probes and disposable clone, not the model. Use it on request only. Use for T1/T2 changes and for plan contracts.
 mode: subagent
-model: opencode-go/grok-4.7#high
+model: claude-agent/sonnet#high
 color: "#ff6b6b"
 steps: 120
 permissions:
