@@ -117,8 +117,20 @@ unattended sessions with `--auto`.
 - The builder's git denies (`commit`, `add`, `stage`, `update-index`, `push`,
   `rm`, `mv`, `apply`) are generated into `agents/implement-deep.md` from
   `builder_git_deny` in the policy; edit the policy, not the block.
-- Windows-style paths (`C:\Users\u\.env`) are normalized to `/` in the guard only;
-  the opencode globs and native rules are not.
+- The guard normalizes `\` to `/` in `protected_path`, `protected_name` and
+  `in_no_edit` (`tests/guard_windows.py` proves it with a Windows-shaped home).
+  It cannot help where the shell has already eaten the backslashes: `shlex` turns
+  `cat C:\Users\u\.env` into one backslash-free token. The opencode globs and
+  native rules match `/` only.
+- Global flags before the subcommand are skipped for `gh` and `npm` rules
+  (`gh --repo o/r pr merge`, `npm --silent publish`; `value_flags` in the policy
+  names the flags that take a value). Accepted collateral: `git restore --help`,
+  `npm publish --dry-run`, `gh pr merge --help` and `git checkout -b feature --`
+  are denied too. `git branch -d` (lowercase) is allowed.
+- The classifier treats a doc as sensitive when its name has an anchored
+  `auth`/`secret` token (`auth-redesign.md`, `auth.json`), or contains
+  `migration`, `schema`, `permission` or `credential`. `author-notes.md` and
+  `src/author.cs` stay T1. A security doc with an unrelated name still floors T1.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.

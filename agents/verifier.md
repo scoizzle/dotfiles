@@ -106,15 +106,20 @@ permissions:
   - { action: shell, resource: "*xargs*rm -rf*", effect: deny }
   - { action: shell, resource: "*xargs*rm -fr*", effect: deny }
   - { action: shell, resource: "git restore*", effect: deny }
+  - { action: shell, resource: "*git restore*", effect: deny }
   - { action: shell, resource: "*git -* restore*", effect: deny }
   - { action: shell, resource: "*git checkout -- *", effect: deny }
   - { action: shell, resource: "*git -* checkout -- *", effect: deny }
   - { action: shell, resource: "*git branch -D*", effect: deny }
   - { action: shell, resource: "*git -* branch -D*", effect: deny }
   - { action: shell, resource: "*gh api*-X*DELETE*", effect: deny }
+  - { action: shell, resource: "*gh -* api*-X*DELETE*", effect: deny }
   - { action: shell, resource: "*gh api*--method*DELETE*", effect: deny }
+  - { action: shell, resource: "*gh -* api*--method*DELETE*", effect: deny }
   - { action: shell, resource: "*gh pr merge*", effect: deny }
+  - { action: shell, resource: "*gh -* pr merge*", effect: deny }
   - { action: shell, resource: "*npm publish*", effect: deny }
+  - { action: shell, resource: "*npm -* publish*", effect: deny }
   - { action: shell, resource: "*/.ssh/*", effect: deny }
   - { action: shell, resource: "*~/.ssh*", effect: deny }
   - { action: shell, resource: "*/.aws/*", effect: deny }

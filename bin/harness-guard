@@ -311,8 +311,16 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
         return False
     if prog not in ([programs] if isinstance(programs, str) else programs):
         return False
-    if "leading" in rule and seg[1 : 1 + len(rule["leading"])] != rule["leading"]:
-        return False
+    if "leading" in rule:
+        value_flags = set(rule.get("value_flags", []))
+        i = 1
+        while i < len(seg) and seg[i].startswith("-"):
+            if seg[i] == "--":
+                i += 1
+                break
+            i += 2 if seg[i] in value_flags else 1
+        if seg[i : i + len(rule["leading"])] != rule["leading"]:
+            return False
     if "after" in rule:  # the command a wrapper such as xargs runs must be this program
         inner = xargs_command(seg)
         if not inner or os.path.basename(inner[0]) != rule["after"]:
@@ -453,7 +461,7 @@ def pipe_chains(command: str, depth: int = 0) -> list[Decision]:
 def protected_path(policy: dict, raw: str) -> str | None:
     """The protected entry `raw` points at, or None."""
     for candidate in {raw, raw.split("=", 1)[-1]}:
-        path = expand(candidate)
+        path = expand(candidate).replace("\\", "/")
         if not path:
             continue
         try:
@@ -461,7 +469,7 @@ def protected_path(policy: dict, raw: str) -> str | None:
         except OSError:
             real = path
         for entry in policy["protected"]["paths"]:
-            target = expand(entry)
+            target = expand(entry).replace("\\", "/")
             if entry.endswith("/"):  # decided on the raw entry: expand() normalizes the slash away
                 base = target.rstrip("/")
                 if any(p == base or p.startswith(base + "/") for p in (path, real)):

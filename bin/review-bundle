@@ -145,8 +145,19 @@ SENSITIVE = (
     "*.sln",
     "*.slnx",
     "*Dockerfile*",
-    "*auth*",
-    "*secret*",
+    "*auth-*",
+    "*auth.*",
+    "*auth_*",
+    "*/auth/*",
+    "*auth.json",
+    "*auth.toml",
+    "*auth.yml",
+    "*auth.yaml",
+    "*secret-*",
+    "*secret.*",
+    "*secrets.*",
+    "*secret_*",
+    "*/secrets/*",
     "*credential*",
     "*.env*",
     "*permission*",
@@ -157,8 +168,6 @@ def is_sensitive(rel):
     low = rel.lower()
     if any(fnmatch.fnmatchcase(low, pat.lower()) for pat in ALWAYS):
         return True
-    if low.endswith((".md", ".txt")):
-        return False
     return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in SENSITIVE)
 
 

@@ -140,6 +140,7 @@ jobs:
         run: |
           python3 tests/classify.py
           python3 tests/policy_render.py
+          python3 tests/guard_windows.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke

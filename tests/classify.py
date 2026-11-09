@@ -16,10 +16,14 @@ _loader.exec_module(review_bundle)
 
 CASES = [
     ("docs/author-notes.md", False),
-    ("docs/plan-csharp-native-migration.md", False),
+    ("src/author.cs", False),
+    ("docs/plan-csharp-native-migration.md", True),
+    ("docs/auth-redesign.md", True),
+    ("docs/schema-change.md", True),
+    ("notes/auth-secrets.txt", True),
+    ("README.md", False),
     ("agents/build.md", True),
     ("policy/permissions.json", True),
-    ("src/author.cs", True),
     ("src/PermissionService.cs", True),
     ("db/migrations/001_init.sql", True),
     ("app.slnx", True),
