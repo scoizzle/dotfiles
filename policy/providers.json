@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "doc": "T3 provider instances from orchestrator_capabilities. bin/lint-config fails a Model routing row in AGENTS.md that names a disabled instance or a model outside the allowlist, so a settings change cannot leave a dead band behind. 'routableModels' is a curated allowlist of what the table may pin, not the full catalog. Re-verify with orchestrator_capabilities and move 'verified' in the same change. 2026-11-08: Claude Max Opus is the primary; added claude-agent/opus. Go-plan Grok (opencode-go/grok-4.7) replaces metered xAI for second-opinion and verifier. 2026-11-09: second-opinion moves to opencode-go/mimo-v2.6-flash (Go plan, no variant option).",
+  "doc": "T3 provider instances from orchestrator_capabilities. bin/lint-config fails a Model routing row in AGENTS.md that names a disabled instance or a model outside the allowlist, so a settings change cannot leave a dead band behind. 'routableModels' is a curated allowlist of what the table may pin, not the full catalog. Re-verify with orchestrator_capabilities and move 'verified' in the same change. 2026-11-08: Claude Max Opus is the primary; added claude-agent/opus. Go-plan Grok (opencode-go/grok-4.7) replaces metered xAI for second-opinion and verifier. 2026-11-09: second-opinion moves to opencode-go/muse-spark-1.3-contributor (Go plan, variant option; the org enabled its data-training endpoint on 2026-11-09).",
   "verified": "2026-11-08",
   "source": "orchestrator_capabilities + opencode models",
   "providers": {
@@ -9,6 +9,7 @@
       "canRunChildTask": true,
       "routableModels": [
         "opencode-go/mimo-v2.6-flash",
+        "opencode-go/muse-spark-1.3-contributor",
         "opencode-go/deepseek-v4.1-flash",
         "claude-agent/sonnet",
         "claude-agent/opus",

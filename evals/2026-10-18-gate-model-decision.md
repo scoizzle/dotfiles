@@ -508,30 +508,40 @@ Code cannot render Grok, so the routed pin is the decorrelated path.
 - `grok-4.5` getting a clean-case gate: re-evaluate. `grok-4.5` and `4.6` are
   faster but ungated on the clean case.
 
-## Phase 9 — second-opinion to MiMo Flash (2026-11-09)
+## Phase 9 — second-opinion to Muse Spark 1.3 Contributor (2026-11-09)
 
 On 2026-11-09 the user directed that `second-opinion` run on
-`opencode-go/mimo-v2.6-flash`, bare (the model exposes no `variant` option).
-AGENTS.md, `agents/second-opinion.md` and `policy/providers.json` were updated.
+`opencode-go/muse-spark-1.3-contributor` with `variant=high`. AGENTS.md,
+`agents/second-opinion.md` and `policy/providers.json` were updated, and the
+model was added to that file's `routableModels` allowlist.
 
-Why this is not a gated result — state all four plainly:
-- The outgoing pin, `opencode-go/grok-4.7`, was not advertised by the `opencode`
-  instance when delegated on 2026-11-09 ("Model opencode-go/grok-4.7 is not
-  advertised by provider opencode"), so the band was unreachable.
-- This knowingly puts MiMo at T2 against the 2026-10-18 D5 veto above: on the
-  gate set it missed the plan's 🔴 premise and the 🟠 `enum-column-type` change,
-  and it timed out on the clean case at the 1200 s cap.
-- No gate run exists for MiMo in the `second-opinion` role. The veto was recorded
-  for the T2 reviewer role, so this is an override, not an extrapolation.
-- `evals/run.sh` is unchanged and still refuses this pairing: it exits 2 for
-  `-m` naming MiMo at T2 (lines 69-79, 185-192). That guard has a second defect
-  now visible: it matches on `$MODEL` only, and `$MODEL` is empty when `-m` is
-  omitted, so a bare `./evals/run.sh -a second-opinion` would read the MiMo pin
-  from the agent file and bypass the guard silently.
+Why this is not a gated result:
 
-Unchanged: the Claude Code native fallback stays `sonnet`
-(`policy/permissions.json`, `readonly_agents.models`); Claude Code cannot render
-MiMo, so the routed pin remains the decorrelated path.
+- The outgoing pin, `opencode-go/grok-4.7`, was not advertised by the
+  `opencode` instance when delegated on 2026-11-09 ("Model
+  opencode-go/grok-4.7 is not advertised by provider opencode"), so the band
+  was unreachable. That pin still backs the verifier and is still in
+  `routableModels`, so `providers.json` keeps `verified: 2026-11-08`, its last
+  complete re-verification.
+- No gate run exists for Muse Spark 1.3 Contributor in any role. Unlike MiMo it
+  carries no recorded veto; it is unproven, not rejected.
+- An intermediate pin on `opencode-go/mimo-v2.6-flash` was written and reverted
+  the same day, before this branch left the machine. The 2026-10-18 D5 veto on
+  MiMo therefore still stands, and the MiMo guard in `evals/run.sh` still
+  applies to any MiMo bakeoff.
 
-Revisit when a second-opinion gate run on MiMo misses a seeded 🟠 or 🔴, or when
-`opencode-go/grok-4.7` is advertised again and the pin can be re-evaluated.
+Data scope: Muse Spark 1.3 Contributor is a Go model that trains on request
+data. The org enabled "Allow paid endpoints that train on request data" on
+2026-11-09, so every second-opinion review sends the reviewed diff to a
+training endpoint. Revisit the pin if that is not acceptable for a given
+repository.
+
+Unchanged: `evals/run.sh` (its MiMo guard cannot match Muse, and its
+`$MODEL`-only matching still means a bare `-a second-opinion` never consults the
+guard), and the Claude Code native fallback, which stays `sonnet`
+(`policy/permissions.json`, `readonly_agents.models`) because Claude Code
+cannot render Muse.
+
+Revisit when a second-opinion gate run on Muse Spark 1.3 Contributor misses a
+seeded 🟠 or 🔴 finding, or when `opencode-go/grok-4.7` is advertised again
+and the pin can be re-evaluated.

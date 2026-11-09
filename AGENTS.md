@@ -167,7 +167,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | explore, review-light | repo map, grep, T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
 | build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
-| second-opinion | independent T2 second look | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
+| second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `opencode-go/grok-4.7` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
