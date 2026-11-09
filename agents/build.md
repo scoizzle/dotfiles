@@ -79,7 +79,8 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   T3 cannot make a child read-only (the child is seated as `build`, so agent denies
   do not bind); the brief is the guarantee. Dispatch it with `isolation: "worktree"`
   and `role: "research"`, and after it returns run a `git status --short` check
-  (via a check unit) to confirm the tree is unchanged.
+  (via a check unit) against this session's own shared checkout — not the unit's
+  worktree or the project root — to confirm the tree is unchanged.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
 - `ROLE: checkpoint unit` — shared checkout: run the named checks, stage only the
