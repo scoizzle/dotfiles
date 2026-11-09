@@ -292,7 +292,9 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
         sub, rest = git_parts(seg[1:])
         if sub != rule["git"]:
             return False
-        if not any(k in rule for k in ("flags", "short", "refspec")):
+        if not any(k in rule for k in ("flags", "short", "refspec", "pathspec")):
+            return True
+        if rule.get("pathspec") and "--" in rest:
             return True
         for tok in rest:
             if tok == "--":
@@ -308,6 +310,8 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
     if programs is None:
         return False
     if prog not in ([programs] if isinstance(programs, str) else programs):
+        return False
+    if "leading" in rule and seg[1 : 1 + len(rule["leading"])] != rule["leading"]:
         return False
     if "after" in rule:  # the command a wrapper such as xargs runs must be this program
         inner = xargs_command(seg)
@@ -472,10 +476,10 @@ def protected_path(policy: dict, raw: str) -> str | None:
 
 def protected_name(policy: dict, raw: str, path_like_only: bool) -> str | None:
     prot = policy["protected"]
-    base = os.path.basename(expand(raw.split("=", 1)[-1]).rstrip("/"))
+    base = os.path.basename(expand(raw.split("=", 1)[-1]).replace("\\", "/").rstrip("/"))
     if not base or base in prot["name_allow"]:
         return None
-    if path_like_only and not ("/" in raw or raw.startswith((".", "~"))):
+    if path_like_only and not ("/" in raw or "\\" in raw or raw.startswith((".", "~"))):
         return None
     if base in prot["names"] or any(fnmatch.fnmatchcase(base, g) for g in prot["name_globs"]):
         return base
@@ -483,7 +487,7 @@ def protected_name(policy: dict, raw: str, path_like_only: bool) -> str | None:
 
 
 def in_no_edit(policy: dict, raw: str) -> bool:
-    norm = expand(raw.split("=", 1)[-1])
+    norm = expand(raw.split("=", 1)[-1]).replace("\\", "/")
     return any(norm == d or norm.startswith(d + "/") or f"/{d}/" in norm + "/" for d in policy["no_edit"])
 
 

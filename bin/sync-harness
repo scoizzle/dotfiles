@@ -46,6 +46,8 @@ HOOK_MATCHER = (
 )
 BEGIN = "  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block."
 END = "  # END managed by bin/sync-harness"
+BEGIN_BUILDER = "  # BEGIN builder deny (from policy/permissions.json); edit the policy, not this block."
+END_BUILDER = "  # END builder deny"
 
 
 def rule(action: str, resource: str, effect: str) -> dict:
@@ -125,6 +127,15 @@ def verifier_block(policy: dict) -> str:
     return "\n".join(lines)
 
 
+def builder_block(policy: dict) -> str:
+    lines = [BEGIN_BUILDER]
+    for sub in policy["builder_git_deny"]:
+        for form in (f"git {sub}*", f"git * {sub}*", f"*git {sub}*"):
+            lines += ["  - action: shell", f'    resource: "{form}"', "    effect: deny"]
+    lines.append(END_BUILDER)
+    return "\n".join(lines)
+
+
 def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
     config_path = repo / "opencode.json"
     config = json.loads(config_path.read_text())
@@ -146,6 +157,13 @@ def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
         else:
             raise SystemExit("agents/verifier.md: no place to put the managed block")
     targets[agent] = text
+
+    builder = repo / "agents" / "implement-deep.md"
+    text = builder.read_text()
+    if BEGIN_BUILDER not in text or END_BUILDER not in text:
+        raise SystemExit("agents/implement-deep.md: missing the builder deny markers; add BEGIN/END builder deny lines")
+    block = builder_block(policy)
+    targets[builder] = re.sub(re.escape(BEGIN_BUILDER) + r".*?" + re.escape(END_BUILDER), lambda _m: block, text, flags=re.S)
     return targets
 
 

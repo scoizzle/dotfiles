@@ -1457,6 +1457,91 @@
     "guard",
     "native"
    ]
+  },
+  {
+   "kind": "shell",
+   "input": "git restore .",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git checkout -- .",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git branch -D old",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api -X DELETE repos/o/r",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "gh pr merge 42 --squash",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "npm publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "git checkout -b feature",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git branch --list",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "gh pr view 42",
+   "expect": "allow"
+  },
+  {
+   "kind": "shell",
+   "input": "npm test",
+   "expect": "allow"
+  },
+  {
+   "kind": "read",
+   "input": "C:\\Users\\u\\work\\.env",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "read",
+   "input": "C:\\Users\\u\\work\\service.json",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "read",
+   "input": "C:\\Users\\u\\src\\app.cs",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "edit",
+   "input": "C:\\Users\\u\\.config\\opencode\\memory\\core\\safety.md",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
   }
  ]
 }

@@ -106,6 +106,19 @@ unattended sessions with `--auto`.
 - `lint-config` assumes last-match-wins rule order, which the schema does not
   state. If opencode changes that, the lint passes against the wrong model.
   Confirm it once against a real denied command after an opencode upgrade.
+- The guard and the globs also deny `git restore`, `git checkout -- <path>`,
+  `git branch -D`, `gh api` with `-X DELETE` or `--method DELETE`,
+  `gh pr merge` and `npm publish` (policy ids `git-restore`,
+  `git-checkout-pathspec`, `git-branch-force-delete`, `gh-api-delete`,
+  `gh-api-delete-long`, `gh-pr-merge`, `npm-publish`). Still not caught:
+  `git checkout .` and `git checkout HEAD <file>` (no `--`), the attached forms
+  `-XDELETE` and `--method=DELETE`, `pnpm publish` and `yarn publish`,
+  `git branch --delete --force`, and paths built from variables at run time.
+- The builder's git denies (`commit`, `add`, `stage`, `update-index`, `push`,
+  `rm`, `mv`, `apply`) are generated into `agents/implement-deep.md` from
+  `builder_git_deny` in the policy; edit the policy, not the block.
+- Windows-style paths (`C:\Users\u\.env`) are normalized to `/` in the guard only;
+  the opencode globs and native rules are not.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.

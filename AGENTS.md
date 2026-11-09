@@ -157,6 +157,20 @@ trial, not by `opencode run`.
 parent cannot spawn a writable child (`interaction_mode_escalation_denied`). Use
 it to explore, then switch the thread to `build` to dispatch.
 
+### Without T3
+
+The T3 tools are the only dispatch channel, so a session without them degrades
+instead of improvising:
+
+- Writable units cannot run: the orchestrator does not edit, so the work is
+  reported blocked. Do not use a native subagent for it; writer agents share the
+  checkout.
+- Read-only reviewers may fall back to the harness's own reviewer. The band's pin
+  does not apply; record the run as degraded.
+- Pinned bands: do not substitute the session model for a band's pin. A T2
+  sign-off that needs the advisor and `second-opinion` does not complete without
+  them; say so and stop.
+
 ## Model routing
 
 Every delegated job runs on its band's pin, not the session's model. The pin

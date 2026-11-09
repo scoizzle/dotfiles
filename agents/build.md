@@ -170,6 +170,8 @@ That line is the whole allowlist. Any other tool name added to it is a bug, and
 If T3 is absent, report the unit blocked. Do not use a native subagent: the
 writer agents share this checkout.
 
+What degrades without T3 is in AGENTS.md, `### Without T3`.
+
 Where AGENTS.md says "run X" (`review-bundle --classify`, `review-log`), dispatch
 X to a worktree unit after a checkpoint. Those write only to the bundle directory
 or the ledger, never the repo.

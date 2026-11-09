@@ -136,6 +136,11 @@ jobs:
       - name: python tools still parse
         run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
 
+      - name: classifier and policy render tests
+        run: |
+          python3 tests/classify.py
+          python3 tests/policy_render.py
+
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke
         run: |
