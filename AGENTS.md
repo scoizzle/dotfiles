@@ -196,9 +196,10 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   reply that the pin did not apply.
 - The advisor and implement bands are never silently downgraded. If T3 is
   absent, say so instead of substituting the session model.
-- A change is critical when `review-bundle --classify` names security, data, or
-  a public contract, or the change touches auth or a schema/data migration. The
-  orchestrator records the trigger in the dispatch.
+- A change is critical when `review-bundle --classify` reports a sensitive-path
+  reason and the change is security, data, or a public contract (not a CI-only
+  change), or it touches auth or a schema/data migration. The orchestrator
+  records the trigger in the dispatch.
 - Reviewers (`review-light`, `review-deep`, `plan-review-deep`, `review-critical`,
   `second-opinion`) run as T3 children with `isolation: "worktree"`, `role: "review"` and the
   review-bundle path in the task. T3 cannot make a child read-only, but a
@@ -293,7 +294,7 @@ If no solution exists (file-based apps such as `install.cs`, `.csproj`-only
 trees), say so in one line and use normal file reads. If `open_solution` fails,
 say so in one line and fall back. Never imply Roslynk answered when it did not.
 
-Read-only agents (the four reviewers) use only the read-only Roslynk tools listed in
+Read-only agents (the four reviewer agent files) use only the read-only Roslynk tools listed in
 the `roslynk-rules` skill, never the ones that write.
 
 `get_diagnostics` is a compile check, not a test run. Tests still go through the

@@ -15,7 +15,7 @@
         "claude-agent/opus"
       ],
       "optionIds": ["variant"],
-      "note": "One instance multiplexes the OpenCode Go plan and the xAI/Claude subscriptions: xai/* draws the xAI login, claude-agent/* the Claude Code login, opencode-go/* the Go plan."
+      "note": "One instance multiplexes the OpenCode Go plan and the Claude subscription: claude-agent/* draws the Claude Code login, opencode-go/* the Go plan."
     },
     "claudeAgent": {
       "enabled": false,
