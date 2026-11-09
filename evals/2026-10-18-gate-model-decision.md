@@ -507,3 +507,31 @@ Code cannot render Grok, so the routed pin is the decorrelated path.
 
 - `grok-4.5` getting a clean-case gate: re-evaluate. `grok-4.5` and `4.6` are
   faster but ungated on the clean case.
+
+## Phase 9 — second-opinion to MiMo Flash (2026-11-09)
+
+On 2026-11-09 the user directed that `second-opinion` run on
+`opencode-go/mimo-v2.6-flash`, bare (the model exposes no `variant` option).
+AGENTS.md, `agents/second-opinion.md` and `policy/providers.json` were updated.
+
+Why this is not a gated result — state all four plainly:
+- The outgoing pin, `opencode-go/grok-4.7`, was not advertised by the `opencode`
+  instance when delegated on 2026-11-09 ("Model opencode-go/grok-4.7 is not
+  advertised by provider opencode"), so the band was unreachable.
+- This knowingly puts MiMo at T2 against the 2026-10-18 D5 veto above: on the
+  gate set it missed the plan's 🔴 premise and the 🟠 `enum-column-type` change,
+  and it timed out on the clean case at the 1200 s cap.
+- No gate run exists for MiMo in the `second-opinion` role. The veto was recorded
+  for the T2 reviewer role, so this is an override, not an extrapolation.
+- `evals/run.sh` is unchanged and still refuses this pairing: it exits 2 for
+  `-m` naming MiMo at T2 (lines 69-79, 185-192). That guard has a second defect
+  now visible: it matches on `$MODEL` only, and `$MODEL` is empty when `-m` is
+  omitted, so a bare `./evals/run.sh -a second-opinion` would read the MiMo pin
+  from the agent file and bypass the guard silently.
+
+Unchanged: the Claude Code native fallback stays `sonnet`
+(`policy/permissions.json`, `readonly_agents.models`); Claude Code cannot render
+MiMo, so the routed pin remains the decorrelated path.
+
+Revisit when a second-opinion gate run on MiMo misses a seeded 🟠 or 🔴, or when
+`opencode-go/grok-4.7` is advertised again and the pin can be re-evaluated.

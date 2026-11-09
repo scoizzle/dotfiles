@@ -1,5 +1,5 @@
 ---
-description: Mid-tier independent read-only T2 second reviewer from a different model family than review-deep. Use in parallel at T2 sign-off, and do not show it the first report. Not the advisor pin.
+description: Independent read-only T2 second reviewer from a different model family than review-deep; it shares the MiMo Flash pin with explore/review-light. Use in parallel at T2 sign-off, and do not show it the first report. Not the advisor pin.
 mode: subagent
 model: opencode-go/mimo-v2.6-flash
 steps: 30
