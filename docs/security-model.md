@@ -127,10 +127,16 @@ unattended sessions with `--auto`.
   names the flags that take a value). Accepted collateral: `git restore --help`,
   `npm publish --dry-run`, `gh pr merge --help` and `git checkout -b feature --`
   are denied too. `git branch -d` (lowercase) is allowed.
-- The classifier treats a doc as sensitive when its name has an anchored
-  `auth`/`secret` token (`auth-redesign.md`, `auth.json`), or contains
-  `migration`, `schema`, `permission` or `credential`. `author-notes.md` and
-  `src/author.cs` stay T1. A security doc with an unrelated name still floors T1.
+- The `npm-publish` rule matches the token `publish` anywhere in an `npm`
+  command, so every global-flag form is denied (`npm --loglevel silent publish`,
+  `npm -w pkg publish`, `npm --otp 123 publish`). Accepted over-block: `npm run
+  publish` and `npm test -- publish` are denied too. The native
+  `Bash(npm publish:*)` rule is prefix-only and remains a known limit.
+- The classifier treats a doc (`.md`/`.txt`) as sensitive when its name has an
+  anchored `auth`/`secret` token (`auth-redesign.md`, `auth.json`), `authentication`,
+  `authorization`, or contains `migration`, `schema`, `permission` or
+  `credential`. `author-notes.md` stays T1. Source files use broad substring
+  matches (`*auth*`, `*secret*`), so `src/author.cs` and `AuthService.cs` floor T2. A security doc with an unrelated name still floors T1.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.

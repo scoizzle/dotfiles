@@ -271,14 +271,7 @@
       {
         "id": "npm-publish",
         "program": "npm",
-        "value_flags": [
-          "--prefix",
-          "--registry",
-          "--userconfig",
-          "--cache",
-          "--globalconfig"
-        ],
-        "leading": [
+        "tokens": [
           "publish"
         ],
         "opencode": [

@@ -16,7 +16,14 @@ _loader.exec_module(review_bundle)
 
 CASES = [
     ("docs/author-notes.md", False),
-    ("src/author.cs", False),
+    ("src/author.cs", True),
+    ("src/AuthService.cs", True),
+    ("src/Authentication.cs", True),
+    ("src/authorization.py", True),
+    ("src/OAuthClient.cs", True),
+    ("lib/SecretStore.cs", True),
+    ("src/secretmanager.go", True),
+    ("docs/authentication-design.md", True),
     ("docs/plan-csharp-native-migration.md", True),
     ("docs/auth-redesign.md", True),
     ("docs/schema-change.md", True),

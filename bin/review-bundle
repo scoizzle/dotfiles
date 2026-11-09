@@ -137,7 +137,21 @@ ALWAYS = (
     "*opencode.json",
     "*global.json",
 )
-SENSITIVE = (
+SOURCE_SENSITIVE = (
+    "*.sql",
+    "*migration*",
+    "*schema*",
+    "*.csproj",
+    "*.sln",
+    "*.slnx",
+    "*Dockerfile*",
+    "*auth*",
+    "*secret*",
+    "*credential*",
+    "*.env*",
+    "*permission*",
+)
+DOC_SENSITIVE = (
     "*.sql",
     "*migration*",
     "*schema*",
@@ -153,6 +167,8 @@ SENSITIVE = (
     "*auth.toml",
     "*auth.yml",
     "*auth.yaml",
+    "*authentication*",
+    "*authorization*",
     "*secret-*",
     "*secret.*",
     "*secrets.*",
@@ -168,7 +184,8 @@ def is_sensitive(rel):
     low = rel.lower()
     if any(fnmatch.fnmatchcase(low, pat.lower()) for pat in ALWAYS):
         return True
-    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in SENSITIVE)
+    pats = DOC_SENSITIVE if low.endswith((".md", ".txt")) else SOURCE_SENSITIVE
+    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in pats)
 
 
 def classify(repo, planned, ref="HEAD"):

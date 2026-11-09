@@ -1510,6 +1510,31 @@
   },
   {
    "kind": "shell",
+   "input": "npm --loglevel silent publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "npm -w pkg publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "npm --workspace pkg publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "npm --otp 123 publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
+   "input": "npm --tag next publish",
+   "expect": "deny"
+  },
+  {
+   "kind": "shell",
    "input": "cd x && git restore .",
    "expect": "deny"
   },
