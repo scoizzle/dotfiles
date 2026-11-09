@@ -183,8 +183,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
 | implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
-| verifier | manual build, test and contract check | `opencode` | `opencode-go/grok-4.7` | `variant=high` |
+| verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
+| review-critical | security, auth, schema/data migration or public-contract T2 sign-off; review-deep's prompt on the Opus pin | `opencode` | `claude-agent/opus` | `variant=high` |
 
 - Call `orchestrator_capabilities` once per thread before the first delegation,
   and again only after an error or a provider the user names. Pass the pin as
@@ -195,12 +196,19 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   reply that the pin did not apply.
 - The advisor and implement bands are never silently downgraded. If T3 is
   absent, say so instead of substituting the session model.
-- Reviewers (`review-light`, `review-deep`, `plan-review-deep`, `second-opinion`)
-  run as T3 children with `isolation: "worktree"`, `role: "review"` and the
+- A change is critical when `review-bundle --classify` reports a sensitive-path
+  reason and the change is security, data, or a public contract (not a CI-only
+  change), or it touches auth or a schema/data migration. The orchestrator
+  records the trigger in the dispatch.
+- Reviewers (`review-light`, `review-deep`, `plan-review-deep`, `review-critical`,
+  `second-opinion`) run as T3 children with `isolation: "worktree"`, `role: "review"` and the
   review-bundle path in the task. T3 cannot make a child read-only, but a
   worktree child's edits never reach your checkout; confirm `git status` is
   unchanged afterwards. With no T3, use the harness's own read-only reviewer
   (`agents/*.md`, `~/.claude/agents`) and say the pin did not apply.
+  `review-critical` uses `review-deep`'s prompt on the Opus pin, so no
+  `agents/review-critical.md` exists and, without T3, a critical review does not
+  complete rather than silently downgrading.
 - `isolation: "worktree"` also for any child that needs its own checkout or will
   open a PR; `shared` only for research. `mode: "wait"` only when this turn needs
   the result (a gate does; a background job does not). `role` names the band's
@@ -211,12 +219,17 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   plan is fixed; (2) the same error or failing assertion twice in a row, passing
   both attempts; (3) T2 sign-off, with `second-opinion` in parallel. A T1 retry
   stays on the builder band. At sign-off, cap dispatches: one `review-deep` and
-  one `second-opinion` in parallel, then one re-review after a fix. A third is a
-  human escalation; do not cap reviewer steps, only dispatches.
-- `agents/*.md` are the native fallback, not the routing source, and a pin must
-  name an enabled instance in `policy/providers.json`. `grok-4.5` has no
-  clean-case gate and is not in the allowlist; re-add it only after one passes.
-  The verifier stays on `grok-4.7`.
+  one `second-opinion` in parallel, then one re-review after a fix. On a critical
+  T2, `review-critical` replaces `review-deep` at sign-off, so it stays two
+  parallel dispatches (`review-critical` + `second-opinion`); the post-fix
+  re-review uses the same pin. A third is a human escalation; do not cap
+  reviewer steps, only dispatches.
+- `agents/*.md` are the native fallback, not the routing source. Pins must name
+  an enabled instance and an allowlisted model in `policy/providers.json`.
+  `grok-4.7` is retired as of 2026-11-09 and no band pins it. Sonnet 5.5
+  (`claude-agent/sonnet`) is the default review and verifier pin; Opus 5.5
+  (`claude-agent/opus`) is the critical-review escalation. `grok-4.5` stays
+  unlisted.
 - Claude quota has headroom (2026-11-04): the advisor joins `implement-deep` on
   Claude.
 
@@ -281,7 +294,7 @@ If no solution exists (file-based apps such as `install.cs`, `.csproj`-only
 trees), say so in one line and use normal file reads. If `open_solution` fails,
 say so in one line and fall back. Never imply Roslynk answered when it did not.
 
-Read-only agents (the four reviewers) use only the read-only Roslynk tools listed in
+Read-only agents (the four reviewer agent files) use only the read-only Roslynk tools listed in
 the `roslynk-rules` skill, never the ones that write.
 
 `get_diagnostics` is a compile check, not a test run. Tests still go through the
