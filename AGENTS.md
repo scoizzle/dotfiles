@@ -181,7 +181,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | Band | Work | providerInstanceId | model | options |
 | --- | --- | --- | --- | --- |
 | explore | repo maps and multi-file grep | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=low` |
-| review-light | T1 diff review | `opencode` | `opencode-go/mimo-v2.6-flash` | none |
+| review-light | T1 diff review | `opencode` | `claude-agent/haiku` | none |
 | build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |

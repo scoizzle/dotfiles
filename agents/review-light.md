@@ -1,7 +1,7 @@
 ---
 description: Cheap read-only T1 change reviewer. Reviews a small diff and its check output against the plan and done-when. Use for T1 changes only, never for repo mapping or T2 sign-off.
 mode: subagent
-model: opencode-go/mimo-v2.6-flash
+model: claude-agent/haiku
 steps: 12
 color: "#4cc9f0"
 permissions:
