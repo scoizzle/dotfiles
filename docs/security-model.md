@@ -106,6 +106,37 @@ unattended sessions with `--auto`.
 - `lint-config` assumes last-match-wins rule order, which the schema does not
   state. If opencode changes that, the lint passes against the wrong model.
   Confirm it once against a real denied command after an opencode upgrade.
+- The guard and the globs also deny `git restore`, `git checkout -- <path>`,
+  `git branch -D`, `gh api` with `-X DELETE` or `--method DELETE`,
+  `gh pr merge` and `npm publish` (policy ids `git-restore`,
+  `git-checkout-pathspec`, `git-branch-force-delete`, `gh-api-delete`,
+  `gh-api-delete-long`, `gh-pr-merge`, `npm-publish`). Still not caught:
+  `git checkout .` and `git checkout HEAD <file>` (no `--`), the attached forms
+  `-XDELETE` and `--method=DELETE`, `pnpm publish` and `yarn publish`,
+  `git branch --delete --force`, and paths built from variables at run time.
+- The builder's git denies (`commit`, `add`, `stage`, `update-index`, `push`,
+  `rm`, `mv`, `apply`) are generated into `agents/implement-deep.md` from
+  `builder_git_deny` in the policy; edit the policy, not the block.
+- The guard normalizes `\` to `/` in `protected_path`, `protected_name` and
+  `in_no_edit` (`tests/guard_windows.py` proves it with a Windows-shaped home).
+  It cannot help where the shell has already eaten the backslashes: `shlex` turns
+  `cat C:\Users\u\.env` into one backslash-free token. The opencode globs and
+  native rules match `/` only.
+- Global flags before the subcommand are skipped for `gh` and `npm` rules
+  (`gh --repo o/r pr merge`, `npm --silent publish`; `value_flags` in the policy
+  names the flags that take a value). Accepted collateral: `git restore --help`,
+  `npm publish --dry-run`, `gh pr merge --help` and `git checkout -b feature --`
+  are denied too. `git branch -d` (lowercase) is allowed.
+- The `npm-publish` rule matches the token `publish` anywhere in an `npm`
+  command, so every global-flag form is denied (`npm --loglevel silent publish`,
+  `npm -w pkg publish`, `npm --otp 123 publish`). Accepted over-block: `npm run
+  publish` and `npm test -- publish` are denied too. The native
+  `Bash(npm publish:*)` rule is prefix-only and remains a known limit.
+- The classifier treats a doc (`.md`/`.txt`) as sensitive when its name has an
+  anchored `auth`/`secret` token (`auth-redesign.md`, `auth.json`), `authentication`,
+  `authorization`, or contains `migration`, `schema`, `permission` or
+  `credential`. `author-notes.md` stays T1. Source files use broad substring
+  matches (`*auth*`, `*secret*`), so `src/author.cs` and `AuthService.cs` floor T2. A security doc with an unrelated name still floors T1.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.

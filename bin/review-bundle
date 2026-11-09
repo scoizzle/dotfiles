@@ -129,12 +129,15 @@ def write_parts(root, prefix, text):
 # T1 limits from AGENTS.md, plus the paths it names as always-T2.
 T1_MAX_FILES = 3
 T1_MAX_LINES = 400
-SENSITIVE = (
+ALWAYS = (
     ".github/*",
-    "*opencode.json",
     "agents/*",
+    "policy/*",
     "memory/core/*",
+    "*opencode.json",
     "*global.json",
+)
+SOURCE_SENSITIVE = (
     "*.sql",
     "*migration*",
     "*schema*",
@@ -148,11 +151,41 @@ SENSITIVE = (
     "*.env*",
     "*permission*",
 )
+DOC_SENSITIVE = (
+    "*.sql",
+    "*migration*",
+    "*schema*",
+    "*.csproj",
+    "*.sln",
+    "*.slnx",
+    "*Dockerfile*",
+    "*auth-*",
+    "*auth.*",
+    "*auth_*",
+    "*/auth/*",
+    "*auth.json",
+    "*auth.toml",
+    "*auth.yml",
+    "*auth.yaml",
+    "*authentication*",
+    "*authorization*",
+    "*secret-*",
+    "*secret.*",
+    "*secrets.*",
+    "*secret_*",
+    "*/secrets/*",
+    "*credential*",
+    "*.env*",
+    "*permission*",
+)
 
 
 def is_sensitive(rel):
     low = rel.lower()
-    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in SENSITIVE)
+    if any(fnmatch.fnmatchcase(low, pat.lower()) for pat in ALWAYS):
+        return True
+    pats = DOC_SENSITIVE if low.endswith((".md", ".txt")) else SOURCE_SENSITIVE
+    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in pats)
 
 
 def classify(repo, planned, ref="HEAD"):

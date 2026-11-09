@@ -301,6 +301,11 @@ def check_instructions() -> None:
         fail("AGENTS.md: '### Orchestrator primary' must name agents/build.md and implementor")
     elif "checkpoint" not in primary.group(1) or "integrate" not in primary.group(1):
         fail("AGENTS.md: '### Orchestrator primary' must name checkpoint and integrate units")
+    without = re.search(r"^### Without T3[ \t]*$(.*?)(?=^#{1,3} |\Z)", text, flags=re.M | re.S)
+    if not without:
+        fail("AGENTS.md: missing heading '### Without T3'")
+    elif "do not substitute" not in without.group(1):
+        fail("AGENTS.md: '### Without T3' must say 'do not substitute'")
     section = re.search(r"^## Model routing\s*$(.*?)(?=^## )", text, flags=re.M | re.S)
     rows = [l for l in (section.group(1) if section else "").splitlines() if l.startswith("|")][2:]
     if not rows:
@@ -348,6 +353,11 @@ def main() -> int:
         for r in rules:
             if r[2] not in EFFECTS:
                 fail(f"agents/{path.name}: bad effect {r[2]!r}")
+        seen: set[tuple[str, str, str]] = set()
+        for r in rules:
+            if r in seen:
+                fail(f"agents/{path.name}: duplicate rule {r}")
+            seen.add(r)
         agents[name] = base + rules
     agents.setdefault("(global)", base)
 
@@ -376,7 +386,7 @@ def main() -> int:
                 fail(f"{name}: read {target} is {effective(rules, 'read', target)}, must be deny")
         if effective(rules, "read", "src/x.cs") != "deny" and effective(rules, "read", "/work/.env.example") == "deny":
             fail(f"{name}: .env.example should stay readable")
-        for target in ("memory/core/safety.md", "/home/u/.config/opencode/memory/core/safety.md"):
+        for target in ("memory/core/safety.md", "~/.config/opencode/memory/core/safety.md"):
             if effective(rules, "edit", target) != "deny":
                 fail(f"{name}: edit {target} is {effective(rules, 'edit', target)}, must be deny")
 

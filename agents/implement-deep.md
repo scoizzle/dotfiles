@@ -17,11 +17,15 @@ permissions:
   - action: question
     resource: "*"
     effect: deny
+  # BEGIN builder deny (from policy/permissions.json); edit the policy, not this block.
   - action: shell
     resource: "git commit*"
     effect: deny
   - action: shell
     resource: "git * commit*"
+    effect: deny
+  - action: shell
+    resource: "*git commit*"
     effect: deny
   - action: shell
     resource: "git add*"
@@ -30,10 +34,16 @@ permissions:
     resource: "git * add*"
     effect: deny
   - action: shell
+    resource: "*git add*"
+    effect: deny
+  - action: shell
     resource: "git stage*"
     effect: deny
   - action: shell
     resource: "git * stage*"
+    effect: deny
+  - action: shell
+    resource: "*git stage*"
     effect: deny
   - action: shell
     resource: "git update-index*"
@@ -42,22 +52,13 @@ permissions:
     resource: "git * update-index*"
     effect: deny
   - action: shell
+    resource: "*git update-index*"
+    effect: deny
+  - action: shell
     resource: "git push*"
     effect: deny
   - action: shell
     resource: "git * push*"
-    effect: deny
-  - action: shell
-    resource: "*git commit*"
-    effect: deny
-  - action: shell
-    resource: "*git add*"
-    effect: deny
-  - action: shell
-    resource: "*git stage*"
-    effect: deny
-  - action: shell
-    resource: "*git update-index*"
     effect: deny
   - action: shell
     resource: "*git push*"
@@ -69,10 +70,16 @@ permissions:
     resource: "git * rm*"
     effect: deny
   - action: shell
+    resource: "*git rm*"
+    effect: deny
+  - action: shell
     resource: "git mv*"
     effect: deny
   - action: shell
     resource: "git * mv*"
+    effect: deny
+  - action: shell
+    resource: "*git mv*"
     effect: deny
   - action: shell
     resource: "git apply*"
@@ -81,14 +88,9 @@ permissions:
     resource: "git * apply*"
     effect: deny
   - action: shell
-    resource: "*git rm*"
-    effect: deny
-  - action: shell
-    resource: "*git mv*"
-    effect: deny
-  - action: shell
     resource: "*git apply*"
     effect: deny
+  # END builder deny
 ---
 
 You implement an **approved T2 plan**. The caller gives you the plan, the

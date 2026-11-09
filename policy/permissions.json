@@ -165,6 +165,122 @@
           "Bash(xargs * rm -rf*)",
           "Bash(xargs * rm -fr*)"
         ]
+      },
+      {
+        "id": "git-restore",
+        "git": "restore",
+        "opencode": [
+          "git restore*",
+          "*git restore*",
+          "*git -* restore*"
+        ],
+        "native": [
+          "Bash(git restore:*)"
+        ]
+      },
+      {
+        "id": "git-checkout-pathspec",
+        "git": "checkout",
+        "pathspec": true,
+        "opencode": [
+          "*git checkout -- *",
+          "*git -* checkout -- *"
+        ],
+        "native": [
+          "Bash(git checkout --:*)"
+        ]
+      },
+      {
+        "id": "git-branch-force-delete",
+        "git": "branch",
+        "short": "D",
+        "opencode": [
+          "*git branch -D*",
+          "*git -* branch -D*"
+        ],
+        "native": [
+          "Bash(git branch -D:*)"
+        ]
+      },
+      {
+        "id": "gh-api-delete",
+        "program": "gh",
+        "value_flags": [
+          "-R",
+          "--repo",
+          "--hostname"
+        ],
+        "leading": [
+          "api"
+        ],
+        "tokens": [
+          "-X",
+          "DELETE"
+        ],
+        "opencode": [
+          "*gh api*-X*DELETE*",
+          "*gh -* api*-X*DELETE*"
+        ],
+        "native": [
+          "Bash(gh api -X DELETE:*)"
+        ]
+      },
+      {
+        "id": "gh-api-delete-long",
+        "program": "gh",
+        "value_flags": [
+          "-R",
+          "--repo",
+          "--hostname"
+        ],
+        "leading": [
+          "api"
+        ],
+        "tokens": [
+          "--method",
+          "DELETE"
+        ],
+        "opencode": [
+          "*gh api*--method*DELETE*",
+          "*gh -* api*--method*DELETE*"
+        ],
+        "native": [
+          "Bash(gh api --method DELETE:*)"
+        ]
+      },
+      {
+        "id": "gh-pr-merge",
+        "program": "gh",
+        "value_flags": [
+          "-R",
+          "--repo",
+          "--hostname"
+        ],
+        "leading": [
+          "pr",
+          "merge"
+        ],
+        "opencode": [
+          "*gh pr merge*",
+          "*gh -* pr merge*"
+        ],
+        "native": [
+          "Bash(gh pr merge:*)"
+        ]
+      },
+      {
+        "id": "npm-publish",
+        "program": "npm",
+        "tokens": [
+          "publish"
+        ],
+        "opencode": [
+          "*npm publish*",
+          "*npm -* publish*"
+        ],
+        "native": [
+          "Bash(npm publish:*)"
+        ]
       }
     ]
   },
@@ -257,5 +373,15 @@
       "plan-review-deep": "sonnet",
       "second-opinion": "sonnet"
     }
-  }
+  },
+  "builder_git_deny": [
+    "commit",
+    "add",
+    "stage",
+    "update-index",
+    "push",
+    "rm",
+    "mv",
+    "apply"
+  ]
 }
