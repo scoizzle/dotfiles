@@ -200,7 +200,7 @@ def agent_body(path: Path) -> tuple[str, str]:
 
 
 def render_claude_agents(policy: dict, repo: Path) -> dict[str, str]:
-    """name -> Claude Code subagent file. Read-only tools only, so a review cannot edit."""
+    """name -> Claude Code subagent file. Read-only tools only, so a read-only agent cannot edit."""
     spec = policy["readonly_agents"]
     tools = spec["tools"] + [f"mcp__roslynk__{t}" for t in spec["roslynk_read_tools"]]
     out = {}

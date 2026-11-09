@@ -196,7 +196,7 @@ def check_shared_surfaces() -> None:
     policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
     spec = policy["readonly_agents"]
     if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter"}:
-        fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only reviewers in agents/")
+        fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only agents in agents/")
     writers = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch"}
     missing = [n for n in spec["models"] if not (ROOT / "agents" / f"{n}.md").exists()]
     if missing:
@@ -209,9 +209,9 @@ def check_shared_surfaces() -> None:
         bad = [t for t in tools if t in writers or (t.startswith("mcp__") and not t.startswith("mcp__roslynk__"))]
         bad += [t for t in tools if t.startswith("mcp__roslynk__") and t[14:] not in spec["roslynk_read_tools"]]
         if bad:
-            fail(f"rendered Claude reviewer {name} has non-read-only tools: {bad}")
+            fail(f"rendered Claude read-only agent {name} has non-read-only tools: {bad}")
         if not text.startswith("---\nname: " + name + "\n"):
-            fail(f"rendered Claude reviewer {name} has a bad header")
+            fail(f"rendered Claude read-only agent {name} has a bad header")
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
         mine = home / ".claude" / "agents" / "review-light.md"
@@ -400,15 +400,23 @@ def main() -> int:
         if rules is None:
             fail(f"read-only agent {name} has no agents/{name}.md")
             continue
-        for action, sample in (("edit", "src/x.cs"), ("shell", "ls"), ("subagent", "explore")):
+        for action, sample in (("edit", "src/x.cs"), ("shell", "ls"), ("subagent", "explore"),
+                               ("execute", "*"), ("webfetch", "*"), ("websearch", "*"),
+                               ("question", "*"), ("opencode_session_rename", "*"),
+                               ("opencode_worktree_create", "*"), ("opencode_worktree_remove", "*"),
+                               ("opencode_session_move", "*"), ("roslynk_apply_patch", "*"),
+                               ("roslynk_apply_code_fix", "*"), ("roslynk_apply_code_action", "*"),
+                               ("roslynk_change_signature", "*"), ("roslynk_extract_method", "*"),
+                               ("roslynk_rename_symbol", "*"), ("roslynk_rename_parameter", "*"),
+                               ("roslynk_remove_unused_usings", "*")):
             if effective(rules, action, sample) != "deny":
                 fail(f"{name}: {action} must be deny")
     if "dream-drafter" in agents and effective(agents["dream-drafter"], "read", "src/x.cs") != "deny":
         fail("dream-drafter: read must be deny; it handles untrusted text")
 
     explore = agents.get("explore")
-    if explore is not None and effective(explore, "edit", "src/x.cs") != "deny":
-        fail("explore: edit must be deny; it is the read-only swarm")
+    if explore is not None and effective(explore, "browser", "*") != "deny":
+        fail("explore: browser must be deny; it is the read-only swarm")
 
     build = agents.get("build")
     if build is None:

@@ -75,7 +75,11 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   Never edit or run mutating shell.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
   and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
-  per line, within the line cap the brief sets.
+  per line, within the line cap the brief sets. It dispatches no further units.
+  T3 cannot make a child read-only (the child is seated as `build`, so agent denies
+  do not bind); the brief is the guarantee. Dispatch it with `isolation: "worktree"`
+  and `role: "research"`, and after it returns run a `git status --short` check
+  (via a check unit) to confirm the tree is unchanged.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
 - `ROLE: checkpoint unit` — shared checkout: run the named checks, stage only the
@@ -134,6 +138,9 @@ start on `deepseek`; move up only for the reasons in the table.
 | --- | --- | --- |
 | `deepseek` | `opencode-go/deepseek-v4.1-flash`, `variant=high` | volume, T0/T1, a named test oracle, mechanical or well-scoped work |
 | `sonnet` | `claude-agent/sonnet`, `variant=medium` | T2 after plan lock, cross-cutting edits, no cheap oracle, or a cheap attempt already failed |
+| `explore` | `opencode-go/mimo-v2.6-flash`, no variant | read-only repo maps and multi-file grep |
+
+An explore dispatch passes no `variant` option: `options` is omitted or empty.
 
 A second cheap attempt at the same failure is not a tier choice; it is a stop.
 Move to `sonnet` or escalate.
@@ -156,7 +163,7 @@ Send exactly this shape, nothing looser:
 ```text
 ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
-TIER: deepseek | sonnet — <why, one clause>
+TIER: deepseek | sonnet | explore — <why, one clause>
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
@@ -210,7 +217,8 @@ dirty tree is invisible to them.
 
 Accept only when all of these hold:
 
-- the chosen tier matches the table, or the deviation is stated and argued;
+- the chosen tier (`deepseek`, `sonnet` or `explore`) matches the table, or the
+  deviation is stated and argued;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;
