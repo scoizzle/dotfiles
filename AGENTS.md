@@ -208,14 +208,15 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 
 ## Memory
 
-Durable memory is `~/.config/opencode/memory/` (this repo's `memory/`, linked
-by `install.cs`).
+Durable memory is `~/.config/opencode/memory/`: a dedicated sparse clone at
+`~/.config/opencode/.memory`, symlinked at `~/.config/opencode/memory` (this
+repo's `memory/`, provisioned by `install.cs`).
 
 Before heavy work, read `~/.config/opencode/memory/INDEX.md`, the bookshelf: a
 blurb per file. Load a memory file only when its blurb matches the task. Dated
-files under `memory/learnings/` are local, so the index names the pattern; when
-it matches (a task that could repeat an earlier failure, command, or path), read
-the newest `learnings/YYYY-MM-DD.md` files.
+files under `memory/learnings/` are tracked and travel with the clone, so the index
+names the pattern; when it matches (a task that could repeat an earlier failure,
+command, or path), read the newest `learnings/YYYY-MM-DD.md` files.
 
 Never edit `memory/core/**`: conventions and safety. `opencode.json` denies
 `edit` there (edit, write, patch), but a shell command is matched as text, so
@@ -227,8 +228,11 @@ header in `memory/learnings/README.md`: who, when in UTC, session or context
 id, and source.
 
 `dream` stages its output in `memory/learnings/pending/`, which agents do not
-read. A person promotes it with `~/.config/opencode/bin/dream --promote`.
-Read `memory/learnings/working.md` first when it exists, and open any dated file
+read and which exists in git only on the `memory/dream` staging branch. A person
+promotes it with `~/.config/opencode/bin/dream --promote`, then runs
+`memory-nightly` again so the archive is published and `pending/` drops off the
+draft before merge. Read
+`memory/learnings/working.md` first when it exists, and open any dated file
 its `source:` line does not name; never write it, since promote generates it.
 
 Do not rewrite memory mid-task as a substitute for finishing the work.

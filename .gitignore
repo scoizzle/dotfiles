@@ -6,13 +6,19 @@ service.json
 cli.json
 reviews.jsonl
 
-# Agent-written lessons. install.cs symlinks memory/ to
-# ~/.config/opencode/memory/, so a dream writes these into this working tree.
-# They stay on disk in the checkout and do not travel with git.
-# README.md and .gitkeep stay tracked.
+# Agent-written lessons. ~/.config/opencode/.memory is the sparse git clone of this
+# repo (install.cs); ~/.config/opencode/memory is the symlink to .memory/memory, and
+# dream writes into memory/learnings/ through it.
+# Dated files (YYYY-MM-DD.md) travel with git; README.md and .gitkeep stay tracked.
+# pending/ is force-added only on the memory/dream staging branch.
 memory/learnings/*
 !memory/learnings/README.md
 !memory/learnings/.gitkeep
+!memory/learnings/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md
+memory/learnings/pending/
+memory/learnings/working.md
+memory/learnings/.working.lock
+memory/learnings/.working-*.tmp
 
 __pycache__/
 *.py[cod]

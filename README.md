@@ -89,14 +89,17 @@ cd ~/dotfiles
 
 `install.cs` symlinks each managed path into `~/.config/opencode`. Symlinks mean
 there is exactly one copy of every file — edit it in either location, it's the
-same file, and `git status` in this repo shows the change immediately.
+same file, and `git status` in this repo shows the change immediately. Memory is
+the one exception: it is provisioned as a git clone at
+`~/.config/opencode/.memory`, with `~/.config/opencode/memory` symlinked into it.
+See [Memory: what travels](#memory-what-travels).
 
 Anything already sitting at a destination is **moved** to
 `~/.config/opencode.bak-<timestamp>/`, never deleted. Re-running is idempotent.
 
 `./install.cs --copy` copies instead of linking, for machines where symlinks are
 a problem. That mode is one-way: edits made in `~/.config/opencode` will not come
-back here.
+back here. Memory is the same sparse clone and `memory` symlink in either mode.
 
 ## What this repo manages
 
@@ -112,7 +115,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy, its test vectors, and the T3 provider snapshot the routing table is linted against | permissions reach all three via `bin/sync-harness`; the snapshot is read by `bin/lint-config` |
-| `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
+| `memory/`       | bookshelf, read-only core, learnings format; provisioned as a sparse clone at `~/.config/opencode/.memory`, symlinked as `~/.config/opencode/memory` | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
@@ -127,6 +130,59 @@ and `--apply`; both are safe to repeat. Verify what Grok actually loads with
 How the bookshelf and the out-of-band dream pass fit together is in
 [`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
 
+### Memory: what travels
+
+`~/.config/opencode/.memory` is a git clone of this repository, sparse to
+`memory/` plus `.gitignore`. `~/.config/opencode/memory` is a symlink to
+`.memory/memory`, so every path a consumer already used — `memory/INDEX.md`,
+`memory/core/`, `memory/learnings/` — keeps resolving. The clone is not the
+checkout you edit.
+
+`install.cs` provisions the clone, links `memory` into it, and
+`./install.cs --check` verifies it without network: the `origin` URL matches this
+repo, the sparse set contains `/memory/`, and the payload and the `memory` symlink
+are in place. If `memory` is already a symlink, its raw target is recorded in
+`memory.link-target` in the backup and the link is removed; the target is left
+untouched. An existing `memory` directory is moved to
+`~/.config/opencode.bak-<stamp>/memory/`, and `learnings/**` are copied into the
+clone without overwriting, keeping a differing local file under
+`learnings/.conflict/`. A `.memory` that is not a clone is moved to
+`~/.config/opencode.bak-<stamp>/memory-src/`, and its `memory/learnings/**` are
+copied into the new clone the same way; the old directory stays there. A `.memory`
+that is a symlink is refused with a clear failed line rather than replaced. An
+interrupted `memory/` migration resumes on the next run: the old tree stays in the
+backup and the next run finishes the copy; a `memory-src` copy has no marker and
+is not retried. Re-running is idempotent.
+
+The three tiers decide what travels:
+
+- `memory/core/` — curated workflow invariants, portable, edit-denied. It holds
+  rules about how work is cut, not model IDs or harness quirks, which go stale on
+  another machine.
+- `memory/learnings/YYYY-MM-DD.md` — dated and tracked. `bin/memory-nightly`
+  publishes the clone's learnings state to the `memory/dream` branch as a draft PR,
+  so a clone elsewhere gets them after a person merges. A dated file is published
+  only as an append to the upstream copy; otherwise the run skips it with a warning.
+  Promote locally, run `memory-nightly` again to publish the archive and drop the
+  promoted `pending/` file, then review and merge; merging the first publish leaves
+  `pending/` on `main`, which CI rejects.
+- `memory/learnings/pending/` and `working.md` — local. `pending/` is force-added
+  only on the `memory/dream` branch, and CI exempts it only there while the PR is a
+  draft, so an unmerged draft never reaches `main`; `working.md` is rebuilt in each
+  working copy by `dream --promote`. The nightly never publishes `README.md` or
+  `.gitkeep`, and `--drop-pending YYYY-MM-DD.md` removes a rejected pending file
+  from the branch.
+
+Someone who clones this repo gets `memory/INDEX.md`, `memory/core/`, and the dated
+learnings that have been promoted and merged. The pending queue and `working.md`
+live only on the staging branch and in a working copy. The clone tracks `origin`'s
+default branch, not your local `HEAD`; the nightly pushes this machine's learnings
+to that origin, so a fork without write access fails the push. Use one machine per
+branch — `--branch memory/dream-<host>` when a machine needs its own — because two
+machines on one branch overwrite each other's draft. A missing or broken `--dream`
+blocks publishing, and a refused machine-path line names its `file:line` for
+`--drop-pending` or a hand edit.
+
 ## What it deliberately does not manage
 
 Left in `~/.config/opencode`, untracked, per machine:
@@ -136,12 +192,11 @@ Left in `~/.config/opencode`, untracked, per machine:
   add it to `entries` in `install.cs` with `--copy` if you want it to travel.
 - `reviews.jsonl` — append-only log of review runs.
 - `evals/canary-*/` — recorded model output from past eval runs.
-
-`memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored; that
-includes the generated `working.md`, which is local-only like the dated files. With
-the default symlink, `bin/dream` writes those files into this checkout: they
-are on disk here, and `git clone` does not carry them to another machine. A
-`--copy` install keeps them only under `~/.config/opencode/memory/learnings/`.
+- `memory/learnings/pending/` and `memory/learnings/working.md` — the review queue
+  and the generated working set. Dated `memory/learnings/YYYY-MM-DD.md` files are
+  tracked and do travel; `pending/` exists in git only on a `memory/dream` staging
+  branch, and CI allows it only while that PR is a draft, and `working.md` is
+  rebuilt by `dream --promote` on each machine.
 
 Outside `~/.config/opencode`, also untracked on purpose:
 

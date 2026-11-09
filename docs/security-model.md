@@ -23,6 +23,22 @@ that every later session trusts).
 | Drafted lessons are staged in `memory/learnings/pending/` and reach agents only through `dream --promote`, which needs a person | `bin/dream` | Human gate. |
 | `dream` never writes `memory/core/`; `--promote` also rewrites only `memory/learnings/working.md`, from the dated archive, after the same confirmation | `bin/dream` | Path allowlist in `assert_working_target`. |
 
+The nightly script (`bin/memory-nightly`) is a command-level path, not a tool-level
+one: it pushes only to a `memory/dream` staging branch (one branch per machine, for
+example `memory/dream-<host>`) as a draft PR, never to `main`, never with force,
+never deleting a ref, and never enabling auto-merge. Dream does the validation and
+redaction that matter: the digest it sends is redacted for credential shapes, and a
+returned line is dropped unless it passes the constraint check. The nightly then
+re-validates each pending file against those same dream rules (`pending_problem`)
+and refuses to publish any allowlisted file that contains a machine path,
+`/Users/<name>/` or `/home/<name>/`; the message names the `file:line`, and
+`--drop-pending` or a hand edit clears it. It publishes dated and pending files,
+never `README.md` or `.gitkeep`, and a dated file only as an append to the upstream
+copy. A missing or broken `--dream` also blocks publishing with one `Fatal` line,
+because the nightly loads dream to validate. It does not rewrite a file; a refusal
+exits non-zero and pushes nothing. A person still promotes with `dream --promote`
+and merges.
+
 `bin/lint-config` runs in CI and evaluates concrete commands and paths against each
 agent's effective rules. It exists because a rule order bug is invisible by reading:
 the `verifier`'s `shell *: allow` used to erase every global shell deny.

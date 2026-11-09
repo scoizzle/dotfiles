@@ -459,7 +459,7 @@ def main() -> int:
     check_shared_surfaces()
     check_instructions()
 
-    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):
+    for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "bin/memory-nightly", "memory/core", "memory/INDEX.md"):
         target = ROOT / rel
         files = [target] if target.is_file() else sorted(p for p in target.rglob("*") if p.is_file())
         for file in files:

@@ -340,6 +340,13 @@ def test_planted_working_line_does_not_survive(mod) -> None:
     check("dream digest exit fields are unreliable" in text, "compaction must keep the archive line")
 
 
+def test_redact_home_paths(mod) -> None:
+    check(mod.redact("/Users/foo/projects/x") == "~/projects/x", "macOS home paths must collapse to ~")
+    check(mod.redact("/home/bar/y") == "~/y", "Linux home paths must collapse to ~")
+    line = "- known: git was missing from PATH [harness]"
+    check(mod.redact(line) == line, "a normal constraint line must be unchanged")
+
+
 def main() -> None:
     test_index_names_working_set()
     test_working_is_gitignored()
@@ -350,6 +357,7 @@ def main() -> None:
     test_compact_rules(mod)
     test_recorded_lines_skip_working_and_stray(mod)
     test_planted_working_line_does_not_survive(mod)
+    test_redact_home_paths(mod)
     test_dry_run_writes_nothing()
     test_dry_run_with_nothing_pending_prints_working_set()
     test_promote_without_person_writes_nothing()

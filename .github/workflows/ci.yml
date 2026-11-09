@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -58,6 +59,8 @@ jobs:
   installer:
     name: installer / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      MEMORY_REMOTE: ${{ github.workspace }}
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +96,7 @@ jobs:
       - name: managed paths are symlinks that resolve
         run: |
           set -eu
-          for p in AGENTS.md opencode.json agents commands skills memory bin evals; do
+          for p in AGENTS.md opencode.json agents commands skills bin evals memory; do
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
@@ -102,10 +105,15 @@ jobs:
             test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
           done
           test -f "$HOME/.config/opencode/skills/roslynk-rules/SKILL.md"
+          # memory is a symlink into the sparse clone at .memory
+          test -d "$HOME/.config/opencode/.memory"
+          test ! -L "$HOME/.config/opencode/.memory"
+          test -e "$HOME/.config/opencode/.memory/.git"
+          git -C "$HOME/.config/opencode/.memory" sparse-checkout list | grep -qx /memory/
+          test "$(git -C "$HOME/.config/opencode/.memory" rev-parse --is-inside-work-tree)" = true
           test -f "$HOME/.config/opencode/memory/INDEX.md"
-          test -f "$HOME/.config/opencode/memory/core/conventions.md"
-          test -f "$HOME/.config/opencode/memory/core/safety.md"
-          test -f "$HOME/.config/opencode/memory/learnings/README.md"
+          test "$(readlink "$HOME/.config/opencode/memory")" = .memory/memory
+          test -f "$HOME/.config/opencode/.memory/memory/core/safety.md"
 
       # A wrong skill header fails silently in opencode, so assert the contract:
       # name matches the directory and is a valid slug, description within bounds.
@@ -133,8 +141,14 @@ jobs:
           sys.exit(0 if all(checks.values()) else 1)
           PY
 
+      - name: memory install (sparse clone + link)
+        run: python3 tests/memory_install.py
+
+      - name: memory nightly
+        run: python3 tests/memory_nightly.py
+
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/memory-nightly bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke
@@ -181,8 +195,14 @@ jobs:
           echo "$out"
           echo "$out" | grep -q 'nothing to append'
           echo "$out" | grep -q 'opencode.db'
-          git check-ignore -q memory/learnings/2099-01-01.md
+          # dated files travel with git; pending, working.md and the lock do not
+          if git check-ignore -q memory/learnings/2099-01-01.md; then
+            echo "dated learnings must not be ignored"
+            exit 1
+          fi
+          git check-ignore -q memory/learnings/pending/2099-01-01.md
           git check-ignore -q memory/learnings/working.md
+          git check-ignore -q memory/learnings/.working.lock
           python3 tests/dream_compact.py
           if git check-ignore -q memory/learnings/README.md; then
             echo "README.md should stay tracked"
@@ -336,11 +356,27 @@ jobs:
         run: ./bin/sync-harness --scope repo
 
       # .gitignore only stops new files; a tracked file stays tracked.
+      # pending/ is force-added on the memory/dream staging branch only, so that
+      # path is exempt only when the event is a draft PR on memory/dream: any
+      # other ref, including main after a merge, fails on tracked pending.
       - name: no tracked file is ignored
         run: |
           set -eu
+          ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+          draft="${{ github.event.pull_request.draft }}"
           bad="$(git ls-files -ci --exclude-standard)"
-          if [ -n "$bad" ]; then echo "tracked but ignored:"; echo "$bad"; exit 1; fi
+          staged=""
+          if [ "$ref" = "memory/dream" ] && [ "$draft" = "true" ]; then
+            staged="$(printf '%s\n' "$bad" | grep '^memory/learnings/pending/' || true)"
+            bad="$(printf '%s\n' "$bad" | grep -v '^memory/learnings/pending/' | sed '/^$/d' || true)"
+          fi
+          if [ -n "$staged" ]; then echo "staged-pending (memory/dream draft):"; echo "$staged"; fi
+          if [ -n "$bad" ]; then
+            echo "tracked but ignored on ref '${ref:-<none>}' (draft='${draft:-<none>}'):"
+            echo "$bad"
+            echo "only a draft PR on memory/dream may track memory/learnings/pending/; publish again after a promote, then merge"
+            exit 1
+          fi
 
       - name: review-bundle --classify tier floor
         run: |
