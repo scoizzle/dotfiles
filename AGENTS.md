@@ -125,16 +125,20 @@ escalation; the remaining fix budget stays unspent.
 ### Pull requests
 
 - Never poll for PR state: no `gh pr checks --watch`, no `gh pr view` in a loop, no
-  `sleep` between checks. In T3 Code, link the PR as the next call after creating
-  or pushing it (`link_pull_request`), then `watch_pull_request`, which wakes the
+  `sleep` between checks.
+- In T3 Code, link each PR you create, take over, or are asked to push as your next
+  call (`link_pull_request`), and every layer of a stack in one call
+  (`link_pull_requests`). Skip PRs you only read or review.
+- Call `watch_pull_request` when asked to monitor or babysit a PR, or when work you
+  were asked for, such as a merge, still waits on checks or reviews. It wakes the
   thread on failed checks, passed required checks, new comments or reviews, or a
-  conflict. End the turn after that call.
+  conflict. End the turn after the call.
 - A wake is not a merge decision: check readiness yourself. The watch survives each
-  wake, so a wake is not a reason to call it again, and call `unwatch_pull_request`
-  before handback.
-- A delegated child never watches, even when a brief says to babysit.
+  wake, so a wake is not a reason to call it again, and before handback call
+  `unwatch_pull_request` on any PR you watched. A delegated child never watches,
+  even when a brief says to babysit.
 - Without T3, one `gh pr view` or `gh pr checks` is fine; a wait still does not
-  belong in a shell loop — report the PR and stop.
+  belong in a shell loop, so report the PR and stop.
 
 ### Ledger
 
