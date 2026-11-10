@@ -122,6 +122,20 @@ cleanup (shared state, auth) gets named before it lands. Work with no undo
 unit and a fence around the files in scope. The same failure twice is an
 escalation; the remaining fix budget stays unspent.
 
+### Pull requests
+
+- Never poll for PR state: no `gh pr checks --watch`, no `gh pr view` in a loop, no
+  `sleep` between checks. In T3 Code, link the PR as the next call after creating
+  or pushing it (`link_pull_request`), then `watch_pull_request`, which wakes the
+  thread on failed checks, passed required checks, new comments or reviews, or a
+  conflict. End the turn after that call.
+- A wake is not a merge decision: check readiness yourself. The watch survives each
+  wake, so a wake is not a reason to call it again, and call `unwatch_pull_request`
+  before handback.
+- A delegated child never watches, even when a brief says to babysit.
+- Without T3, one `gh pr view` or `gh pr checks` is fine; a wait still does not
+  belong in a shell loop — report the PR and stop.
+
 ### Ledger
 
 After the user answers the findings, run `~/.config/opencode/bin/review-log` with
