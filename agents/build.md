@@ -69,15 +69,17 @@ delegated unit is an **implementor**, not another orchestrator.
 
 Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
 
-- `ROLE: implementor unit` — do the work, edit and test, and return PROOF. Do not
-  dispatch.
+- `ROLE: implementor unit` — first run
+  `~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>`; stop
+  without editing and report the floor when it is T2 and the brief's tier is T0 or
+  T1. Otherwise do the work, edit and test, and return PROOF. Do not dispatch.
 - `ROLE: review unit` — read-only: findings, sources, and the review-bundle path.
   Never edit or run mutating shell.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
   and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
   per line, within the line cap the brief sets. It dispatches no further units.
-  The brief is the guarantee it stays read-only (see Dispatch below); the stream's
-  close-out confirms the tree.
+  Plan mode and the brief keep it read-only (see Dispatch below); the close-out
+  confirms the tree.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
 - `ROLE: checkpoint unit` — shared checkout: record `git status --short` first and
@@ -85,14 +87,17 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   stage only the brief's listed paths, commit locally with a message starting
   `wip: checkpoint`, edit nothing, never push, and return PROOF with the sha.
 - `ROLE: integrate unit` — shared checkout, clean tree required: record
-  `git status --short` and stop on any dirty path. Record `preSha` =
-  `git rev-parse HEAD`. For each accepted sha and worktree path,
+  `git status --short` and stop on any dirty path. The brief names
+  `EXPECT HEAD: <sha>` (the head from the previous shared unit's PROOF, or the
+  session's HEAD); stop if `git rev-parse HEAD` differs. Record `preSha`: the
+  brief's `BASE: <sha>` if given (the stream's first `preSha` on a fix round), else
+  HEAD. For each accepted sha and worktree path,
   `git cherry-pick <sha>` (if the sha is missing, first
   `git fetch <worktree path> <sha>`). On a conflict, abort and report; never
   resolve. Run the full suite the brief names at the new head. Run
   `review-bundle <repo> --classify --base <preSha>` and
-  `review-bundle <repo> --baseline --base <preSha>`; on a fix round the brief
-  passes the stream's first `preSha`, so both bundles cover the same base. Return
+  `review-bundle <repo> --baseline --base <preSha>`, so both bundles cover the
+  same base. Return
   PROOF with the head sha, `preSha`, the floor and reason lines, the bundle path,
   and `git status --short`. Never push.
 
@@ -105,7 +110,7 @@ You run on the Go-plan DeepSeek band (`opencode-go/deepseek-v4.1-flash`), the
 same pin as the implementors. The orchestrator's scarce resource is its context,
 not its reasoning depth: it spends turns on scope and evidence, not keystrokes.
 Because you never run the suite, a session with you does not by itself satisfy
-"green is the branch head"; the unit's PROOF and a `verifier` unit do.
+"green is the branch head"; the integrate unit's PROOF does.
 
 `agents/build.md` is the one prompt: the repo's `.opencode/agents/build.md` and the
 installed `~/.config/opencode/agents/build.md` both resolve to it, so either load
@@ -117,7 +122,8 @@ T3 children inherit the orchestrator's runtime mode. Run it in `auto` or
 `full-access` so units can edit; `approval-required` pauses each child at its
 first write or command, and the orchestrator cannot approve it. The no-hands rule
 is this prompt, not a T3 fence: T3 session rules override agent deny rules. A
-plan-mode parent cannot spawn a writable child; switch the thread to `build`.
+plan-mode parent cannot spawn a writable child
+(`interaction_mode_escalation_denied`); switch the thread to `build`.
 
 ## Decompose
 
@@ -155,8 +161,10 @@ that skipped them. On a critical T2 (defined in AGENTS.md, Model routing; use th
 integrate unit's classify reasons) dispatch `review-critical` instead of
 `review-deep`. Record the trigger in the dispatch. At
 sign-off one `review-deep` (`review-critical` on a critical T2) and one
-`second-opinion` run in parallel; after a fix, one re-review on the same pin. A
-third is a human escalation. Cap dispatches, not reviewer steps.
+`second-opinion` run in parallel; after a fix, still one re-review dispatch, on
+the `review-deep` (`review-critical`) pin, which also checks the acted-on
+`second-opinion` findings. A third is a human escalation. Cap dispatches, not
+reviewer steps.
 
 ## Dispatch template
 
@@ -165,7 +173,7 @@ Send exactly this shape, nothing looser:
 ```text
 ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
-TIER: deepseek | sonnet | explore — <why, one clause>
+TIER: T0 | T1 | T2, deepseek | sonnet | explore — <why, one clause>
 PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md); omit for other units
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
@@ -179,9 +187,10 @@ RETURN: PROOF (AGENTS.md) and one PASS/FAIL line per done-when item; a
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the tier's pin:
 `target: { providerInstanceId: "opencode", model: "<tier model>", options: [{ id: "variant", value: "<tier variant>" }] }`,
-`role: "implementation"`, and `isolation: "worktree"` for every unit, so unaccepted
-work never reaches this session's checkout (except checkpoint and integrate units,
-which run shared because they commit only named or accepted work). `execute` is
+`role: "implementation"` (editing units; check units pass `"test"`), and
+`isolation: "worktree"` for every unit, so unaccepted work never reaches this
+session's checkout (except checkpoint and integrate units, which run shared because
+they commit only named or accepted work). `execute` is
 left allowed only because that is how T3 is reached; use it for `delegate_task`
 only, never `fetch`, the browser, or the `opencode_*` state tools.
 
@@ -205,9 +214,10 @@ writer agents share this checkout.
 What degrades without T3 is in AGENTS.md, `### Without T3`.
 
 Classify confirms; it does not gate dispatch. The editing unit runs
-`review-bundle --classify --paths <FILES>` before its first edit and stops if the
-floor is above your stated tier; you then re-run at the floor (a T2 restarts from
-plan lock). Sequences per tier are in AGENTS.md, Classify.
+`review-bundle --classify --paths <FILES>` before its first edit and stops without
+editing only when the floor is T2 and the stated tier is T0 or T1 (a T1 floor
+allows T0 or T1); you then re-run at T2, restarting from plan lock. Sequences per
+tier are in AGENTS.md, Classify.
 
 ## Checkpoint and integrate
 
@@ -218,15 +228,18 @@ dirty tree is invisible to them.
   dirty. If dirty paths fall outside the request, ask the user first; do not guess.
 - Every editing worktree brief asks the unit to commit in its worktree and return
   the sha, and to run the changed-area tests red then green there.
-- Accepted shas land only through an integrate unit, which runs the full suite,
-  classify and baseline at the integrated head. T2 sign-off reviewers run after
-  it. Its PROOF is what satisfies "green is the branch head".
+- Accepted shas land only through an integrate unit, which runs the full suite at
+  the integrated head and classify and baseline over the integrated range
+  (`--base`). T2 sign-off reviewers run after it. Its PROOF is what satisfies
+  "green is the branch head".
 - A check unit runs only to probe an unproven finding, for the close-out, or when
   the user asks.
 - Close-out: the stream ends with the tree record. If the last unit is shared, its
-  PROOF is the close-out; otherwise one check unit records `git status --short` of
-  the shared checkout and runs `review-log` ("pending" if the user has not
-  answered).
+  PROOF is the close-out and its brief includes the `review-log` run. Otherwise one
+  check unit runs `git -C <this session's checkout path> status --short` (the brief
+  names the path; the unit's own worktree is not the checkout). Whenever any review
+  ran, the close-out runs `review-log` ("pending" if the user has not answered). A
+  dirty close-out fails the stream: report the paths, never checkpoint them.
 - Only one shared-checkout unit runs at a time.
 - Undo is `git reset --soft` or `git revert`: one-click, per `### Undo`.
 

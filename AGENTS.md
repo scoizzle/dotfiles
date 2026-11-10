@@ -17,10 +17,13 @@ Never ask the user to choose a tier or model.
 Classify confirms; it does not gate dispatch. State the tier from the planned
 paths and the rules below. The first editing unit runs
 `~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>` before its
-first edit and stops without editing if the floor is above the stated tier; the
-orchestrator then re-runs at the floor, restarting a T2 from plan lock. Before
-review, the integrate unit classifies the integrated range (`--base <preSha>`) and
-returns the floor and reasons. You may raise the tier, never lower it.
+first edit and stops without editing only when the floor is T2 and the stated tier
+is T0 or T1 (a T1 floor allows T0 or T1); the orchestrator then re-runs at T2,
+restarting from plan lock. Before review, the integrate unit classifies the
+integrated range (`--base <preSha>`) and returns the floor and reasons. If that
+floor is above the stated tier, continue at the floor from its review step (a T2
+gets `plan-review-deep` on the integrated diff, then the sign-off bands). You may
+raise the tier, never lower it.
 `deepseek` is the implementor row and `sonnet` the implement-deep row of Model
 routing.
 
@@ -34,13 +37,17 @@ routing.
   enum/public API/be careful", or unsure. Write a plan with done-when. Sequence:
   plan -> `plan-review-deep` (fix cap 2) -> `implement-deep` -> integrate ->
   `review-deep` (or `review-critical`) + `second-opinion` in parallel -> triage ->
-  fix (cap 2) -> integrate -> one re-review on the same pin with both bundles ->
-  close-out. Pins and the three advisor moments are in Model routing.
+  fix (cap 2) -> integrate -> one re-review dispatch on the `review-deep`
+  (`review-critical`) pin with both bundles, also checking the acted-on
+  `second-opinion` findings -> close-out. Pins and the three advisor moments are in Model routing.
 - **Close-out:** the stream ends with the tree record. If the last unit is a shared
-  one, its PROOF is the close-out. Otherwise one check unit records
-  `git status --short` of the shared checkout (confirming every read-only unit left
-  it unchanged) and runs `review-log`. Checkpoint and integrate units record
-  `git status --short` before acting.
+  one, its PROOF is the close-out and its brief includes the `review-log` run.
+  Otherwise one check unit runs `git -C <session checkout path> status --short`
+  (the brief names the path; a check unit's own worktree is not the checkout) to
+  confirm every read-only unit left it unchanged. Whenever any review ran, the
+  close-out runs `review-log` (`pending` if the user has not answered). A dirty
+  close-out fails the stream: report the paths, never checkpoint them. Checkpoint
+  and integrate units record `git status --short` before acting.
 
 ### Evidence
 
@@ -95,7 +102,8 @@ the command and its output tail is not proof.
 
 ### Safety
 
-- Reviewers are read-only; never give them shell or edit.
+- Reviewers are read-only: never put an edit or a mutating command in their brief;
+  plan mode does not remove shell.
 - Do not stage, commit, or push unless asked (checkpoint and integrate units may
   commit locally, never push). `git push` is `ask` in `opencode.json`; force,
   delete, mirror, and `+refspec` pushes are denied. Never run an unattended
@@ -103,7 +111,8 @@ the command and its output tail is not proof.
 - Keep diffs minimal and consistent with the surrounding code.
 - Route broad read-only lookups through `explore`: the subagent when the agent
   has one, otherwise an explore unit. The brief caps the return at findings +
-  sources. An agent that can do neither reports the gap instead of scanning.
+  sources. An agent that can do neither reports the gap instead of scanning. Do not
+  read the whole repo in the main context.
 
 ### Undo
 
@@ -132,7 +141,11 @@ review, explore, check, checkpoint, integrate (the last two run shared, commit
 locally, never push). `implementor` is the agent for direct work in plain opencode.
 The no-hands rule is the prompt, not a T3 permission: run the orchestrator in
 `auto` or `full-access`. `execute` is allowed only to reach `delegate_task`;
-`bin/lint-config` enforces the `EXECUTE ALLOWLIST` line.
+`bin/lint-config` enforces the `EXECUTE ALLOWLIST` line. The nested-tool surface
+inside `execute` is not covered by the agent denies; the allowlist and the human
+gate are the mitigation. The direct-edit smoke test runs as `implementor`; the T3
+trial covers the orchestrator path. `opencode debug agents` in the repo shows the
+orchestrator `system` on `build`.
 
 ### Without T3
 
@@ -203,9 +216,10 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   plan is fixed; (2) the same error or failing assertion twice in a row, passing
   both attempts; (3) T2 sign-off, with `second-opinion` in parallel. A T1 retry
   stays on the builder band. At sign-off: one `review-deep` (`review-critical` on
-  a critical T2) and one `second-opinion` in parallel, then one re-review on the
-  same pin after a fix. A third is a human escalation; cap dispatches, not
-  reviewer steps.
+  a critical T2) and one `second-opinion` in parallel, then still one re-review
+  dispatch after a fix, on the `review-deep` (`review-critical`) pin, which also
+  checks the acted-on `second-opinion` findings. A third is a human escalation;
+  cap dispatches, not reviewer steps.
 - `agents/*.md` are the native fallback, not the routing source. Pins must name
   an enabled instance and an allowlisted model in `policy/providers.json`.
   `grok-4.7` is retired as of 2026-11-09 and no band pins it; `grok-4.5` stays
