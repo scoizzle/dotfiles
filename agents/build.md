@@ -73,6 +73,14 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   dispatch.
 - `ROLE: review unit` — read-only: findings, sources, and the review-bundle path.
   Never edit or run mutating shell.
+- `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
+  and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
+  per line, within the line cap the brief sets. It dispatches no further units.
+  T3 cannot make a child read-only (the child is seated as `build`, so agent denies
+  do not bind); the brief is the guarantee. Dispatch it with `isolation: "worktree"`
+  and `role: "research"`, and after it returns run a `git status --short` check
+  (via a check unit) against this session's own shared checkout — not the unit's
+  worktree or the project root — to confirm the tree is unchanged.
 - `ROLE: check unit` — run the named checks and return your Coverage block. Never
   edit.
 - `ROLE: checkpoint unit` — shared checkout: run the named checks, stage only the
@@ -116,6 +124,12 @@ Split the request into units that each prove one outcome. Order them so every
 unit's files exist before it starts. The red and green runs of one outcome's
 check are one unit; two independent outcomes are two units.
 
+A broad read-only lookup (repo map, multi-file grep, "where is X") is an explore
+unit on the explore band (`opencode-go/deepseek-v4.1-flash`, `variant=low`), not
+something you read the repo for. Its brief's RETURN caps findings and sources in
+lines. Reading one hunk to judge a diff stays yours. If the explore pin is
+unavailable, report the unit blocked; do not substitute the session model.
+
 ## Pick a tier
 
 Name the tier in every dispatch and give the reason in one clause. When in doubt,
@@ -125,6 +139,10 @@ start on `deepseek`; move up only for the reasons in the table.
 | --- | --- | --- |
 | `deepseek` | `opencode-go/deepseek-v4.1-flash`, `variant=high` | volume, T0/T1, a named test oracle, mechanical or well-scoped work |
 | `sonnet` | `claude-agent/sonnet`, `variant=medium` | T2 after plan lock, cross-cutting edits, no cheap oracle, or a cheap attempt already failed |
+| `explore` | `opencode-go/deepseek-v4.1-flash`, `variant=low` | read-only repo maps and multi-file grep |
+
+An explore dispatch passes `variant=low`: pass it in `options` as
+`[{ id: "variant", value: "low" }]`.
 
 A second cheap attempt at the same failure is not a tier choice; it is a stop.
 Move to `sonnet` or escalate.
@@ -145,9 +163,9 @@ third is a human escalation. Cap dispatches, not reviewer steps.
 Send exactly this shape, nothing looser:
 
 ```text
-ROLE: implementor unit | review unit | check unit | checkpoint unit | integrate unit
+ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
-TIER: deepseek | sonnet — <why, one clause>
+TIER: deepseek | sonnet | explore — <why, one clause>
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
@@ -201,7 +219,8 @@ dirty tree is invisible to them.
 
 Accept only when all of these hold:
 
-- the chosen tier matches the table, or the deviation is stated and argued;
+- the chosen tier (`deepseek`, `sonnet` or `explore`) matches the table, or the
+  deviation is stated and argued;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;

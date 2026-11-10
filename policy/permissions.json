@@ -339,7 +339,7 @@
     ]
   },
   "readonly_agents": {
-    "doc": "Reviewers that must never write. agents/<name>.md is the source; bin/sync-harness renders each into ~/.claude/agents/<name>.md (Claude Code format, which Grok Build also reads) with only these tools. Models are the native fallback; the band pin in AGENTS.md applies when the reviewer runs as a T3 child. reload_solution is deliberately not listed: roslynk-rules allows it only on an explicit user request, which a reviewer never has.",
+    "doc": "Read-only agents that must never write: the reviewers and the explore swarm. agents/<name>.md is the source; bin/sync-harness renders each into ~/.claude/agents/<name>.md (Claude Code format, which Grok Build also reads) with only these tools. Models are the native fallback; the band pin in AGENTS.md applies when the agent runs as a T3 child. reload_solution is deliberately not listed: roslynk-rules allows it only on an explicit user request, which a read-only agent never has.",
     "tools": [
       "Read",
       "Grep",
@@ -371,7 +371,8 @@
       "review-light": "haiku",
       "review-deep": "sonnet",
       "plan-review-deep": "sonnet",
-      "second-opinion": "sonnet"
+      "second-opinion": "sonnet",
+      "explore": "haiku"
     }
   },
   "builder_git_deny": [

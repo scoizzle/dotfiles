@@ -11,7 +11,7 @@ Two artifacts are covered: a **change** (a diff, caught before it ships) and a
 
 ```sh
 ./run.sh                                      # every change case, agent by tier
-./run.sh --tier T1 -a review-light -m opencode-go/mimo-v2.6-flash
+./run.sh --tier T1 -a review-light -m claude-agent/haiku
 ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
 ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
 ./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
