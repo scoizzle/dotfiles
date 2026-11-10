@@ -4,60 +4,68 @@ Repository `AGENTS.md` files are additive. Their build/test command lines win.
 
 ## Default workflow
 
-The default `build` agent is the orchestrator primary in opencode: it runs this
-workflow by dispatching units, not by editing. `implementor` is the agent that
-edits. Subagents follow their own role prompt.
+The default `build` agent is the orchestrator primary in opencode: it dispatches
+units, not edits. `implementor` is the agent that edits.
 
 Before the first edit or subagent call, state the tier on its own line:
-`Tier: T0`, `Tier: T1`, or `Tier: T2`. A short read-only look at the repo is
-allowed; never state a tentative tier. Then state the agents and the reason.
+`Tier: T0`, `Tier: T1`, or `Tier: T2`. A short read-only look (an explore unit) is
+allowed first; never state a tentative tier. Then state the agents and the reason.
 Never ask the user to choose a tier or model.
 
 ### Classify
 
-Run `~/.config/opencode/bin/review-bundle <repo> --classify --paths <planned files>`
-before the first edit, and again with no `--paths` before review. It prints a tier
-floor and the reasons. You may raise the tier, never lower it; a T1 plan whose diff
-later floors at T2 is re-run as T2.
+Classify confirms; it does not gate dispatch. State the tier from the planned
+paths and the rules below. The first editing unit runs
+`~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>` before its
+first edit and stops without editing if the floor is above the stated tier; the
+orchestrator then re-runs at the floor, restarting a T2 from plan lock. Before
+review, the integrate unit classifies the integrated range (`--base <preSha>`) and
+returns the floor and reasons. You may raise the tier, never lower it.
+`deepseek` is the implementor row and `sonnet` the implement-deep row of Model
+routing.
 
 - **T0:** no behaviour change, or one obvious mechanical edit; no public
-  contract, data, security, or CI. Dispatch one deepseek unit; the unit runs the
-  check.
+  contract, data, security, or CI. Sequence: implementor -> integrate.
 - **T1:** one area, <=3 source files, <=400 lines, no public contract/data/
   security/CI, test oracle exists. Write a <=10-line brief with done-when and the
-  red test; dispatch one deepseek unit; the unit runs the changed-area tests;
-  dispatch the `review-light` band; fix once.
+  red test. Sequence: implementor -> integrate -> `review-light` -> fix once
+  (implementor -> integrate) -> close-out.
 - **T2:** anything else, or "design/architecture/migration/security/data/schema/
-  enum/public API/be careful", or unsure. Write a plan with done-when; dispatch the
-  `plan-review-deep` band; fix plan findings (cap 2); dispatch the `implement-deep`
-  band; dispatch a check unit for the checks; dispatch the `review-deep` and
-  `second-opinion` bands in parallel with `ROLE: review unit`; triage; fix (cap 2);
-  dispatch a check unit for the full suite. Pins and the three advisor moments are
-  in Model routing.
+  enum/public API/be careful", or unsure. Write a plan with done-when. Sequence:
+  plan -> `plan-review-deep` (fix cap 2) -> `implement-deep` -> integrate ->
+  `review-deep` (or `review-critical`) + `second-opinion` in parallel -> triage ->
+  fix (cap 2) -> integrate -> one re-review on the same pin with both bundles ->
+  close-out. Pins and the three advisor moments are in Model routing.
+- **Close-out:** the stream ends with the tree record. If the last unit is a shared
+  one, its PROOF is the close-out. Otherwise one check unit records
+  `git status --short` of the shared checkout (confirming every read-only unit left
+  it unchanged) and runs `review-log`. Checkpoint and integrate units record
+  `git status --short` before acting.
 
 ### Evidence
 
 - **Test-first:** write the red test, run it red, record the command and output.
-- **One check owner:** the parent dispatches the changed-area tests and the full
-  suite to a check unit (`ROLE: check unit`) and records the output in the PROOF;
-  a repo `AGENTS.md` supplies the command lines. Never use a review agent as a
-  check runner. Reviewers never rebuild.
+- **One check owner per tree:** the parent names the checks (a repo `AGENTS.md`
+  supplies the command lines); the unit that produced the tree runs them. The
+  editing unit runs the changed-area tests red then green in its worktree; the
+  integrate unit runs the full suite at the integrated head, and its PROOF is the
+  branch-head record. A separate check unit (`ROLE: check unit`) runs only to
+  probe an unproven finding, for the close-out, or when the user asks. Never use a
+  review agent as a check runner. Reviewers never rebuild.
 - **Reviewers** are dispatched with `ROLE: review unit`; they read the
-  `review-bundle` directory and the recorded check output.
-  `~/.config/opencode/bin/review-bundle` is not on PATH; call it by absolute path.
-  Outside git, pass the changed file list.
-- **Baseline:** before fixing reviewer findings, run
-  `~/.config/opencode/bin/review-bundle <repo> --baseline` and keep
-  `05-baseline.json`. After the fix, run it again and pass both bundle
-  directories to the re-reviewer.
+  `review-bundle` directory and the recorded check output. `review-bundle` is not
+  on PATH; call `~/.config/opencode/bin/review-bundle` by absolute path. Outside
+  git, pass the changed file list.
+- **Baseline:** the integrate unit takes `review-bundle --baseline --base <preSha>`
+  and keeps `05-baseline.json`; after the fix it runs again and both bundle
+  directories go to the re-reviewer.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
   done-when. An unproven 🟠 gets a probe by a check unit (or the implementor) or is
   downgraded and reported; it is not fixed as confirmed.
 - **Handback:** a reproducible bug in hand is work, not a note: write its red
-  test before the stream ends. A fix inside T1's limits stays T1 and the stream
-  continues; a larger one is T2 on its bands. Only a person's ruling defers,
-  recorded where the work is, dated, naming the decision it addresses. A "not a
-  patch" verdict names the estimated diff and the decision it violates.
+  test before the stream ends. A fix inside T1's limits stays T1; a larger one is
+  T2. Only a person's ruling defers, recorded and dated, naming the decision it
+  addresses. A "not a patch" verdict names the estimated diff and the decision.
 - **Green is the branch head.** A recorded suite result names the commit it ran
   on and a tree whose `git status` you have read. A green run in a child tree, a
   copy, or over uninspected untracked files proves nothing.
@@ -68,10 +76,10 @@ later floors at T2 is re-run as T2.
 
 ### Proof of work
 
-Every **dispatched unit that changes or checks the tree** returns a `PROOF`
-block, never a prose summary. A read-only search unit returns its findings and
-sources; a review unit returns its findings and the bundle path; a check unit
-(`verifier`) returns its Coverage block and the checks it ran.
+Every unit that changes or checks the tree returns a `PROOF` block, never a prose
+summary. A read-only search unit returns findings and sources; a review unit
+returns findings and the bundle path; a check unit returns its Coverage block and
+the checks it ran.
 
 - `commands:` every command run, verbatim, with its exit code.
 - `diff:` `git diff --stat` and the key hunks, or the commit sha when the unit
@@ -85,79 +93,46 @@ A dispatch reply missing any line is rejected and re-dispatched with the gap
 named; the orchestrator does not fill the gap itself. "All tests pass" without
 the command and its output tail is not proof.
 
-### Dispatch tiers
-
-The orchestrator picks one implementation tier per unit and names it in the
-scope:
-
-| Tier | Pin | Use it for |
-| --- | --- | --- |
-| `deepseek` | `opencode-go/deepseek-v4.1-flash#high` | volume, T0/T1, a named test oracle |
-| `sonnet` | `claude-agent/sonnet#medium` | T2 after plan lock, cross-cutting work, no cheap oracle |
-
 ### Safety
 
 - Reviewers are read-only; never give them shell or edit.
-- Do not stage, commit, or push unless asked (the orchestrator's checkpoint and integrate units may commit locally, never push, as part of a requested change). `git push` is `ask` in
-  `opencode.json`; force, delete, mirror, and `+refspec` pushes are denied. Never
-  run an unattended session with `--auto`: it approves every `ask`.
+- Do not stage, commit, or push unless asked (checkpoint and integrate units may
+  commit locally, never push). `git push` is `ask` in `opencode.json`; force,
+  delete, mirror, and `+refspec` pushes are denied. Never run an unattended
+  session with `--auto`: it approves every `ask`.
 - Keep diffs minimal and consistent with the surrounding code.
-- Route broad read-only lookups through `explore`: spawn the subagent when the
-  agent has one, otherwise dispatch an explore unit on the explore band. The brief
-  caps the return at findings + sources. An agent that can do neither reports the
-  gap instead of scanning. Do not read the whole repo in the main context.
+- Route broad read-only lookups through `explore`: the subagent when the agent
+  has one, otherwise an explore unit. The brief caps the return at findings +
+  sources. An agent that can do neither reports the gap instead of scanning.
 
 ### Undo
 
-Classify a ship-or-ask step by undo cost. A one-click revert (docs, tests, an
-isolated change) can proceed. Work that needs cleanup (shared state, auth) gets
-named before it lands. Work with no undo (migrations, deletes, money) waits for
-a person.
-
-On a fix round, return the failed unit and a fence around the files in scope.
-The same failure twice is an escalation; the remaining fix budget stays unspent.
+A one-click revert (docs, tests, an isolated change) can proceed. Work that needs
+cleanup (shared state, auth) gets named before it lands. Work with no undo
+(migrations, deletes, money) waits for a person. On a fix round, return the failed
+unit and a fence around the files in scope. The same failure twice is an
+escalation; the remaining fix budget stays unspent.
 
 ### Ledger
 
-After the user answers the findings, run
-`~/.config/opencode/bin/review-log` with tier, models, counts, acted/dismissed.
-If the user has not answered, write the line as `pending`.
+After the user answers the findings, run `~/.config/opencode/bin/review-log` with
+tier, models, counts, acted/dismissed; `pending` if not yet answered.
 
 ### Manual overrides
 
-`/verify` and `/second-opinion` are manual escape hatches; `verifier` is a
-manual shell-based deep check, not the default review path.
+`/verify` and `/second-opinion` are manual escape hatches; `verifier` is a manual
+shell-based deep check, not the default review path.
 
 ### Orchestrator primary
 
-In opencode, the top-level `build` agent is the orchestrator (`agents/build.md`,
-linked as `.opencode/agents/build.md`). Both the repo link and the installed
-`~/.config/opencode/agents/build.md` resolve to that one file, so either load path
-is the same prompt; `opencode debug agents` in the repo shows the orchestrator
-`system` on `build`.
-It plans, scopes, dispatches every unit through T3 `delegate_task` with
-`isolation: "worktree"`, and accepts only a verified `PROOF`. It never edits files
-or runs mutating shell itself. A delegated unit follows its `ROLE:` line:
-implementor, review, check, checkpoint, or integrate (the last two run shared and
-commit locally, never push). `implementor` is the agent for direct work in plain
-opencode.
-
-The no-hands rule is the agent prompt, not a T3 permission: T3 session rules
-override agent deny rules. Run the orchestrator in `auto` or `full-access` so
-units can edit; `approval-required` stalls them at the first write or command, and
-the orchestrator cannot approve it.
-
-`execute` is allowed in `agents/build.md` only because T3 `delegate_task` is
-reached through it. The `EXECUTE ALLOWLIST: delegate_task` line is the contract,
-and `bin/lint-config` fails if it drifts. The nested-tool surface inside `execute`
-is not covered by the agent denies; the allowlist and the human gate are the
-mitigation. Worker agents (including `implementor`) deny `execute`. The direct-edit
-smoke test runs as `implementor`; the orchestrator path is exercised by the T3
-trial, not by `opencode run`.
-
-`plan` interaction mode is a read-only planning phase, not this role: a plan-mode
-parent cannot spawn a writable child (`interaction_mode_escalation_denied`). Use
-it to explore, then switch the thread to `build` to dispatch.
+In opencode, the top-level `build` agent is the orchestrator; `agents/build.md`
+is its one prompt (roles, dispatch template, checkpoint/integrate, acceptance). It
+never edits; every unit goes through T3 `delegate_task`. Units: implementor,
+review, explore, check, checkpoint, integrate (the last two run shared, commit
+locally, never push). `implementor` is the agent for direct work in plain opencode.
+The no-hands rule is the prompt, not a T3 permission: run the orchestrator in
+`auto` or `full-access`. `execute` is allowed only to reach `delegate_task`;
+`bin/lint-config` enforces the `EXECUTE ALLOWLIST` line.
 
 ### Without T3
 
@@ -172,6 +147,8 @@ instead of improvising:
 - Pinned bands: do not substitute the session model for a band's pin. A T2
   sign-off that needs the advisor and `second-opinion` does not complete without
   them; say so and stop.
+- A pinned band that is unavailable or fails on quota (`usage_limit`) is blocked
+  the same way: report it, do not substitute. Only the user picks a fallback.
 
 ## Model routing
 
@@ -203,17 +180,21 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   reason and the change is security, data, or a public contract (not a CI-only
   change), or it touches auth or a schema/data migration. The orchestrator
   records the trigger in the dispatch.
-- Reviewers (`review-light`, `review-deep`, `plan-review-deep`, `review-critical`,
-  `second-opinion`) run as T3 children with `isolation: "worktree"`, `role: "review"` and the
-  review-bundle path in the task. T3 cannot make a child read-only, but a
-  worktree child's edits never reach your checkout; confirm `git status` is
-  unchanged afterwards. With no T3, use the harness's own read-only reviewer
-  (`agents/*.md`, `~/.claude/agents`) and say the pin did not apply.
+- Read-only units (reviewers `review-light`, `review-deep`, `plan-review-deep`,
+  `review-critical`, `second-opinion`, and explore) run as T3 children with
+  `isolation: "worktree"`, `interactionMode: "plan"`, and `role: "review"` (explore:
+  `"research"`). Check, implementor, checkpoint and integrate units stay in default
+  mode, since tests write build output. Plan mode is a harness instruction, not a
+  tool fence (probe 2026-11-10: the child obeyed it over a brief asking for a
+  write, and shell still ran), so the stream's close-out still checks the tree.
+  T3 children never load `agents/<band>.md`; the brief tells them to read it (the
+  `PROMPT:` line in `agents/build.md`). With no T3, use the harness's own read-only
+  reviewer (`agents/*.md`, `~/.claude/agents`) and say the pin did not apply.
   `review-critical` uses `review-deep`'s prompt on the Opus pin, so no
   `agents/review-critical.md` exists and, without T3, a critical review does not
   complete rather than silently downgrading.
-- `isolation: "worktree"` also for any child that needs its own checkout or will
-  open a PR; `shared` only for research. `mode: "wait"` only when this turn needs
+- `isolation: "worktree"` for every unit except checkpoint and integrate, which run
+  `shared`; research included. `mode: "wait"` only when this turn needs
   the result (a gate does; a background job does not). `role` names the band's
   job: `research`, `review`, `implementation`, `test`, `design` or `general`.
 - Replace a running child with `task_cancel`, then a new `delegate_task`; never
@@ -221,20 +202,15 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 - The advisor pin is spent at three moments only: (1) T2 plan lock before the
   plan is fixed; (2) the same error or failing assertion twice in a row, passing
   both attempts; (3) T2 sign-off, with `second-opinion` in parallel. A T1 retry
-  stays on the builder band. At sign-off, cap dispatches: one `review-deep` and
-  one `second-opinion` in parallel, then one re-review after a fix. On a critical
-  T2, `review-critical` replaces `review-deep` at sign-off, so it stays two
-  parallel dispatches (`review-critical` + `second-opinion`); the post-fix
-  re-review uses the same pin. A third is a human escalation; do not cap
-  reviewer steps, only dispatches.
+  stays on the builder band. At sign-off: one `review-deep` (`review-critical` on
+  a critical T2) and one `second-opinion` in parallel, then one re-review on the
+  same pin after a fix. A third is a human escalation; cap dispatches, not
+  reviewer steps.
 - `agents/*.md` are the native fallback, not the routing source. Pins must name
   an enabled instance and an allowlisted model in `policy/providers.json`.
-  `grok-4.7` is retired as of 2026-11-09 and no band pins it. Sonnet 5.5
-  (`claude-agent/sonnet`) is the default review and verifier pin; Opus 5.5
-  (`claude-agent/opus`) is the critical-review escalation. `grok-4.5` stays
-  unlisted.
-- Claude quota has headroom (2026-11-04): the advisor joins `implement-deep` on
-  Claude.
+  `grok-4.7` is retired as of 2026-11-09 and no band pins it; `grok-4.5` stays
+  unlisted. Sonnet 5.5 is the default review and verifier pin; Opus 5.5 is the
+  critical-review escalation.
 
 ## Memory
 
@@ -257,20 +233,15 @@ header in `memory/learnings/README.md`: who, when in UTC, session or context
 id, and source.
 
 `dream` stages its output in `memory/learnings/pending/`, which agents do not
-read. A person promotes it with `~/.config/opencode/bin/dream --promote`.
-Read `memory/learnings/working.md` first when it exists, and open any dated file
-its `source:` line does not name; never write it, since promote generates it.
-
-Do not rewrite memory mid-task as a substitute for finishing the work.
-Curriculum updates are the out-of-band dream pass,
-`~/.config/opencode/bin/dream`. See `docs/memory-and-dreaming.md`.
+read; a person promotes it with `~/.config/opencode/bin/dream --promote`. Read
+`memory/learnings/working.md` first when it exists, and open any dated file its
+`source:` line does not name; never write it. Do not rewrite memory mid-task as a
+substitute for finishing the work; see `docs/memory-and-dreaming.md`.
 
 ## C# / .NET work
 
-Roslynk is configured globally and is assumed available. This rule does not
-depend on a repository naming it.
-
-Before the first C# read or edit, find the solution and open it:
+Roslynk is configured globally and assumed available. Before the first C# read or
+edit, find the solution and open it:
 
 ```sh
 git rev-parse --show-toplevel      # then look for *.sln / *.slnx at depth <= 2
@@ -291,11 +262,10 @@ Use Roslynk instead of the mechanical alternative:
 | `dotnet build` to check compile state | `get_diagnostics` |
 | hand-editing a rename or signature change | `rename_symbol`, `change_signature` |
 
-Read files only for context Roslynk cannot provide, and for non-C# files.
-
-If no solution exists (file-based apps such as `install.cs`, `.csproj`-only
-trees), say so in one line and use normal file reads. If `open_solution` fails,
-say so in one line and fall back. Never imply Roslynk answered when it did not.
+Read files only for context Roslynk cannot provide, and for non-C# files. If no
+solution exists (file-based apps such as `install.cs`, `.csproj`-only trees) or
+`open_solution` fails, say so in one line and use normal file reads. Never imply
+Roslynk answered when it did not.
 
 Read-only agents (the four reviewer agent files and `explore`) use only the read-only Roslynk tools listed in
 the `roslynk-rules` skill, never the ones that write.
