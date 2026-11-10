@@ -460,6 +460,25 @@ def main() -> int:
                 fail(f"build: the role branch must handle {sentinel!r}")
         if build_text.count("Uncommitted edits stay out") != 1:
             fail("build: 'Uncommitted edits stay out' must appear exactly once")
+        if 'interactionMode: "plan"' not in build_text:
+            fail('build: read-only units must be dispatched with interactionMode: "plan"')
+        if not re.search(r"^PROMPT:", build_text, flags=re.M):
+            fail("build: the dispatch template needs a PROMPT: line; T3 children never load band prompts")
+        agents_text = (ROOT / "AGENTS.md").read_text()
+        if 'interactionMode: "plan"' not in agents_text:
+            fail('AGENTS.md: read-only units must be dispatched with interactionMode: "plan"')
+        for label, body in (("AGENTS.md", agents_text), ("agents/build.md", build_text)):
+            if "Close-out" not in body:
+                fail(f"{label}: needs the Close-out rule")
+        if not re.search(r"^PROMPT:.*agents/<band>\.md", build_text, flags=re.M):
+            fail("build: the PROMPT: line must name agents/<band>.md")
+        if not re.search(r"^TIER:.*T0", build_text, flags=re.M):
+            fail("build: the template TIER: line must carry the T0/T1/T2 tier")
+        if "for every unit except checkpoint and integrate" not in agents_text:
+            fail("AGENTS.md: Model routing must say worktree isolation is "
+                 "'for every unit except checkpoint and integrate'")
+        if re.search(r"shared.{0,3} only for research", agents_text):
+            fail("AGENTS.md: research units run in a worktree; `shared` is for checkpoint and integrate only")
         if "ROLE: implementor unit" not in (ROOT / "agents" / "implementor.md").read_text():
             fail("implementor: must name the 'ROLE: implementor unit' sentinel")
         project_build = ROOT / ".opencode" / "agents" / "build.md"
