@@ -168,7 +168,8 @@ dispatch's TIER clause quotes one of:
   `implement-deep` takes only the unit implementing that plan step, not the whole
   T2. Copy the line verbatim into TIER.
 - (b) ladder: an implementor unit's done-when line marked FAIL, or its green-phase
-  suite red; quote that done-when FAIL line. An integrate unit's red suite goes to
+  suite red; quote that done-when FAIL line, or the green-phase suite's failing
+  tail. An integrate unit's red suite goes to
   a normal fix round on `deepseek`, not to `implement-deep`. A red-phase
   (test-first) tail never counts, and neither does a classify stop, scope-gap
   report or blocked unit. The retry of that item goes to `implement-deep`; the
@@ -177,14 +178,20 @@ dispatch's TIER clause quotes one of:
 - (c) critical T2, decided at plan lock: a `deepseek` check unit runs
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
-  `critical: <path> — security|data|public-contract|auth|migration` in the
-  dispatch's TIER line, one entry per path, and a CI-only reason is never
-  critical. `implement-deep` applies under (c) only when a TIER entry's category
-  token is exactly `security`, `auth` or `migration`, and only for the unit whose
-  FILES include a qualifying path; a `data` token without `migration`, and
-  `public-contract`, keep the `deepseek` implementor and get `review-critical` at
-  sign-off. The integrate unit's reclassify may only raise: non-critical ->
-  critical, `review-deep` -> `review-critical`, never down.
+  `critical: <path> — auth|security|migration|public-contract` in the dispatch's
+  TIER line, one entry per path. The token is fixed by the path: the first match
+  in this order wins, from the sensitive patterns in `bin/review-bundle`
+  (`ALWAYS`, `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `*auth*` (and its
+  `DOC_SENSITIVE` auth variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`,
+  `*permission*` -> `security`; `*migration*`, `*schema*`, `*.sql*` ->
+  `migration`; any other sensitive path (`agents/*`, `policy/*`,
+  `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`,
+  `*Dockerfile*`, `memory/core/*`) -> `public-contract`; `.github/*` is CI, never
+  critical. `implement-deep` applies under (c) only when the token is `security`,
+  `auth` or `migration`, and only for the unit whose FILES include a qualifying
+  path; `public-contract` keeps the `deepseek` implementor and gets
+  `review-critical` at sign-off. The integrate unit's reclassify may only raise:
+  non-critical -> critical, `review-deep` -> `review-critical`, never down.
 
 T0: no review dispatch. An audit request is an explore unit, or T1 `review-light`
 when a verdict on a diff is wanted.
@@ -244,7 +251,8 @@ dispatch:
 
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the band's pin (the Model routing row for the role):
-`target: { providerInstanceId: "opencode", model: "<band model>", options: [{ id: "variant", value: "<band variant>" }] }`,
+`target: { providerInstanceId: "opencode", model: "<band model>", options: [{ id: "variant", value: "<band variant>" }] }`
+(omit `options` when the routing row lists none, e.g. review-light),
 `role: "implementation"` (editing units; check units pass `"test"`), and
 `isolation: "worktree"` for every unit, so unaccepted work never reaches this
 session's checkout (except checkpoint and integrate units, which run shared because
@@ -314,6 +322,9 @@ Accept only when all of these hold:
   the AGENTS.md Model routing row for the unit's role; for implementor units the
   only upward deviation is `implement-deep` on a quoted trigger from Classify, and
   an `implement-deep` dispatch without its quoted trigger is rejected;
+- on a critical T2, each `critical: <path> — <token>` entry's token is the first
+  matching category for that path in (c)'s order (auth, security, migration,
+  public-contract), and a token outside that mapping is rejected;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;

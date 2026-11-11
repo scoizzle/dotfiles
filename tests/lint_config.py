@@ -120,6 +120,22 @@ def main() -> int:
                                  "agents/build.md: unknown implement-deep trigger code")
         finally:
             build_path.write_text(build_original)
+
+        # A code list missing one of the three fails, and a list whose `<code>`
+        # anchor is gone fails as no list at all.
+        try:
+            edit(agents_path, "`no-oracle`, ", "")
+            failed |= not expect("AGENTS.md missing trigger code", lint(tree),
+                                 "AGENTS.md: missing the implement-deep trigger code")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(build_path, "with `<code>` one of", "with code one of")
+            failed |= not expect("build.md missing code list", lint(tree),
+                                 "agents/build.md: missing the implement-deep code list")
+        finally:
+            build_path.write_text(build_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
