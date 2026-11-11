@@ -524,11 +524,11 @@ def main() -> int:
     cases = [
         (args.root, "T0", T0, None, [], [
             "plan-review-deep", "review-light", "review-deep",
-            "second-opinion", "implement-deep",
+            "second-opinion", "implement-deep", "advisor",
         ], check_t0, None),
         (args.root, "T1", T1, None, [], [
             "plan-review-deep", "review-light", "review-deep",
-            "second-opinion", "implement-deep",
+            "second-opinion", "implement-deep", "advisor",
         ], check_t1, None),
         (args.root, "T2", T2, None, [], [
             "plan-review-deep", "review-light", "review-deep",
