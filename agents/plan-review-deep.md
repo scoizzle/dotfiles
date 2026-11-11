@@ -125,12 +125,17 @@ implementer: deepseek
 
 or, in place of the second line,
 `implementer: implement-deep — <code>: <plan step id>`, with `<code>` exactly one
-of `coupled-invariants`, `no-oracle`, `security-logic`. The default is
-`implementer: deepseek`. Escalate to `implement-deep` only for a named plan step
-that `deepseek` plausibly cannot pass under review (invariants spread across
-files, no test that can fail for the behaviour, or security-sensitive logic);
-"large", "important" or "cross-cutting" alone is not a reason. A missing or
-malformed line is read as `deepseek`.
+of `coupled-invariants`, `no-oracle` or `security-logic`.
+
+The separator after `implement-deep` may be an em dash, an en dash or a hyphen.
+The default is `implementer: deepseek`. Escalate to `implement-deep` only for a
+named plan step that `deepseek` plausibly cannot pass under review (invariants
+spread across files, no test that can fail for the behaviour, or
+security-sensitive logic); "large", "important" or "cross-cutting" alone is not a
+reason. `no-oracle` applies only to a step whose done-when can be judged by review
+alone; a step with an oracle still needs its red test first. Use exactly one of
+the three codes and a real plan step id: a missing or malformed line silently
+means `deepseek`.
 
 ## Findings
 

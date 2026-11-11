@@ -273,11 +273,35 @@ def check_fallback_models() -> None:
             fail(f"policy readonly_agents.models.{name} is {got!r}, expected {want!r}; "
                  "the native fallback map changed without updating bin/lint-config and AGENTS.md")
     text = (ROOT / "AGENTS.md").read_text()
-    found = dict(re.findall(r"`([a-z-]+)`=`([a-z0-9.-]+)`", text))
+    bullet = re.search(r"^- Native fallback map\b(.*?)(?=^\s*$|^\S|\Z)", text, flags=re.M | re.S)
+    if not bullet:
+        fail("AGENTS.md: missing the 'Native fallback map' bullet in Model routing")
+        return
+    found = dict(re.findall(r"`([a-z-]+)`=`([a-z0-9.-]+)`", bullet.group(0)))
     for name, got in models.items():
         if found.get(name) != got:
             fail(f"AGENTS.md: native fallback map entry for {name} is {found.get(name)!r}, "
                  f"policy readonly_agents.models says {got!r}")
+
+
+def check_trigger_codes() -> None:
+    """The implement-deep trigger codes are the same three in every file that names them."""
+    codes = ("coupled-invariants", "no-oracle", "security-logic")
+    for rel in ("AGENTS.md", "agents/build.md", "agents/plan-review-deep.md"):
+        text = (ROOT / rel).read_text()
+        for code in codes:
+            if f"`{code}`" not in text:
+                fail(f"{rel}: missing the implement-deep trigger code `{code}`")
+    review = (ROOT / "agents" / "plan-review-deep.md").read_text()
+    listed = re.search(r"`<code>` exactly one\s+of (.+?)\.", review, flags=re.S)
+    if not listed:
+        fail("agents/plan-review-deep.md: the verdict must say `<code>` exactly one of the three "
+             "trigger codes")
+        return
+    extra = [c for c in re.findall(r"`([a-z0-9-]+)`", listed.group(1)) if c not in codes]
+    if extra:
+        fail(f"agents/plan-review-deep.md: unknown implement-deep trigger code(s) {extra}; "
+             f"only {list(codes)} are valid")
 
 
 PROVIDERS = ROOT / "policy" / "providers.json"
@@ -484,14 +508,23 @@ def main() -> int:
                          "ROLE: explore unit", "ROLE: plan unit"):
             if sentinel not in build_text:
                 fail(f"build: the role branch must handle {sentinel!r}")
-        if "A missing or differing target is a bug" not in build_text:
-            fail("build: the pre-dispatch rule must say 'A missing or differing target is a bug' "
-                 "(every delegate_task passes an explicit target equal to its routing row)")
-        if build_text.count("stop and report, do no work") < 4:
-            fail("build: the implementor, check, checkpoint and integrate branches must each stop "
-                 "and report, do no work, on a brief with no TIER: line")
-        if "at most 2" not in build_text:
-            fail("build: needs the concurrency cap ('at most 2' claude-agent dispatches outstanding)")
+        if not re.search(r"`target` is explicit and equals the Model routing row for that role or band"
+                         r"\s*\(provider instance, model and variant\)\. "
+                         r"A missing or differing target is a bug\.", build_text):
+            fail("build: the pre-dispatch rule must say `target` is explicit and equals the Model "
+                 "routing row for that role or band (provider instance, model and variant), and "
+                 "'A missing or differing target is a bug'")
+        branches = {m.group(1).strip(): m.group(2) for m in
+                    re.finditer(r"^- `ROLE: ([a-z ]+?)`(.*?)(?=^- `ROLE: |^[ \t]*$|\Z)",
+                                build_text, flags=re.M | re.S)}
+        for role in ("implementor unit", "check unit", "checkpoint unit", "integrate unit"):
+            if "stop and report, do no work" not in branches.get(role, ""):
+                fail(f"build: the {role} branch must stop and report, do no work, on a brief "
+                     "with no TIER: line")
+        if not re.search(r"count your own dispatches on `claude-agent` pins that have not yet "
+                         r"notified\s+completion, and at most 2 are outstanding\.", build_text):
+            fail("build: needs the concurrency cap: count your own dispatches on `claude-agent` "
+                 "pins that have not yet notified completion, and at most 2 are outstanding")
         for label, body in (("AGENTS.md", (ROOT / "AGENTS.md").read_text()), ("agents/build.md", build_text)):
             if "T0: no review dispatch" not in body:
                 fail(f"{label}: needs the 'T0: no review dispatch' rule")
@@ -538,6 +571,7 @@ def main() -> int:
     check_policy(agents)
     check_shared_surfaces()
     check_fallback_models()
+    check_trigger_codes()
     check_instructions()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):

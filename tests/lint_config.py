@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""bin/lint-config must pass on the tree and must fail when the native fallback
-models in policy/permissions.json drift from the expected map."""
+"""bin/lint-config must pass on the tree and must fail when a policy surface
+drifts: the native fallback models in policy/permissions.json or in the AGENTS.md
+fallback bullet, a default-mode role branch that lost its TIER: stop, or the
+plan-review-deep trigger-code list."""
 
 import json
 import shutil
@@ -15,6 +17,22 @@ ROOT = Path(__file__).resolve().parent.parent
 def lint(tree: Path) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(tree / "bin" / "lint-config"), str(tree)],
                           capture_output=True, text=True)
+
+
+def expect(name: str, run: subprocess.CompletedProcess, marker: str) -> bool:
+    out = run.stdout + run.stderr
+    if run.returncode != 1 or marker not in out:
+        print(f"FAIL: {name}: rc={run.returncode}, expected 1 mentioning {marker!r}\n{out}")
+        return False
+    print(f"ok {name}")
+    return True
+
+
+def edit(path: Path, old: str, new: str) -> None:
+    text = path.read_text()
+    if old not in text:
+        raise AssertionError(f"{path}: missing {old!r}")
+    path.write_text(text.replace(old, new, 1))
 
 
 def main() -> int:
@@ -41,6 +59,48 @@ def main() -> int:
             else:
                 print(f"ok drift detected: {name}")
         policy_path.write_text(original)
+
+        # The fallback map is the bullet, not the whole file: a stray later line
+        # must not mask drift in the bullet.
+        agents_path = tree / "AGENTS.md"
+        agents_original = agents_path.read_text()
+        try:
+            edit(agents_path, "`explore`=`haiku`.", "`explore`=`opus`.")
+            agents_path.write_text(agents_path.read_text() + "\n`explore`=`haiku` is the old value.\n")
+            failed |= not expect("AGENTS.md bullet drift masked by a later line", lint(tree), "fallback map")
+        finally:
+            agents_path.write_text(agents_original)
+
+        keep = agents_path.read_text()
+        try:
+            edit(agents_path, "`review-deep`=`sonnet`", "`review-deep`=`haiku`")
+            failed |= not expect("AGENTS.md bullet drift", lint(tree), "fallback map")
+        finally:
+            agents_path.write_text(keep)
+
+        # Every default-mode role branch keeps its own TIER: stop; an extra copy
+        # elsewhere does not replace the one that drifted.
+        build_path = tree / "agents" / "build.md"
+        build_original = build_path.read_text()
+        try:
+            edit(build_path,
+                 "`ROLE: integrate unit` — a brief with no `TIER:` line naming a tier and a band:\n"
+                 "  stop and report, do no work.",
+                 "`ROLE: integrate unit` — a brief with no `TIER:` line naming a tier and a band:")
+            edit(build_path, "Branch on the `ROLE:` prefix:",
+                 "Branch on the `ROLE:` prefix; stop and report, do no work on a brief with no TIER: line.")
+            failed |= not expect("build.md integrate branch lost its TIER: stop", lint(tree), "integrate unit branch")
+        finally:
+            build_path.write_text(build_original)
+
+        # Only the three implement-deep trigger codes are valid.
+        review_path = tree / "agents" / "plan-review-deep.md"
+        review_original = review_path.read_text()
+        try:
+            edit(review_path, "`security-logic`.", "`security-logic`, `performance`.")
+            failed |= not expect("plan-review-deep fourth trigger code", lint(tree), "unknown implement-deep trigger code")
+        finally:
+            review_path.write_text(review_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

@@ -50,15 +50,25 @@ T2 bullet below.
   (a) the last `plan-review-deep` round's verdict ends with
   `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
   `coupled-invariants`, `no-oracle`, `security-logic`; a missing or malformed
-  line means `deepseek`;
-  (b) ladder: a `deepseek` unit returned FAIL on a done-when item or a red suite
-  with PROOF (not a classify stop, scope-gap report or blocked unit); the retry of
-  that item goes to `implement-deep`, quoting the failing PROOF line; the same
-  item failing again is advisor moment 2, then the human;
+  line means `deepseek`, and `implement-deep` takes only the unit implementing
+  that plan step, not the whole T2;
+  (b) ladder: an implementor unit's done-when line marked FAIL, or its
+  green-phase suite red, or the integrate unit's suite red on a failure absent at
+  `preSha`; quote that done-when FAIL line (or the integrate red line with
+  `preSha`). A red-phase (test-first) tail never counts, and neither does a
+  classify stop, scope-gap report or blocked unit. The retry of that item goes to
+  `implement-deep`; the same done-when item failing again is advisor moment 2,
+  then the human;
   (c) critical T2, decided at plan lock: a `deepseek` check unit runs
-  `review-bundle <repo> --classify --paths <planned FILES>` and criticality comes
-  from its reason lines (definition in Model routing); the integrate unit's
-  reclassify may only raise it.
+  `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
+  evidence; the orchestrator writes
+  `critical: <path> — security|data|public-contract|auth|migration` in the
+  dispatch's TIER line, one entry per path, and a CI-only reason is never
+  critical. `implement-deep` applies under (c) only when the category is
+  security, auth, or a data/schema migration; a T2 that is critical only for
+  public contract keeps the `deepseek` implementor and gets `review-critical` at
+  sign-off. The integrate unit's reclassify may only raise: non-critical ->
+  critical, `review-deep` -> `review-critical`, never down.
 - **Close-out:** the stream ends with the tree record. If the last unit is a shared
   one, its PROOF is the close-out and its brief includes the `review-log` run.
   Otherwise one check unit runs `git -C <session checkout path> status --short`
@@ -76,8 +86,9 @@ T2 bullet below.
   editing unit runs the changed-area tests red then green in its worktree; the
   integrate unit runs the full suite at the integrated head, and its PROOF is the
   branch-head record. A separate check unit (`ROLE: check unit`) runs only to
-  probe an unproven finding, for the close-out, or when the user asks. Never use a
-  review agent as a check runner. Reviewers never rebuild.
+  probe an unproven finding, for the close-out, for the plan-lock classify for the
+  `implement-deep` trigger (c), or when the user asks. Never use a review agent as
+  a check runner. Reviewers never rebuild.
 - **Reviewers** are dispatched with `ROLE: review unit`; they read the
   `review-bundle` directory and the recorded check output. `review-bundle` is not
   on PATH; call `~/.config/opencode/bin/review-bundle` by absolute path. Outside
@@ -211,7 +222,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | explore | repo maps and multi-file grep | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=low` |
 | review-light | T1 diff review | `opencode` | `claude-agent/haiku` | none |
 | build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
-| implementor, plan, general | implement one unit (T0, T1 and T2 by default); plan units and general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
+| implementor, plan, general, check, checkpoint, integrate | implement one unit (T0, T1 and T2 by default); plan, check, checkpoint and integrate units | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
 | implement-deep | T2 implementation only on the three triggers in Classify (plan-review-deep line, failed-item retry, critical T2) | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
@@ -225,7 +236,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   one table holds in opencode, Claude Code and Grok Build. Use a native subagent
   only when the T3 tools are absent (explore, and reviewers as below); say in the
   reply that the pin did not apply.
-- The advisor and implement bands are never silently downgraded. If T3 is
+- The pin of the dispatched role is never silently downgraded. If T3 is
   absent, say so instead of substituting the session model.
 - Fixed bands: check, checkpoint, integrate, explore and plan units always run on
   their routing-row pins; there is no argued deviation. Every `delegate_task`
@@ -275,7 +286,8 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   `plan-review-deep`=`sonnet`, `second-opinion`=`sonnet`, `explore`=`haiku`.
   `second-opinion` on sonnet and `explore` on haiku are degraded fallbacks: the
   pin did not apply. A degraded `second-opinion` is advisory and does not satisfy
-  T2 sign-off (see Without T3).
+  T2 sign-off (see Without T3); a degraded `explore` output is advisory input,
+  not evidence.
 
 ## Memory
 
