@@ -81,12 +81,12 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   Never edit or run mutating shell.
 - `ROLE: advisor unit` — read-only consult, `FILES: none`. The brief carries only
   the packet from `agents/advisor.md`: the question, 2-4 options, evidence within
-  its cap, the optional `TAILS` (stuck) or `POSITIONS` (dispute) lines, what was
-  tried, the bundle, and the paths you may read. Read only the `READ ALLOWED`
-  paths, one pass each; open nothing else, no listing, no shell, no Roslynk, no
-  dispatch. Answer in the six keys within 15 lines and stop — `decision`, `why`,
-  `risk`, `confidence`, `escalate`, `paths` — and nothing else. No PROOF; the
-  orchestrator triages your decision.
+  its cap, the `TAILS` lines (required for stuck) or `POSITIONS` lines (required
+  for dispute), what was tried, the bundle, and the paths you may read. Read only
+  the `READ ALLOWED` paths, one pass each; open nothing else, no listing, no
+  shell, no Roslynk, no dispatch. Answer in the six keys within 15 lines and stop
+  — `decision`, `why`, `risk`, `confidence`, `escalate`, `paths` — and nothing
+  else. No PROOF; the orchestrator triages your decision.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
   and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
   per line, within the line cap the brief sets. It dispatches no further units.
