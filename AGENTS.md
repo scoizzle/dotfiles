@@ -43,8 +43,10 @@ T2 bullet below.
   `review-deep` (or `review-critical`) + `second-opinion` in parallel -> triage ->
   fix (cap 2, also on `deepseek`) -> integrate -> one re-review dispatch on the
   `review-deep` (`review-critical`) pin with both bundles, also checking the
-  acted-on `second-opinion` findings -> close-out. Pins and the three advisor
-  moments are in Model routing.
+  acted-on `second-opinion` findings -> close-out. An open fork between plan
+  options that binds the scope of the next plan-lock round is a `fork` advisor
+  consult. Pins, the review pin's named points and the advisor's named triggers
+  are in Model routing.
   `implement-deep` (sonnet) replaces the `deepseek` implementor only on these
   triggers, each quoted in the dispatch's TIER clause:
   (a) the last `plan-review-deep` round's verdict ends with
@@ -59,8 +61,8 @@ T2 bullet below.
   suite goes to a normal fix round on `deepseek`, not to `implement-deep`. A
   red-phase (test-first) tail never counts, and neither does a classify stop,
   scope-gap report or blocked unit. The retry of that item goes to
-  `implement-deep`; the same done-when item failing again is advisor moment 2,
-  then the human;
+  `implement-deep`; the same done-when item failing again is the `stuck` consult
+  on the advisor band, then the human, and it does not reopen the fix budget;
   (c) critical T2, decided at plan lock: a `deepseek` check unit runs
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
@@ -108,7 +110,10 @@ T2 bullet below.
   directories go to the re-reviewer.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
   done-when. An unproven 🟠 gets a probe by a check unit (or the implementor) or is
-  downgraded and reported; it is not fixed as confirmed.
+  downgraded and reported; it is not fixed as confirmed. When
+  `review-deep`/`review-critical` and `second-opinion` disagree on a finding, that
+  is a `dispute` advisor consult: the packet is the disputed finding, its hunk,
+  and one line per reviewer position, never the full reports.
 - **Handback:** a reproducible bug in hand is work, not a note: write its red
   test before the stream ends. A fix inside T1's limits stays T1; a larger one is
   T2. Only a person's ruling defers, recorded and dated, naming the decision it
@@ -216,9 +221,11 @@ instead of improvising:
 - Read-only reviewers may fall back to the harness's own reviewer. The band's pin
   does not apply; record the run as degraded.
 - Pinned bands: do not substitute the session model for a band's pin. A T2
-  sign-off that needs the advisor and `second-opinion` does not complete without
-  them; say so and stop. A degraded `second-opinion` is advisory and does not
-  satisfy T2 sign-off.
+  sign-off that needs the review pin and `second-opinion` does not complete
+  without them; say so and stop. A degraded `second-opinion` is advisory and does
+  not satisfy T2 sign-off.
+- An advisor consult is reported blocked without T3: it has no native fallback,
+  and a blocked consult is not a completed trigger.
 - A pinned band that is unavailable or fails on quota (`usage_limit`) is blocked
   the same way: report it, do not substitute. Only the user picks a fallback.
 
@@ -236,8 +243,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
 | implement-deep | T2 implementation only on the three triggers in Classify (plan-review-deep line, failed-item retry, critical T2 for security, auth or migration) | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
-| plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
+| plan-review-deep, review-deep | review pin: plan lock, sign-off, re-review | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | review-critical | security, auth, schema/data migration or public-contract T2 sign-off; review-deep's prompt on the Opus pin | `opencode` | `claude-agent/opus` | `variant=high` |
+| advisor | capped consult, orchestrator only, at three named triggers (fork, stuck, dispute); packet and output capped by agents/advisor.md | `opencode` | `claude-agent/fable` | `variant=medium` |
 
 - Call `orchestrator_capabilities` once per thread before the first delegation,
   and again only after an error or a provider the user names. Pass the pin as
@@ -260,10 +268,11 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   change), or it touches auth or a schema/data migration. The orchestrator
   records the trigger in the dispatch.
 - Read-only units (reviewers `review-light`, `review-deep`, `plan-review-deep`,
-  `review-critical`, `second-opinion`, and explore) run as T3 children with
-  `isolation: "worktree"`, `interactionMode: "plan"`, and `role: "review"` (explore:
-  `"research"`). Check, implementor, checkpoint and integrate units stay in default
-  mode, since tests write build output. Plan mode is a harness instruction, not a
+  `review-critical`, `second-opinion`, the `advisor` consult, and explore) run as
+  T3 children with `isolation: "worktree"`, `interactionMode: "plan"`, and
+  `role: "review"` (explore: `"research"`). Check, implementor, checkpoint and
+  integrate units stay in default mode, since tests write build output. Plan mode
+  is a harness instruction, not a
   tool fence (probe 2026-11-10: the child obeyed it over a brief asking for a
   write, and shell still ran), so the stream's close-out still checks the tree.
   T3 children never load `agents/<band>.md`; the brief tells them to read it (the
@@ -278,14 +287,30 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   job: `research`, `review`, `implementation`, `test`, `design` or `general`.
 - Replace a running child with `task_cancel`, then a new `delegate_task`; never
   poll `task_status`.
-- The advisor pin is spent at three moments only: (1) T2 plan lock before the
-  plan is fixed; (2) the same error or failing assertion twice in a row, passing
-  both attempts; (3) T2 sign-off, with `second-opinion` in parallel. A T1 retry
-  stays on the builder band. At sign-off: one `review-deep` (`review-critical` on
-  a critical T2) and one `second-opinion` in parallel, then still one re-review
-  dispatch after a fix, on the `review-deep` (`review-critical`) pin, which also
-  checks the acted-on `second-opinion` findings. A third is a human escalation;
-  cap dispatches, not reviewer steps.
+- The review pin (`plan-review-deep`, `review-deep`, `review-critical`) is spent
+  at its named points only: plan lock, T2 sign-off, and the one re-review after a
+  fix. A T1 retry stays on the builder band. At sign-off: one `review-deep`
+  (`review-critical` on a critical T2) and one `second-opinion` in parallel, then
+  still one re-review dispatch after a fix, on the `review-deep`
+  (`review-critical`) pin, which also checks the acted-on `second-opinion`
+  findings. A third re-review is a human escalation; cap dispatches, not reviewer
+  steps. The same done-when item failing twice is the `stuck` advisor consult
+  below, not another review round.
+- The advisor consult band (`advisor`, `claude-agent/fable` at `variant=medium`)
+  is orchestrator-only and read-only, at most one consult per trigger and at most 3 per stream.
+  It is spent at three named triggers, and nowhere else: `fork` (`plan-review-deep`
+  leaves an open fork between plan options, and the choice binds the scope of the
+  next plan-lock round; it does not extend `plan-review-deep`'s fix cap of 2),
+  `stuck` (the same done-when item FAILs twice; one consult carrying both PROOF
+  tails, then the human, and the fix budget is not reopened), and `dispute`
+  (`review-deep`/`review-critical` and `second-opinion` disagree at triage; the
+  packet is the disputed finding, its hunk, and one line per reviewer position,
+  never the full reports). The packet and the answer are capped by
+  `agents/advisor.md`. An advisor dispatch occupies one of the two `claude-agent`
+  slots. There is no veto: the orchestrator accepts, rejects or escalates, and
+  `escalate: yes` goes to the human, never an automatic re-consult at a higher
+  variant. Advisor output is never forwarded into `second-opinion` or re-review;
+  only the orchestrator's triage outcome is.
 - `agents/*.md` are the native fallback, not the routing source. Pins must name
   an enabled instance and an allowlisted model in `policy/providers.json`.
   `grok-4.7` is retired as of 2026-11-09 and no band pins it; `grok-4.5` stays
