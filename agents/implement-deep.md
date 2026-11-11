@@ -1,5 +1,5 @@
 ---
-description: Mid-tier builder for T2 work that escalated past deepseek: a plan-review-deep implement-deep verdict line, a failed-item retry with PROOF, or a critical T2 (AGENTS.md, Classify). Implements with a red test first, then the smallest fix.
+description: Mid-tier builder for T2 work that escalated past deepseek: a plan-review-deep implement-deep verdict line, a failed-item retry with PROOF, or a critical T2 for security, auth or migration (AGENTS.md, Classify). Implements with a red test first, then the smallest fix.
 mode: subagent
 model: claude-agent/sonnet#medium
 steps: 80

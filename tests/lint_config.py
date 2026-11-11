@@ -93,14 +93,33 @@ def main() -> int:
         finally:
             build_path.write_text(build_original)
 
-        # Only the three implement-deep trigger codes are valid.
+        # Only the three implement-deep trigger codes are valid: each file that
+        # states the list is checked, not just plan-review-deep.
         review_path = tree / "agents" / "plan-review-deep.md"
         review_original = review_path.read_text()
         try:
             edit(review_path, "`security-logic`.", "`security-logic`, `performance`.")
-            failed |= not expect("plan-review-deep fourth trigger code", lint(tree), "unknown implement-deep trigger code")
+            failed |= not expect("plan-review-deep fourth trigger code", lint(tree),
+                                 "agents/plan-review-deep.md: unknown implement-deep trigger code")
         finally:
             review_path.write_text(review_original)
+
+        # The separator sentence sits after the code list's terminator, so the
+        # lint must read the list span, not the whole file, and still catch a
+        # fourth code there.
+        try:
+            edit(agents_path, "`security-logic`;", "`security-logic`, `performance`;")
+            failed |= not expect("AGENTS.md fourth trigger code", lint(tree),
+                                 "AGENTS.md: unknown implement-deep trigger code")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(build_path, "`security-logic`. The separator", "`security-logic`, `performance`. The separator")
+            failed |= not expect("build.md fourth trigger code", lint(tree),
+                                 "agents/build.md: unknown implement-deep trigger code")
+        finally:
+            build_path.write_text(build_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

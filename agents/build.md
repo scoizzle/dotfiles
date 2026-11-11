@@ -163,24 +163,26 @@ dispatch's TIER clause quotes one of:
 
 - (a) the last `plan-review-deep` round's verdict line
   `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
-  `coupled-invariants`, `no-oracle`, `security-logic`. A missing or malformed line
-  means `deepseek`, and `implement-deep` takes only the unit implementing that
-  plan step, not the whole T2. Copy the line verbatim into TIER.
+  `coupled-invariants`, `no-oracle`, `security-logic`. The separator may be an em
+  dash, an en dash or a hyphen. A missing or malformed line means `deepseek`, and
+  `implement-deep` takes only the unit implementing that plan step, not the whole
+  T2. Copy the line verbatim into TIER.
 - (b) ladder: an implementor unit's done-when line marked FAIL, or its green-phase
-  suite red, or the integrate unit's suite red on a failure absent at `preSha`;
-  quote that done-when FAIL line (or the integrate red line with `preSha`). A
-  red-phase (test-first) tail never counts, and neither does a classify stop,
-  scope-gap report or blocked unit. The retry of that item goes to
-  `implement-deep`; the same done-when item failing again is advisor moment 2
-  (pass both attempts), then the human.
+  suite red; quote that done-when FAIL line. An integrate unit's red suite goes to
+  a normal fix round on `deepseek`, not to `implement-deep`. A red-phase
+  (test-first) tail never counts, and neither does a classify stop, scope-gap
+  report or blocked unit. The retry of that item goes to `implement-deep`; the
+  same done-when item failing again is advisor moment 2 (pass both attempts), then
+  the human.
 - (c) critical T2, decided at plan lock: a `deepseek` check unit runs
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
   `critical: <path> — security|data|public-contract|auth|migration` in the
   dispatch's TIER line, one entry per path, and a CI-only reason is never
-  critical. `implement-deep` applies under (c) only when the category is
-  security, auth, or a data/schema migration; a T2 that is critical only for
-  public contract keeps the `deepseek` implementor and gets `review-critical` at
+  critical. `implement-deep` applies under (c) only when a TIER entry's category
+  token is exactly `security`, `auth` or `migration`, and only for the unit whose
+  FILES include a qualifying path; a `data` token without `migration`, and
+  `public-contract`, keep the `deepseek` implementor and get `review-critical` at
   sign-off. The integrate unit's reclassify may only raise: non-critical ->
   critical, `review-deep` -> `review-critical`, never down.
 
@@ -190,9 +192,9 @@ when a verdict on a diff is wanted.
 An explore dispatch passes `variant=low`: pass it in `options` as
 `[{ id: "variant", value: "low" }]`.
 
-A `deepseek` unit's failure with PROOF moves that item to `implement-deep`
-(trigger b); a second failure of the same item is not a tier choice, it is a stop:
-advisor moment 2, then the human. A T1 retry stays on the builder band.
+A failure that meets trigger (b) moves that item to `implement-deep`; a second
+failure of the same item is not a tier choice, it is a stop: advisor moment 2,
+then the human. A T1 retry stays on the builder band.
 
 Reviews are not a tier. Dispatch `plan-review-deep` before a T2 plan locks, and
 `review-deep` plus `second-opinion` at T2 sign-off, on their Model routing pins.
@@ -251,7 +253,8 @@ left allowed only because that is how T3 is reached; use it for `delegate_task`
 only, never `fetch`, the browser, or the `opencode_*` state tools.
 
 An implementor unit with band `sonnet` means `implement-deep` at `#medium`; review
-units use their band's row at `#high`.
+units use their band's row, with the variant the row lists (none for
+review-light).
 
 Read-only units (explore, plan, and review units on any review band) also pass
 `interactionMode: "plan"`, with `role: "research"` (explore), `"design"` (plan

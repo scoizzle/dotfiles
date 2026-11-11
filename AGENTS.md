@@ -49,14 +49,15 @@ T2 bullet below.
   triggers, each quoted in the dispatch's TIER clause:
   (a) the last `plan-review-deep` round's verdict ends with
   `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
-  `coupled-invariants`, `no-oracle`, `security-logic`; a missing or malformed
-  line means `deepseek`, and `implement-deep` takes only the unit implementing
-  that plan step, not the whole T2;
+  `coupled-invariants`, `no-oracle`, `security-logic`; the separator may be an em
+  dash, an en dash or a hyphen. A missing or malformed line means `deepseek`, and
+  `implement-deep` takes only the unit implementing that plan step, not the whole
+  T2;
   (b) ladder: an implementor unit's done-when line marked FAIL, or its
-  green-phase suite red, or the integrate unit's suite red on a failure absent at
-  `preSha`; quote that done-when FAIL line (or the integrate red line with
-  `preSha`). A red-phase (test-first) tail never counts, and neither does a
-  classify stop, scope-gap report or blocked unit. The retry of that item goes to
+  green-phase suite red; quote that done-when FAIL line. An integrate unit's red
+  suite goes to a normal fix round on `deepseek`, not to `implement-deep`. A
+  red-phase (test-first) tail never counts, and neither does a classify stop,
+  scope-gap report or blocked unit. The retry of that item goes to
   `implement-deep`; the same done-when item failing again is advisor moment 2,
   then the human;
   (c) critical T2, decided at plan lock: a `deepseek` check unit runs
@@ -64,9 +65,10 @@ T2 bullet below.
   evidence; the orchestrator writes
   `critical: <path> — security|data|public-contract|auth|migration` in the
   dispatch's TIER line, one entry per path, and a CI-only reason is never
-  critical. `implement-deep` applies under (c) only when the category is
-  security, auth, or a data/schema migration; a T2 that is critical only for
-  public contract keeps the `deepseek` implementor and gets `review-critical` at
+  critical. `implement-deep` applies under (c) only when a TIER entry's category
+  token is exactly `security`, `auth` or `migration`, and only for the unit whose
+  FILES include a qualifying path; a `data` token without `migration`, and
+  `public-contract`, keep the `deepseek` implementor and get `review-critical` at
   sign-off. The integrate unit's reclassify may only raise: non-critical ->
   critical, `review-deep` -> `review-critical`, never down.
 - **Close-out:** the stream ends with the tree record. If the last unit is a shared
@@ -224,7 +226,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | implementor, plan, general, check, checkpoint, integrate | implement one unit (T0, T1 and T2 by default); plan, check, checkpoint and integrate units | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
-| implement-deep | T2 implementation only on the three triggers in Classify (plan-review-deep line, failed-item retry, critical T2) | `opencode` | `claude-agent/sonnet` | `variant=medium` |
+| implement-deep | T2 implementation only on the three triggers in Classify (plan-review-deep line, failed-item retry, critical T2 for security, auth or migration) | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | review-critical | security, auth, schema/data migration or public-contract T2 sign-off; review-deep's prompt on the Opus pin | `opencode` | `claude-agent/opus` | `variant=high` |

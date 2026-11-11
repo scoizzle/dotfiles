@@ -285,23 +285,29 @@ def check_fallback_models() -> None:
 
 
 def check_trigger_codes() -> None:
-    """The implement-deep trigger codes are the same three in every file that names them."""
+    """The implement-deep trigger codes are the same three in every file that names them.
+
+    Each file states the list once, after `<code>`; the list ends with `;` or `.`
+    and may be followed by a sentence (the separator rule), so the check reads the
+    list span rather than the whole file: a fourth code there, or a missing one,
+    is a lint failure.
+    """
     codes = ("coupled-invariants", "no-oracle", "security-logic")
     for rel in ("AGENTS.md", "agents/build.md", "agents/plan-review-deep.md"):
         text = (ROOT / rel).read_text()
-        for code in codes:
-            if f"`{code}`" not in text:
-                fail(f"{rel}: missing the implement-deep trigger code `{code}`")
-    review = (ROOT / "agents" / "plan-review-deep.md").read_text()
-    listed = re.search(r"`<code>` exactly one\s+of (.+?)\.", review, flags=re.S)
-    if not listed:
-        fail("agents/plan-review-deep.md: the verdict must say `<code>` exactly one of the three "
-             "trigger codes")
-        return
-    extra = [c for c in re.findall(r"`([a-z0-9-]+)`", listed.group(1)) if c not in codes]
-    if extra:
-        fail(f"agents/plan-review-deep.md: unknown implement-deep trigger code(s) {extra}; "
-             f"only {list(codes)} are valid")
+        listed = re.search(r"`<code>`\s+(?:exactly\s+)?one\s+of\s+(.+?)[.;]", text, flags=re.S)
+        if not listed:
+            fail(f"{rel}: missing the implement-deep code list")
+            continue
+        found = re.findall(r"`([a-z0-9-]+)`", listed.group(1))
+        extra = [c for c in found if c not in codes]
+        if extra:
+            fail(f"{rel}: unknown implement-deep trigger code(s) {extra}; "
+                 f"only {list(codes)} are valid")
+        missing = [c for c in codes if c not in found]
+        if missing:
+            fail(f"{rel}: missing the implement-deep trigger code(s) {missing}; "
+                 f"all of {list(codes)} must be listed")
 
 
 PROVIDERS = ROOT / "policy" / "providers.json"
