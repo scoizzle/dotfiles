@@ -1,5 +1,5 @@
 ---
-description: Expensive read-only T2 change reviewer and sign-off advisor. Reviews a diff and its check output against the plan and done-when, including callers, contracts, and missing tests. Use for T2 change review only, not for repo search. This native fallback runs on claude-agent/sonnet; the routed run is a T3 child (AGENTS.md, Model routing).
+description: Expensive read-only T2 change reviewer and sign-off reviewer. Reviews a diff and its check output against the plan and done-when, including callers, contracts, and missing tests. Use for T2 change review only, not for repo search. This native fallback runs on claude-agent/sonnet; the routed run is a T3 child (AGENTS.md, Model routing).
 mode: subagent
 model: claude-agent/sonnet#high
 steps: 40

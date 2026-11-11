@@ -1,5 +1,5 @@
 ---
-description: Cheap read-only swarm for repo maps, multi-file grep and where-is-X lookups. Use for every broad read-only lookup. Never use for plan-lock, a repeated-error consult, or sign-off.
+description: Cheap read-only swarm for repo maps, multi-file grep and where-is-X lookups. Use for every broad read-only lookup. Never use for plan-lock, an advisor consult, or sign-off.
 mode: subagent
 model: opencode-go/deepseek-v4.1-flash#low
 steps: 20

@@ -1,5 +1,5 @@
 ---
-description: Independent read-only T2 second reviewer from a different model family than review-deep. Use in parallel at T2 sign-off, and do not show it the first report. Not the advisor pin.
+description: Independent read-only T2 second reviewer from a different model family than review-deep. Use in parallel at T2 sign-off, and do not show it the first report. Not the review pin and not the advisor consult band.
 mode: subagent
 model: opencode-go/muse-spark-1.3-contributor#high
 steps: 30
