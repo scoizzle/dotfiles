@@ -532,7 +532,7 @@ def main() -> int:
         ], check_t1, None),
         (args.root, "T2", T2, None, [], [
             "plan-review-deep", "review-light", "review-deep",
-            "second-opinion", "implement-deep",
+            "second-opinion", "implement-deep", "advisor",
         ], check_t2, None),
         (cs_root, "CS", CS, None, [], [], check_cs, check_roslynk),
     ]

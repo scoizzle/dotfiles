@@ -81,10 +81,12 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   Never edit or run mutating shell.
 - `ROLE: advisor unit` — read-only consult, `FILES: none`. The brief carries only
   the packet from `agents/advisor.md`: the question, 2-4 options, evidence within
-  its cap, what was tried, the bundle, and the paths you may read. Read only the
-  `READ ALLOWED` paths, one pass each; open nothing else, no listing, no shell, no
-  Roslynk, no dispatch. Answer in the fixed keys within 15 lines and stop. No
-  PROOF; the orchestrator triages your decision.
+  its cap, the optional `TAILS` (stuck) or `POSITIONS` (dispute) lines, what was
+  tried, the bundle, and the paths you may read. Read only the `READ ALLOWED`
+  paths, one pass each; open nothing else, no listing, no shell, no Roslynk, no
+  dispatch. Answer in the six keys within 15 lines and stop — `decision`, `why`,
+  `risk`, `confidence`, `escalate`, `paths` — and nothing else. No PROOF; the
+  orchestrator triages your decision.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
   and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
   per line, within the line cap the brief sets. It dispatches no further units.
@@ -231,7 +233,7 @@ Send exactly this shape, nothing looser:
 ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit | advisor unit
 GOAL: <one outcome, one sentence>
 TIER: T0 | T1 | T2, <band from Model routing> — <why, one clause; quote the trigger for implement-deep>
-PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md); omit for other units
+PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md; an advisor unit reads advisor.md); omit for other units
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
@@ -239,7 +241,7 @@ CHECK: <the exact command the caller expects in the PROOF block>
 RETURN: PROOF (AGENTS.md) and one PASS/FAIL line per done-when item; a
         read-only unit returns findings and sources; a plan unit returns the plan
         with done-when and no PROOF; a check unit returns its Coverage block and
-        the checks it ran.
+        the checks it ran; an advisor unit returns the six answer keys only.
 ```
 
 Before every `delegate_task`, check all of these; a failure is a bug, so do not
@@ -255,7 +257,11 @@ dispatch:
   completion, and at most 2 are outstanding. Read-only fan-out goes to explore. The
   sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies,
   and an advisor dispatch occupies one of the two `claude-agent` slots. Cap:
-  at most one consult per trigger and at most 3 per stream. Never poll for completion.
+  at most one consult per trigger occurrence and at most 3 per stream. Never poll for completion.
+
+The advisor consult is spent only at `fork`, `stuck` or `dispute`; AGENTS.md Model
+routing and `agents/advisor.md` carry the packet, the caps and the answer keys for
+each trigger.
 
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the band's pin (the Model routing row for the role):
@@ -280,9 +286,11 @@ worktree like every other unit. Check, implementor, checkpoint and integrate
 units stay in default mode. Plan mode is a
 harness instruction, not a tool fence (probe 2026-11-10: the child obeyed it over a
 brief asking for a write, and shell still ran), so the close-out below stays.
-The `PROMPT:` line is required for review and explore units because T3 children
-never load band prompts: every default-mode child is seated as `build`, so the
-severity rubric and repro rules in `agents/<band>.md` reach them only this way.
+The `PROMPT:` line is required for review, explore and advisor units because T3
+children never load band prompts: every default-mode child is seated as `build`, so
+the severity rubric and repro rules in `agents/<band>.md` reach them only this way,
+and an advisor unit gets its packet shape and answer caps only from
+`agents/advisor.md`.
 
 EXECUTE ALLOWLIST: delegate_task
 

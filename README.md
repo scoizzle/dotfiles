@@ -31,7 +31,7 @@ and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`
 (checkpoint and integrate units run shared and commit locally), then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
 `.opencode/agents/build.md` symlink is the project override opencode loads. It does not edit or run mutating shell
 itself. `implementor` is the direct-work agent (`opencode --agent implementor`);
-delegated units follow the `ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit`
+delegated units follow the `ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit | advisor unit`
 branch in `agents/build.md`.
 
 Run the orchestrator in `auto` or `full-access` so children can edit:

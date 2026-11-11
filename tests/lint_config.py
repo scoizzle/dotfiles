@@ -174,14 +174,38 @@ def main() -> int:
             agents_path.write_text(agents_original)
 
         try:
-            edit(agents_path, "at most 3 per stream", "at most 4 per stream")
+            edit(agents_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
             failed |= not expect("AGENTS.md advisor cap drifted", lint(tree), "cap sentence")
         finally:
             agents_path.write_text(agents_original)
 
         try:
-            edit(build_path, "at most 3 per stream", "at most 4 per stream")
+            edit(build_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
             failed |= not expect("build.md advisor cap drifted", lint(tree), "cap sentence")
+        finally:
+            build_path.write_text(build_original)
+
+        try:
+            edit(advisor_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
+            failed |= not expect("advisor.md cap sentence drifted", lint(tree), "cap sentence")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            edit(advisor_path, "at most 6 paths", "6 paths")
+            failed |= not expect("advisor.md READ ALLOWED cap removed", lint(tree), "missing the cap")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        # The advisor's PROMPT line: a T3 child never loads agents/advisor.md, so
+        # build.md must say the PROMPT: line is required for it too.
+        try:
+            edit(build_path, "review, explore and advisor units", "review and explore units")
+            failed |= not expect("build.md PROMPT rationale dropped the advisor", lint(tree),
+                                 "advisor PROMPT")
         finally:
             build_path.write_text(build_original)
 
@@ -202,6 +226,20 @@ def main() -> int:
                                  "numbered advisor moment")
         finally:
             readme_path.write_text(readme_original)
+
+        try:
+            agents_path.write_text(agents_original + "\nThe Advisor moment 2 rule still applies.\n")
+            failed |= not expect("AGENTS.md capitalised numbered advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            agents_path.write_text(agents_original + "\nAn Advisor Moment still applies.\n")
+            failed |= not expect("AGENTS.md case-drifted advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            agents_path.write_text(agents_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

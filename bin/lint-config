@@ -312,7 +312,7 @@ def check_trigger_codes() -> None:
 
 PROVIDERS = ROOT / "policy" / "providers.json"
 
-ADVISOR_CAP = re.compile(r"at\s+most\s+one\s+consult\s+per\s+trigger\s+and\s+at\s+most\s+3\s+per\s+stream")
+ADVISOR_CAP = re.compile(r"at\s+most\s+one\s+consult\s+per\s+trigger\s+occurrence\s+and\s+at\s+most\s+3\s+per\s+stream")
 ADVISOR_KEYS = ("decision", "why", "risk", "confidence", "escalate", "paths")
 ADVISOR_CAPS = ("at most 60 lines", "at most 15 lines", "at most 6 paths")
 
@@ -354,13 +354,19 @@ def check_advisor_contract() -> None:
              "`variant=medium`")
     for rel in ("AGENTS.md", "agents/build.md", "agents/advisor.md"):
         if not ADVISOR_CAP.search((ROOT / rel).read_text()):
-            fail(f"{rel}: missing the cap sentence: at most one consult per trigger and "
-                 "at most 3 per stream")
+            fail(f"{rel}: missing the cap sentence: at most one consult per trigger occurrence "
+                 "and at most 3 per stream")
     for rel in ("AGENTS.md", "agents/build.md", "README.md"):
-        found = re.search(r"advisor moment|moment \d", (ROOT / rel).read_text())
+        found = re.search(r"advisor moment|moment \d", (ROOT / rel).read_text(), flags=re.I)
         if found:
             fail(f"{rel}: numbered advisor moment ({found.group(0)!r}) is retired; name the "
                  "trigger (fork, stuck, dispute)")
+    build_text = (ROOT / "agents" / "build.md").read_text()
+    rationale = re.search(r"The `PROMPT:` line is required for[^.]*units", build_text)
+    if not rationale or "advisor" not in rationale.group(0):
+        fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "
+             "T3 children never load agents/advisor.md, so its packet, caps and answer keys reach "
+             "it only through the PROMPT: line")
 
 
 def load_providers() -> dict[str, dict]:

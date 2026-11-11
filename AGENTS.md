@@ -110,10 +110,12 @@ T2 bullet below.
   directories go to the re-reviewer.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
   done-when. An unproven 🟠 gets a probe by a check unit (or the implementor) or is
-  downgraded and reported; it is not fixed as confirmed. When
-  `review-deep`/`review-critical` and `second-opinion` disagree on a finding, that
-  is a `dispute` advisor consult: the packet is the disputed finding, its hunk,
-  and one line per reviewer position, never the full reports.
+  downgraded and reported; it is not fixed as confirmed. A `dispute` advisor
+  consult is a finding one reviewer raised and the other explicitly contradicted;
+  disjoint findings, or a finding only one reviewer saw, are not a dispute. The
+  packet is the disputed finding, its hunk, and one line per reviewer position in
+  `POSITIONS`, never the full reports. The consult never overrides "fix every 🔴"
+  and never replaces the check-unit probe for an unproven 🟠.
 - **Handback:** a reproducible bug in hand is work, not a note: write its red
   test before the stream ends. A fix inside T1's limits stays T1; a larger one is
   T2. Only a person's ruling defers, recorded and dated, naming the decision it
@@ -276,7 +278,8 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   tool fence (probe 2026-11-10: the child obeyed it over a brief asking for a
   write, and shell still ran), so the stream's close-out still checks the tree.
   T3 children never load `agents/<band>.md`; the brief tells them to read it (the
-  `PROMPT:` line in `agents/build.md`). With no T3, use the harness's own read-only
+  `PROMPT:` line in `agents/build.md`, required for the advisor unit too, reading
+  `agents/advisor.md`). With no T3, use the harness's own read-only
   reviewer (`agents/*.md`, `~/.claude/agents`) and say the pin did not apply.
   `review-critical` uses `review-deep`'s prompt on the Opus pin, so no
   `agents/review-critical.md` exists and, without T3, a critical review does not
@@ -297,15 +300,18 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   steps. The same done-when item failing twice is the `stuck` advisor consult
   below, not another review round.
 - The advisor consult band (`advisor`, `claude-agent/fable` at `variant=medium`)
-  is orchestrator-only and read-only, at most one consult per trigger and at most 3 per stream.
+  is orchestrator-only and read-only, at most one consult per trigger occurrence and at most 3 per stream.
   It is spent at three named triggers, and nowhere else: `fork` (`plan-review-deep`
   leaves an open fork between plan options, and the choice binds the scope of the
   next plan-lock round; it does not extend `plan-review-deep`'s fix cap of 2),
   `stuck` (the same done-when item FAILs twice; one consult carrying both PROOF
-  tails, then the human, and the fix budget is not reopened), and `dispute`
-  (`review-deep`/`review-critical` and `second-opinion` disagree at triage; the
-  packet is the disputed finding, its hunk, and one line per reviewer position,
-  never the full reports). The packet and the answer are capped by
+  tails in `TAILS`, then the human, and the fix budget is not reopened), and
+  `dispute` (a finding `review-deep`/`review-critical` raised and
+  `second-opinion` explicitly contradicted at triage; disjoint findings are not a
+  dispute, the packet is the disputed finding, its hunk, and one line per reviewer
+  position in `POSITIONS`, never the full reports, and the consult never overrides
+  "fix every 🔴" or the check-unit probe for an unproven 🟠). The packet and the
+  answer are capped by
   `agents/advisor.md`. An advisor dispatch occupies one of the two `claude-agent`
   slots. There is no veto: the orchestrator accepts, rejects or escalates, and
   `escalate: yes` goes to the human, never an automatic re-consult at a higher
