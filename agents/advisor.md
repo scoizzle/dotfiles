@@ -79,17 +79,18 @@ The brief carries the packet and nothing looser. It is the only input:
 QUESTION: <one decision-shaped sentence>
 OPTIONS: <A> | <B> [| C | D]        (2-4; the question must name one)
 EVIDENCE: <at most 60 lines, default 40, each "path:line — ", quoted never paraphrased>
-TAILS: <stuck only, optional: the two PROOF tails, each line prefixed "<command> tail:">
-POSITIONS: <dispute only, optional: one line per reviewer position>
+TAILS: <stuck only, required there: the two PROOF tails, each line prefixed "<command> tail:">
+POSITIONS: <dispute only, required there: one line per reviewer position>
 TRIED: <1-5 lines: attempt -> result>
 BUNDLE: <review-bundle directory, or none>
 READ ALLOWED: <at most 6 paths, or none>
 ```
 
-`TAILS` and `POSITIONS` are optional and earn their place only at their own
-trigger: a stuck packet carries `TAILS`, a dispute packet carries `POSITIONS`.
-Both count inside the 60-line `EVIDENCE` cap, so a full evidence block plus a
-long tail list still trips it.
+`TAILS` is required at a `stuck` consult and `POSITIONS` at a `dispute` one, and
+neither has a place at another trigger: a `stuck` packet carries `TAILS`, a
+`dispute` packet carries `POSITIONS`. Absent where its trigger requires it, it is
+a missing required key, not a thin packet. Both count inside the 60-line
+`EVIDENCE` cap, so a full evidence block plus a long tail list still trips it.
 
 If the packet is missing a required key or runs over a cap, say so in `why:` and
 answer with `escalate: yes`. Do not ask for more input; the orchestrator cannot

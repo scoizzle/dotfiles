@@ -209,6 +209,34 @@ def main() -> int:
         finally:
             build_path.write_text(build_original)
 
+        # (j) The template line an orchestrator actually copies must name advisor.md;
+        # the rationale can stay while the template loses it.
+        try:
+            edit(build_path, "an advisor unit reads advisor.md", "an advisor unit reads its prompt")
+            failed |= not expect("build.md template PROMPT line dropped advisor.md", lint(tree),
+                                 "advisor PROMPT")
+        finally:
+            build_path.write_text(build_original)
+
+        # (k) AGENTS.md's PROMPT clause must name agents/advisor.md too.
+        try:
+            edit(agents_path, "`agents/advisor.md`). With no T3", "its own prompt). With no T3")
+            failed |= not expect("AGENTS.md PROMPT clause dropped agents/advisor.md", lint(tree),
+                                 "advisor PROMPT")
+        finally:
+            agents_path.write_text(agents_original)
+
+        # (l) The dispute definition must be symmetric: either reviewer can be the
+        # one who raised or the one who contradicted.
+        try:
+            agents_path.write_text(agents_original +
+                                   "\nA dispute is a finding `review-deep` raised and "
+                                   "`second-opinion` explicitly contradicted at triage.\n")
+            failed |= not expect("AGENTS.md one-directional dispute definition", lint(tree),
+                                 "dispute direction")
+        finally:
+            agents_path.write_text(agents_original)
+
         try:
             start = build_original.index("- `ROLE: advisor unit`")
             end = build_original.index("- `ROLE:", start + 1)

@@ -306,8 +306,8 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   next plan-lock round; it does not extend `plan-review-deep`'s fix cap of 2),
   `stuck` (the same done-when item FAILs twice; one consult carrying both PROOF
   tails in `TAILS`, then the human, and the fix budget is not reopened), and
-  `dispute` (a finding `review-deep`/`review-critical` raised and
-  `second-opinion` explicitly contradicted at triage; disjoint findings are not a
+  `dispute` (a finding one reviewer raised and the other explicitly
+  contradicted at triage, either direction; disjoint findings are not a
   dispute, the packet is the disputed finding, its hunk, and one line per reviewer
   position in `POSITIONS`, never the full reports, and the consult never overrides
   "fix every 🔴" or the check-unit probe for an unproven 🟠). The packet and the

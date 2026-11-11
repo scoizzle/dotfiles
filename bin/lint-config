@@ -367,6 +367,23 @@ def check_advisor_contract() -> None:
         fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "
              "T3 children never load agents/advisor.md, so its packet, caps and answer keys reach "
              "it only through the PROMPT: line")
+    template_prompt = next((line for line in build_text.splitlines() if line.startswith("PROMPT:")), "")
+    if "advisor.md" not in template_prompt:
+        fail("agents/build.md: the dispatch-template PROMPT line must name advisor.md (an advisor "
+             "unit reads advisor.md); the rationale alone leaves the copied template without it "
+             "(advisor PROMPT)")
+    prompt_clause = re.search(r"`PROMPT:` line in `agents/build\.md`(?:(?!With no T3).){0,400}",
+                              agents_text, flags=re.S)
+    if not prompt_clause or "agents/advisor.md" not in prompt_clause.group(0):
+        fail("AGENTS.md: the PROMPT: clause must name agents/advisor.md for the advisor unit "
+             "(advisor PROMPT); a T3 child never loads agents/advisor.md on its own")
+    one_direction = re.search(r"raised\s+and\s+`second-opinion`\s+explicitly\s+contradicted",
+                              agents_text)
+    if one_direction:
+        fail("AGENTS.md: the dispute definition is one-directional "
+             f"({one_direction.group(0)!r}); either reviewer may raise or contradict, so name both "
+             "directions: a finding one reviewer raised and the other explicitly contradicted at "
+             "triage (dispute direction)")
 
 
 def load_providers() -> dict[str, dict]:
