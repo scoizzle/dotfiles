@@ -79,6 +79,14 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   change. Return the plan; no PROOF. Edit nothing, dispatch nothing.
 - `ROLE: review unit` — read-only: findings, sources, and the review-bundle path.
   Never edit or run mutating shell.
+- `ROLE: advisor unit` — read-only consult, `FILES: none`. The brief carries only
+  the packet from `agents/advisor.md`: the question, 2-4 options, evidence within
+  its cap, the `TAILS` lines (required for stuck) or `POSITIONS` lines (required
+  for dispute), what was tried, the bundle, and the paths you may read. Read only
+  the `READ ALLOWED` paths, one pass each; open nothing else, no listing, no
+  shell, no Roslynk, no dispatch. Answer in the six keys within 15 lines and stop
+  — `decision`, `why`, `risk`, `confidence`, `escalate`, `paths` — and nothing
+  else. No PROOF; the orchestrator triages your decision.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
   and Roslynk reads. No PROOF; return findings and sources, one `path:line — what`
   per line, within the line cap the brief sets. It dispatches no further units.
@@ -173,8 +181,8 @@ dispatch's TIER clause quotes one of:
   a normal fix round on `deepseek`, not to `implement-deep`. A red-phase
   (test-first) tail never counts, and neither does a classify stop, scope-gap
   report or blocked unit. The retry of that item goes to `implement-deep`; the
-  same done-when item failing again is advisor moment 2 (pass both attempts), then
-  the human.
+  same done-when item failing again is the `stuck` consult on the advisor band
+  (pass both attempts), then the human.
 - (c) critical T2, decided at plan lock: a `deepseek` check unit runs
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
@@ -201,8 +209,8 @@ An explore dispatch passes `variant=low`: pass it in `options` as
 `[{ id: "variant", value: "low" }]`.
 
 A failure that meets trigger (b) moves that item to `implement-deep`; a second
-failure of the same item is not a tier choice, it is a stop: advisor moment 2,
-then the human. A T1 retry stays on the builder band.
+failure of the same item is not a tier choice, it is a stop: the `stuck` consult
+on the advisor band, then the human. A T1 retry stays on the builder band.
 
 Reviews are not a tier. Dispatch `plan-review-deep` before a T2 plan locks, and
 `review-deep` plus `second-opinion` at T2 sign-off, on their Model routing pins.
@@ -222,10 +230,10 @@ reviewer steps.
 Send exactly this shape, nothing looser:
 
 ```text
-ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
+ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit | advisor unit
 GOAL: <one outcome, one sentence>
 TIER: T0 | T1 | T2, <band from Model routing> — <why, one clause; quote the trigger for implement-deep>
-PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md); omit for other units
+PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md; an advisor unit reads advisor.md); omit for other units
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
@@ -233,7 +241,7 @@ CHECK: <the exact command the caller expects in the PROOF block>
 RETURN: PROOF (AGENTS.md) and one PASS/FAIL line per done-when item; a
         read-only unit returns findings and sources; a plan unit returns the plan
         with done-when and no PROOF; a check unit returns its Coverage block and
-        the checks it ran.
+        the checks it ran; an advisor unit returns the six answer keys only.
 ```
 
 Before every `delegate_task`, check all of these; a failure is a bug, so do not
@@ -247,8 +255,13 @@ dispatch:
   row pins, with no argued deviation;
 - you count your own dispatches on `claude-agent` pins that have not yet notified
   completion, and at most 2 are outstanding. Read-only fan-out goes to explore. The
-  sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies.
-  Never poll for completion.
+  sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies,
+  and an advisor dispatch occupies one of the two `claude-agent` slots. Cap:
+  at most one consult per trigger occurrence and at most 3 per stream. Never poll for completion.
+
+The advisor consult is spent only at `fork`, `stuck` or `dispute`; AGENTS.md Model
+routing and `agents/advisor.md` carry the packet, the caps and the answer keys for
+each trigger.
 
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the band's pin (the Model routing row for the role):
@@ -265,15 +278,19 @@ An implementor unit with band `sonnet` means `implement-deep` at `#medium`; revi
 units use their band's row, with the variant the row lists (none for
 review-light).
 
-Read-only units (explore, plan, and review units on any review band) also pass
-`interactionMode: "plan"`, with `role: "research"` (explore), `"design"` (plan
-unit) or `"review"`. Check,
-implementor, checkpoint and integrate units stay in default mode. Plan mode is a
+Read-only units (explore, plan, review units on any review band, and the advisor
+consult) also pass `interactionMode: "plan"`, with `role: "research"` (explore),
+`"design"` (plan unit) or `"review"` (review units and the advisor). The advisor
+dispatch targets `opencode` / `claude-agent/fable` at `variant=medium`, in a
+worktree like every other unit. Check, implementor, checkpoint and integrate
+units stay in default mode. Plan mode is a
 harness instruction, not a tool fence (probe 2026-11-10: the child obeyed it over a
 brief asking for a write, and shell still ran), so the close-out below stays.
-The `PROMPT:` line is required for review and explore units because T3 children
-never load band prompts: every default-mode child is seated as `build`, so the
-severity rubric and repro rules in `agents/<band>.md` reach them only this way.
+The `PROMPT:` line is required for review, explore and advisor units because T3
+children never load band prompts: every default-mode child is seated as `build`, so
+the severity rubric and repro rules in `agents/<band>.md` reach them only this way,
+and an advisor unit gets its packet shape and answer caps only from
+`agents/advisor.md`.
 
 EXECUTE ALLOWLIST: delegate_task
 
@@ -332,7 +349,10 @@ Accept only when all of these hold:
 - `commands:` gives a command and an exit code for every check;
 - `diff:` stays inside `FILES`; read the changed files when a hunk is not enough;
 - `not done:` and `risks:` are filled, or say `none`;
-- one step of diff review found no obvious scope or contract error.
+- one step of diff review found no obvious scope or contract error;
+- on an advisor consult, a 4th consult in the stream, a packet over the caps in
+  `agents/advisor.md`, or a decision quoted without its packet is rejected, and a
+  `paths:` line outside `READ ALLOWED` makes the evidence unchecked.
 
 Reject on a missing line, an unexplained non-zero exit, a diff outside `FILES`, or
 a claim with no command. Re-dispatch once with the gap named. A second miss goes
@@ -343,4 +363,5 @@ Never ask a reviewer for PROOF. Reviewers return findings and the bundle path.
 ## Report
 
 End a stream with the units dispatched, the tier each used, each accepted or
-rejected, and the open risks. Do not restate the builders' prose.
+rejected, and the open risks. Do not restate the builders' prose. Record the
+advisor consults as `consults: <n>/3`.

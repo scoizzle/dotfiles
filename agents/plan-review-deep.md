@@ -1,5 +1,5 @@
 ---
-description: Expensive read-only T2 plan reviewer and plan-lock advisor. Checks a plan against the repository, its done-when, test-first, step order, call sites, and scope. Use only before a T2 plan locks, not for repo search. This native fallback runs on claude-agent/sonnet; the routed run is a T3 child (AGENTS.md, Model routing).
+description: Expensive read-only T2 plan reviewer and plan-lock reviewer. Checks a plan against the repository, its done-when, test-first, step order, call sites, and scope. Use only before a T2 plan locks, not for repo search. This native fallback runs on claude-agent/sonnet; the routed run is a T3 child (AGENTS.md, Model routing).
 mode: subagent
 model: claude-agent/sonnet#high
 steps: 40

@@ -136,6 +136,138 @@ def main() -> int:
                                  "agents/build.md: missing the implement-deep code list")
         finally:
             build_path.write_text(build_original)
+
+        # The advisor consult band: no native fallback, its own pin, a capped packet
+        # and answer, a per-stream cap, a named-trigger vocabulary, and a role branch.
+        advisor_path = tree / "agents" / "advisor.md"
+        advisor_original = advisor_path.read_text()
+        try:
+            advisor_path.write_text("".join(
+                line for line in advisor_original.splitlines(True)
+                if not line.startswith("decision:")))
+            failed |= not expect("advisor.md missing an output key", lint(tree), "output keys")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            edit(advisor_path, "model: claude-agent/fable#medium", "model: claude-agent/sonnet#medium")
+            failed |= not expect("advisor.md drifted pin", lint(tree), "pin must be")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            policy = json.loads(original)
+            policy["readonly_agents"]["models"]["advisor"] = "sonnet"
+            policy_path.write_text(json.dumps(policy, indent=2) + "\n")
+            failed |= not expect("advisor added to readonly_agents.models", lint(tree), "not in models")
+        finally:
+            policy_path.write_text(original)
+
+        try:
+            kept = "".join(line for line in agents_original.splitlines(True)
+                           if not line.startswith("| advisor |"))
+            if kept == agents_original:
+                raise AssertionError("AGENTS.md: no | advisor | row to remove")
+            agents_path.write_text(kept)
+            failed |= not expect("AGENTS.md advisor row removed", lint(tree), "no routing row")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(agents_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
+            failed |= not expect("AGENTS.md advisor cap drifted", lint(tree), "cap sentence")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(build_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
+            failed |= not expect("build.md advisor cap drifted", lint(tree), "cap sentence")
+        finally:
+            build_path.write_text(build_original)
+
+        try:
+            edit(advisor_path, "per trigger occurrence and at most 3 per stream",
+                 "per trigger occurrence and at most 4 per stream")
+            failed |= not expect("advisor.md cap sentence drifted", lint(tree), "cap sentence")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            edit(advisor_path, "at most 6 paths", "6 paths")
+            failed |= not expect("advisor.md READ ALLOWED cap removed", lint(tree), "missing the cap")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        # The advisor's PROMPT line: a T3 child never loads agents/advisor.md, so
+        # build.md must say the PROMPT: line is required for it too.
+        try:
+            edit(build_path, "review, explore and advisor units", "review and explore units")
+            failed |= not expect("build.md PROMPT rationale dropped the advisor", lint(tree),
+                                 "advisor PROMPT")
+        finally:
+            build_path.write_text(build_original)
+
+        # (j) The template line an orchestrator actually copies must name advisor.md;
+        # the rationale can stay while the template loses it.
+        try:
+            edit(build_path, "an advisor unit reads advisor.md", "an advisor unit reads its prompt")
+            failed |= not expect("build.md template PROMPT line dropped advisor.md", lint(tree),
+                                 "advisor PROMPT")
+        finally:
+            build_path.write_text(build_original)
+
+        # (k) AGENTS.md's PROMPT clause must name agents/advisor.md too.
+        try:
+            edit(agents_path, "`agents/advisor.md`). With no T3", "its own prompt). With no T3")
+            failed |= not expect("AGENTS.md PROMPT clause dropped agents/advisor.md", lint(tree),
+                                 "advisor PROMPT")
+        finally:
+            agents_path.write_text(agents_original)
+
+        # (l) The dispute definition must be symmetric: either reviewer can be the
+        # one who raised or the one who contradicted.
+        try:
+            agents_path.write_text(agents_original +
+                                   "\nA dispute is a finding `review-deep` raised and "
+                                   "`second-opinion` explicitly contradicted at triage.\n")
+            failed |= not expect("AGENTS.md one-directional dispute definition", lint(tree),
+                                 "dispute direction")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            start = build_original.index("- `ROLE: advisor unit`")
+            end = build_original.index("- `ROLE:", start + 1)
+            build_path.write_text(build_original[:start] + build_original[end:])
+            failed |= not expect("build.md advisor role branch removed", lint(tree),
+                                 "ROLE: advisor unit")
+        finally:
+            build_path.write_text(build_original)
+
+        readme_path = tree / "README.md"
+        readme_original = readme_path.read_text()
+        try:
+            readme_path.write_text(readme_original + "\nThe advisor moment 2 rule still applies.\n")
+            failed |= not expect("README.md numbered advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            readme_path.write_text(readme_original)
+
+        try:
+            agents_path.write_text(agents_original + "\nThe Advisor moment 2 rule still applies.\n")
+            failed |= not expect("AGENTS.md capitalised numbered advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            agents_path.write_text(agents_original + "\nAn Advisor Moment still applies.\n")
+            failed |= not expect("AGENTS.md case-drifted advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            agents_path.write_text(agents_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

@@ -31,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
 EFFECTS = {"allow", "deny", "ask"}
-READ_ONLY = ("review-light", "review-deep", "plan-review-deep", "second-opinion", "explore", "dream-drafter")
+READ_ONLY = ("review-light", "review-deep", "plan-review-deep", "second-opinion", "explore", "dream-drafter", "advisor")
 MACHINE_PATH = re.compile(r"/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|/private/var/folders|[A-Z]:\\Users\\")
 
 failures: list[str] = []
@@ -195,7 +195,7 @@ def check_shared_surfaces() -> None:
     sync = load_script("sync-harness")
     policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
     spec = policy["readonly_agents"]
-    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter"}:
+    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter", "advisor"}:
         fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only agents in agents/")
     writers = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch"}
     missing = [n for n in spec["models"] if not (ROOT / "agents" / f"{n}.md").exists()]
@@ -311,6 +311,79 @@ def check_trigger_codes() -> None:
 
 
 PROVIDERS = ROOT / "policy" / "providers.json"
+
+ADVISOR_CAP = re.compile(r"at\s+most\s+one\s+consult\s+per\s+trigger\s+occurrence\s+and\s+at\s+most\s+3\s+per\s+stream")
+ADVISOR_KEYS = ("decision", "why", "risk", "confidence", "escalate", "paths")
+ADVISOR_CAPS = ("at most 60 lines", "at most 15 lines", "at most 6 paths")
+
+
+def check_advisor_contract() -> None:
+    """The advisor consult band: no native fallback, its pin, caps, cap sentence, triggers.
+
+    The consult is prose-capped: agents/advisor.md denies every write, shell,
+    dispatch and web tool, but nothing there denies a glob, grep or Roslynk read.
+    What this check holds is the drift that matters — the pin, the capped packet
+    and answer, the per-stream cap, and the named triggers replacing the old
+    numbered advisor moments.
+    """
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    models = policy.get("readonly_agents", {}).get("models", {})
+    if "advisor" in models:
+        fail("policy/permissions.json: advisor must not be in models; the consult band has no "
+             "native fallback (not in models)")
+    path = ROOT / "agents" / "advisor.md"
+    if not path.exists():
+        fail("agents/advisor.md is missing; the advisor consult band needs its packet and output caps")
+        return
+    text = path.read_text()
+    pin = re.search(r"^model:\s*(\S+)\s*$", text, flags=re.M)
+    if not pin or pin.group(1) != "claude-agent/fable#medium":
+        fail(f"agents/advisor.md: model is {pin.group(1) if pin else None!r}; "
+             "the advisor pin must be claude-agent/fable#medium")
+    missing = [key for key in ADVISOR_KEYS if not re.search(rf"^{key}:", text, flags=re.M)]
+    if missing:
+        fail(f"agents/advisor.md: output keys missing at line start: {missing}; the six keys are "
+             f"{list(ADVISOR_KEYS)}")
+    for phrase in ADVISOR_CAPS:
+        if phrase not in text:
+            fail(f"agents/advisor.md: missing the cap {phrase!r} on the packet or the answer")
+    agents_text = (ROOT / "AGENTS.md").read_text()
+    row = next((line for line in agents_text.splitlines() if line.startswith("| advisor |")), "")
+    if "claude-agent/fable" not in row or "variant=medium" not in row:
+        fail("AGENTS.md: no routing row for the advisor band naming `claude-agent/fable` and "
+             "`variant=medium`")
+    for rel in ("AGENTS.md", "agents/build.md", "agents/advisor.md"):
+        if not ADVISOR_CAP.search((ROOT / rel).read_text()):
+            fail(f"{rel}: missing the cap sentence: at most one consult per trigger occurrence "
+                 "and at most 3 per stream")
+    for rel in ("AGENTS.md", "agents/build.md", "README.md"):
+        found = re.search(r"advisor moment|moment \d", (ROOT / rel).read_text(), flags=re.I)
+        if found:
+            fail(f"{rel}: numbered advisor moment ({found.group(0)!r}) is retired; name the "
+                 "trigger (fork, stuck, dispute)")
+    build_text = (ROOT / "agents" / "build.md").read_text()
+    rationale = re.search(r"The `PROMPT:` line is required for[^.]*units", build_text)
+    if not rationale or "advisor" not in rationale.group(0):
+        fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "
+             "T3 children never load agents/advisor.md, so its packet, caps and answer keys reach "
+             "it only through the PROMPT: line")
+    template_prompt = next((line for line in build_text.splitlines() if line.startswith("PROMPT:")), "")
+    if "advisor.md" not in template_prompt:
+        fail("agents/build.md: the dispatch-template PROMPT line must name advisor.md (an advisor "
+             "unit reads advisor.md); the rationale alone leaves the copied template without it "
+             "(advisor PROMPT)")
+    prompt_clause = re.search(r"`PROMPT:` line in `agents/build\.md`(?:(?!With no T3).){0,400}",
+                              agents_text, flags=re.S)
+    if not prompt_clause or "agents/advisor.md" not in prompt_clause.group(0):
+        fail("AGENTS.md: the PROMPT: clause must name agents/advisor.md for the advisor unit "
+             "(advisor PROMPT); a T3 child never loads agents/advisor.md on its own")
+    one_direction = re.search(r"raised\s+and\s+`second-opinion`\s+explicitly\s+contradicted",
+                              agents_text)
+    if one_direction:
+        fail("AGENTS.md: the dispute definition is one-directional "
+             f"({one_direction.group(0)!r}); either reviewer may raise or contradict, so name both "
+             "directions: a finding one reviewer raised and the other explicitly contradicted at "
+             "triage (dispute direction)")
 
 
 def load_providers() -> dict[str, dict]:
@@ -511,7 +584,7 @@ def main() -> int:
                  "'ROLE: implementor unit' sentinel")
         for sentinel in ("ROLE: review unit", "ROLE: check unit",
                          "ROLE: checkpoint unit", "ROLE: integrate unit",
-                         "ROLE: explore unit", "ROLE: plan unit"):
+                         "ROLE: explore unit", "ROLE: plan unit", "ROLE: advisor unit"):
             if sentinel not in build_text:
                 fail(f"build: the role branch must handle {sentinel!r}")
         if not re.search(r"`target` is explicit and equals the Model routing row for that role or band"
@@ -578,6 +651,7 @@ def main() -> int:
     check_shared_surfaces()
     check_fallback_models()
     check_trigger_codes()
+    check_advisor_contract()
     check_instructions()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):
