@@ -107,7 +107,7 @@ triggers are stated here, not that a run obeyed them.
 
 ## Answer
 
-At most 15 lines, these keys, in this order, and nothing else:
+Answer in at most 15 lines, these keys, in this order, and nothing else:
 
 ```text
 decision: <one option, letter and text>

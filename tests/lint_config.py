@@ -136,6 +136,72 @@ def main() -> int:
                                  "agents/build.md: missing the implement-deep code list")
         finally:
             build_path.write_text(build_original)
+
+        # The advisor consult band: no native fallback, its own pin, a capped packet
+        # and answer, a per-stream cap, a named-trigger vocabulary, and a role branch.
+        advisor_path = tree / "agents" / "advisor.md"
+        advisor_original = advisor_path.read_text()
+        try:
+            advisor_path.write_text("".join(
+                line for line in advisor_original.splitlines(True)
+                if not line.startswith("decision:")))
+            failed |= not expect("advisor.md missing an output key", lint(tree), "output keys")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            edit(advisor_path, "model: claude-agent/fable#medium", "model: claude-agent/sonnet#medium")
+            failed |= not expect("advisor.md drifted pin", lint(tree), "pin must be")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            policy = json.loads(original)
+            policy["readonly_agents"]["models"]["advisor"] = "sonnet"
+            policy_path.write_text(json.dumps(policy, indent=2) + "\n")
+            failed |= not expect("advisor added to readonly_agents.models", lint(tree), "not in models")
+        finally:
+            policy_path.write_text(original)
+
+        try:
+            kept = "".join(line for line in agents_original.splitlines(True)
+                           if not line.startswith("| advisor |"))
+            if kept == agents_original:
+                raise AssertionError("AGENTS.md: no | advisor | row to remove")
+            agents_path.write_text(kept)
+            failed |= not expect("AGENTS.md advisor row removed", lint(tree), "no routing row")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(agents_path, "at most 3 per stream", "at most 4 per stream")
+            failed |= not expect("AGENTS.md advisor cap drifted", lint(tree), "cap sentence")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(build_path, "at most 3 per stream", "at most 4 per stream")
+            failed |= not expect("build.md advisor cap drifted", lint(tree), "cap sentence")
+        finally:
+            build_path.write_text(build_original)
+
+        try:
+            start = build_original.index("- `ROLE: advisor unit`")
+            end = build_original.index("- `ROLE:", start + 1)
+            build_path.write_text(build_original[:start] + build_original[end:])
+            failed |= not expect("build.md advisor role branch removed", lint(tree),
+                                 "ROLE: advisor unit")
+        finally:
+            build_path.write_text(build_original)
+
+        readme_path = tree / "README.md"
+        readme_original = readme_path.read_text()
+        try:
+            readme_path.write_text(readme_original + "\nThe advisor moment 2 rule still applies.\n")
+            failed |= not expect("README.md numbered advisor moment", lint(tree),
+                                 "numbered advisor moment")
+        finally:
+            readme_path.write_text(readme_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
