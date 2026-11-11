@@ -25,21 +25,40 @@ floor is above the stated tier, continue at the floor from its review step (a T2
 gets `plan-review-deep` on the integrated diff, then the sign-off bands). You may
 raise the tier, never lower it.
 `deepseek` is the implementor row and `sonnet` the implement-deep row of Model
-routing.
+routing. Tier is risk, not implementer: a T2 is implemented on `deepseek` by
+default, and `implement-deep` (sonnet) is used only on the three triggers in the
+T2 bullet below.
 
 - **T0:** no behaviour change, or one obvious mechanical edit; no public
   contract, data, security, or CI. Sequence: implementor -> integrate.
+  T0: no review dispatch. An audit request is an explore unit, or T1
+  `review-light` when a verdict on a diff is wanted.
 - **T1:** one area, <=3 source files, <=400 lines, no public contract/data/
   security/CI, test oracle exists. Write a <=10-line brief with done-when and the
   red test. Sequence: implementor -> integrate -> `review-light` -> fix once
   (implementor -> integrate) -> close-out.
 - **T2:** anything else, or "design/architecture/migration/security/data/schema/
   enum/public API/be careful", or unsure. Write a plan with done-when. Sequence:
-  plan -> `plan-review-deep` (fix cap 2) -> `implement-deep` -> integrate ->
+  plan -> `plan-review-deep` (fix cap 2) -> implementor (`deepseek`) -> integrate ->
   `review-deep` (or `review-critical`) + `second-opinion` in parallel -> triage ->
-  fix (cap 2) -> integrate -> one re-review dispatch on the `review-deep`
-  (`review-critical`) pin with both bundles, also checking the acted-on
-  `second-opinion` findings -> close-out. Pins and the three advisor moments are in Model routing.
+  fix (cap 2, also on `deepseek`) -> integrate -> one re-review dispatch on the
+  `review-deep` (`review-critical`) pin with both bundles, also checking the
+  acted-on `second-opinion` findings -> close-out. Pins and the three advisor
+  moments are in Model routing.
+  `implement-deep` (sonnet) replaces the `deepseek` implementor only on these
+  triggers, each quoted in the dispatch's TIER clause:
+  (a) the last `plan-review-deep` round's verdict ends with
+  `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
+  `coupled-invariants`, `no-oracle`, `security-logic`; a missing or malformed
+  line means `deepseek`;
+  (b) ladder: a `deepseek` unit returned FAIL on a done-when item or a red suite
+  with PROOF (not a classify stop, scope-gap report or blocked unit); the retry of
+  that item goes to `implement-deep`, quoting the failing PROOF line; the same
+  item failing again is advisor moment 2, then the human;
+  (c) critical T2, decided at plan lock: a `deepseek` check unit runs
+  `review-bundle <repo> --classify --paths <planned FILES>` and criticality comes
+  from its reason lines (definition in Model routing); the integrate unit's
+  reclassify may only raise it.
 - **Close-out:** the stream ends with the tree record. If the last unit is a shared
   one, its PROOF is the close-out and its brief includes the `review-log` run.
   Otherwise one check unit runs `git -C <session checkout path> status --short`
@@ -155,7 +174,7 @@ shell-based deep check, not the default review path.
 In opencode, the top-level `build` agent is the orchestrator; `agents/build.md`
 is its one prompt (roles, dispatch template, checkpoint/integrate, acceptance). It
 never edits; every unit goes through T3 `delegate_task`. Units: implementor,
-review, explore, check, checkpoint, integrate (the last two run shared, commit
+plan, review, explore, check, checkpoint, integrate (the last two run shared, commit
 locally, never push). `implementor` is the agent for direct work in plain opencode.
 The no-hands rule is the prompt, not a T3 permission: run the orchestrator in
 `auto` or `full-access`. `execute` is allowed only to reach `delegate_task`;
@@ -177,7 +196,8 @@ instead of improvising:
   does not apply; record the run as degraded.
 - Pinned bands: do not substitute the session model for a band's pin. A T2
   sign-off that needs the advisor and `second-opinion` does not complete without
-  them; say so and stop.
+  them; say so and stop. A degraded `second-opinion` is advisory and does not
+  satisfy T2 sign-off.
 - A pinned band that is unavailable or fails on quota (`usage_limit`) is blocked
   the same way: report it, do not substitute. Only the user picks a fallback.
 
@@ -191,9 +211,9 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | explore | repo maps and multi-file grep | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=low` |
 | review-light | T1 diff review | `opencode` | `claude-agent/haiku` | none |
 | build (orchestrator) | plan, scope, dispatch, accept; no hands-on work | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
-| implementor, plan, general | implement one unit; plan/general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
+| implementor, plan, general | implement one unit (T0, T1 and T2 by default); plan units and general helpers | `opencode` | `opencode-go/deepseek-v4.1-flash` | `variant=high` |
 | second-opinion | independent T2 second look | `opencode` | `opencode-go/muse-spark-1.3-contributor` | `variant=high` |
-| implement-deep | T2 implementation after plan-lock | `opencode` | `claude-agent/sonnet` | `variant=medium` |
+| implement-deep | T2 implementation only on the three triggers in Classify (plan-review-deep line, failed-item retry, critical T2) | `opencode` | `claude-agent/sonnet` | `variant=medium` |
 | verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | plan-review-deep, review-deep | advisor: plan-lock, same error twice, T2 sign-off | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | review-critical | security, auth, schema/data migration or public-contract T2 sign-off; review-deep's prompt on the Opus pin | `opencode` | `claude-agent/opus` | `variant=high` |
@@ -207,6 +227,13 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   reply that the pin did not apply.
 - The advisor and implement bands are never silently downgraded. If T3 is
   absent, say so instead of substituting the session model.
+- Fixed bands: check, checkpoint, integrate, explore and plan units always run on
+  their routing-row pins; there is no argued deviation. Every `delegate_task`
+  passes an explicit `target` equal to the routing row for that role or band.
+- Concurrency: before each `delegate_task`, count your own dispatches on
+  `claude-agent` pins that have not yet notified completion; at most 2 at a time.
+  Read-only fan-out goes to explore. The sign-off pair (`review-deep` on sonnet
+  plus `second-opinion` on muse) complies. Never poll.
 - A change is critical when `review-bundle --classify` reports a sensitive-path
   reason and the change is security, data, or a public contract (not a CI-only
   change), or it touches auth or a schema/data migration. The orchestrator
@@ -241,8 +268,14 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 - `agents/*.md` are the native fallback, not the routing source. Pins must name
   an enabled instance and an allowlisted model in `policy/providers.json`.
   `grok-4.7` is retired as of 2026-11-09 and no band pins it; `grok-4.5` stays
-  unlisted. Sonnet 5.5 is the default review and verifier pin; Opus 5.5 is the
-  critical-review escalation.
+  unlisted. Sonnet 5.5 is the default T2 review pin; Opus 5.5 is the
+  critical-review escalation. The verifier is manual only (`/verify`).
+- Native fallback map (`policy/permissions.json` `readonly_agents.models`, checked
+  by `bin/lint-config`): `review-light`=`haiku`, `review-deep`=`sonnet`,
+  `plan-review-deep`=`sonnet`, `second-opinion`=`sonnet`, `explore`=`haiku`.
+  `second-opinion` on sonnet and `explore` on haiku are degraded fallbacks: the
+  pin did not apply. A degraded `second-opinion` is advisory and does not satisfy
+  T2 sign-off (see Without T3).
 
 ## Memory
 

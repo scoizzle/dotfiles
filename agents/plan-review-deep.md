@@ -114,6 +114,24 @@ Then check:
 
 Do not redesign the plan. Name the defect and the smallest correction.
 
+## Verdict
+
+Close the report with this block, after the findings:
+
+```text
+Verdict: LOCK | LOCK-WITH-CHANGES | REJECT
+implementer: deepseek
+```
+
+or, in place of the second line,
+`implementer: implement-deep — <code>: <plan step id>`, with `<code>` exactly one
+of `coupled-invariants`, `no-oracle`, `security-logic`. The default is
+`implementer: deepseek`. Escalate to `implement-deep` only for a named plan step
+that `deepseek` plausibly cannot pass under review (invariants spread across
+files, no test that can fail for the behaviour, or security-sensitive logic);
+"large", "important" or "cross-cutting" alone is not a reason. A missing or
+malformed line is read as `deepseek`.
+
 ## Findings
 
 Severity first:

@@ -37,7 +37,7 @@ read, report the gap so the orchestrator can dispatch an explore unit.
 2. Write the red test first when the brief names one, and run it. It must fail for
    the reason stated. Record the exact command and the failure.
 3. Implement the smallest change that makes it pass.
-4. Run the named test again. Do not run the full suite; the parent or a verifier
+4. Run the named test again. Do not run the full suite; the integrate
    unit does that. Record the red and green commands.
 5. Do not delete, skip, weaken, or retarget a test. If a test's expectation was
    wrong, report it; do not change it to get green.

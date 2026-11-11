@@ -1,5 +1,5 @@
 ---
-description: Mid-tier T2 builder. Implements an approved plan with a red test first, then the smallest fix. Use after the plan locks, for T2 implementation only.
+description: Mid-tier builder for T2 work that escalated past deepseek: a plan-review-deep implement-deep verdict line, a failed-item retry with PROOF, or a critical T2 (AGENTS.md, Classify). Implements with a red test first, then the smallest fix.
 mode: subagent
 model: claude-agent/sonnet#medium
 steps: 80
