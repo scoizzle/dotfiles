@@ -179,17 +179,18 @@ dispatch's TIER clause quotes one of:
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
   `critical: <path> — auth|security|migration|public-contract` in the dispatch's
-  TIER line, one entry per path. The token is fixed by the path: the first match
-  in this order wins, from the sensitive patterns in `bin/review-bundle`
-  (`ALWAYS`, `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `*auth*` (and its
-  `DOC_SENSITIVE` auth variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`,
-  `*permission*` -> `security`; `*migration*`, `*schema*`, `*.sql*` ->
-  `migration`; any other sensitive path (`agents/*`, `policy/*`,
-  `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`,
-  `*Dockerfile*`, `memory/core/*`) -> `public-contract`; `.github/*` is CI, never
-  critical. `implement-deep` applies under (c) only when the token is `security`,
-  `auth` or `migration`, and only for the unit whose FILES include a qualifying
-  path; `public-contract` keeps the `deepseek` implementor and gets
+  TIER line, one entry per path. Check `.github/*` first: a CI path is never
+  critical and yields no token, so `.github/workflows/secret-scan.yml` is CI, not
+  `security`. For every other path the token is fixed by the first match in this
+  order, from the sensitive patterns in `bin/review-bundle` (`ALWAYS`,
+  `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `*auth*` (and its `DOC_SENSITIVE` auth
+  variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`, `*permission*` ->
+  `security`; `*migration*`, `*schema*`, `*.sql` -> `migration`; any other
+  sensitive path (`agents/*`, `policy/*`, `*opencode.json`, `*global.json`,
+  `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`) ->
+  `public-contract`. `implement-deep` applies under (c) only when the token is
+  `security`, `auth` or `migration`, and only for the unit whose FILES include a
+  qualifying path; `public-contract` keeps the `deepseek` implementor and gets
   `review-critical` at sign-off. The integrate unit's reclassify may only raise:
   non-critical -> critical, `review-deep` -> `review-critical`, never down.
 
@@ -324,7 +325,8 @@ Accept only when all of these hold:
   an `implement-deep` dispatch without its quoted trigger is rejected;
 - on a critical T2, each `critical: <path> — <token>` entry's token is the first
   matching category for that path in (c)'s order (auth, security, migration,
-  public-contract), and a token outside that mapping is rejected;
+  public-contract) after the `.github/*` CI check, which yields no token; a token
+  outside that mapping is rejected;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;
