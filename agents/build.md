@@ -69,10 +69,14 @@ delegated unit is an **implementor**, not another orchestrator.
 
 Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
 
-- `ROLE: implementor unit` — first run
+- `ROLE: implementor unit` — a brief with no `TIER:` line naming a tier and a
+  band: stop and report, do no work. Then run
   `~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>`; stop
   without editing and report the floor when it is T2 and the brief's tier is T0 or
   T1. Otherwise do the work, edit and test, and return PROOF. Do not dispatch.
+- `ROLE: plan unit` — read-only, plan mode: write the plan for the brief's goal
+  with a testable done-when for each outcome and the red test for each behaviour
+  change. Return the plan; no PROOF. Edit nothing, dispatch nothing.
 - `ROLE: review unit` — read-only: findings, sources, and the review-bundle path.
   Never edit or run mutating shell.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
@@ -80,13 +84,16 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   per line, within the line cap the brief sets. It dispatches no further units.
   Plan mode and the brief keep it read-only (see Dispatch below); the close-out
   confirms the tree.
-- `ROLE: check unit` — run the named checks and return your Coverage block. Never
-  edit.
-- `ROLE: checkpoint unit` — shared checkout: record `git status --short` first and
+- `ROLE: check unit` — a brief with no `TIER:` line naming a tier and a band:
+  stop and report, do no work. Run the named checks and return your Coverage
+  block. Never edit.
+- `ROLE: checkpoint unit` — a brief with no `TIER:` line naming a tier and a band:
+  stop and report, do no work. Shared checkout: record `git status --short` first and
   stop and report any dirty path outside the brief's list. Run the named checks,
   stage only the brief's listed paths, commit locally with a message starting
   `wip: checkpoint`, edit nothing, never push, and return PROOF with the sha.
-- `ROLE: integrate unit` — shared checkout, clean tree required: record
+- `ROLE: integrate unit` — a brief with no `TIER:` line naming a tier and a band:
+  stop and report, do no work. Shared checkout, clean tree required: record
   `git status --short` and stop on any dirty path. The brief names
   `EXPECT HEAD: <sha>` (the head from the previous shared unit's PROOF, or the
   session's HEAD); stop if `git rev-parse HEAD` differs. Record `preSha`: the
@@ -139,25 +146,69 @@ unavailable, report the unit blocked; do not substitute the session model.
 
 ## Pick a tier
 
-Name the tier in every dispatch and give the reason in one clause. When in doubt,
-start on `deepseek`; move up only for the reasons in the table.
+Name the risk tier and the band in every dispatch's `TIER:` line and give the
+reason in one clause. The band may be any band in AGENTS.md Model routing
+(`deepseek`, `sonnet`, `explore`, `haiku`, `muse`, `opus`), not only the three
+below. Tier is risk, not implementer: a T2 is implemented on `deepseek` by
+default. When in doubt, start on `deepseek`; move up only for the triggers below.
 
-| Tier | Pin | Use it for |
+| Band | Pin | Use it for |
 | --- | --- | --- |
-| `deepseek` | `opencode-go/deepseek-v4.1-flash`, `variant=high` | volume, T0/T1, a named test oracle, mechanical or well-scoped work |
-| `sonnet` | `claude-agent/sonnet`, `variant=medium` | T2 after plan lock, cross-cutting edits, no cheap oracle, or a cheap attempt already failed |
+| `deepseek` | `opencode-go/deepseek-v4.1-flash`, `variant=high` | every implementor unit at T0, T1 and T2, plan, check, checkpoint and integrate units, and the first attempt of every fix round |
+| `sonnet` | `claude-agent/sonnet`, `variant=medium` | `implement-deep`, only on the three triggers below |
 | `explore` | `opencode-go/deepseek-v4.1-flash`, `variant=low` | read-only repo maps and multi-file grep |
+
+`implement-deep` (`sonnet`) replaces the `deepseek` implementor only when the
+dispatch's TIER clause quotes one of:
+
+- (a) the last `plan-review-deep` round's verdict line
+  `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
+  `coupled-invariants`, `no-oracle`, `security-logic`. The separator may be an em
+  dash, an en dash or a hyphen. A missing or malformed line means `deepseek`, and
+  `implement-deep` takes only the unit implementing that plan step, not the whole
+  T2. Copy the line verbatim into TIER.
+- (b) ladder: an implementor unit's done-when line marked FAIL, or its green-phase
+  suite red; quote that done-when FAIL line, or the green-phase suite's failing
+  tail. An integrate unit's red suite goes to
+  a normal fix round on `deepseek`, not to `implement-deep`. A red-phase
+  (test-first) tail never counts, and neither does a classify stop, scope-gap
+  report or blocked unit. The retry of that item goes to `implement-deep`; the
+  same done-when item failing again is advisor moment 2 (pass both attempts), then
+  the human.
+- (c) critical T2, decided at plan lock: a `deepseek` check unit runs
+  `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
+  evidence; the orchestrator writes
+  `critical: <path> — auth|security|migration|public-contract` in the dispatch's
+  TIER line, one entry per path. Check `.github/*` first: a CI path is never
+  critical and yields no token, so `.github/workflows/secret-scan.yml` is CI, not
+  `security`. For every other path the token is fixed by the first match in this
+  order, from the sensitive patterns in `bin/review-bundle` (`ALWAYS`,
+  `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `*auth*` (and its `DOC_SENSITIVE` auth
+  variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`, `*permission*` ->
+  `security`; `*migration*`, `*schema*`, `*.sql` -> `migration`; any other
+  sensitive path (`agents/*`, `policy/*`, `*opencode.json`, `*global.json`,
+  `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`) ->
+  `public-contract`. `implement-deep` applies under (c) only when the token is
+  `security`, `auth` or `migration`, and only for the unit whose FILES include a
+  qualifying path; `public-contract` keeps the `deepseek` implementor and gets
+  `review-critical` at sign-off. The integrate unit's reclassify may only raise:
+  non-critical -> critical, `review-deep` -> `review-critical`, never down.
+
+T0: no review dispatch. An audit request is an explore unit, or T1 `review-light`
+when a verdict on a diff is wanted.
 
 An explore dispatch passes `variant=low`: pass it in `options` as
 `[{ id: "variant", value: "low" }]`.
 
-A second cheap attempt at the same failure is not a tier choice; it is a stop.
-Move to `sonnet` or escalate.
+A failure that meets trigger (b) moves that item to `implement-deep`; a second
+failure of the same item is not a tier choice, it is a stop: advisor moment 2,
+then the human. A T1 retry stays on the builder band.
 
 Reviews are not a tier. Dispatch `plan-review-deep` before a T2 plan locks, and
 `review-deep` plus `second-opinion` at T2 sign-off, on their Model routing pins.
-Run `verifier` when the contract needs a shell probe. Do not accept a T2 unit
-that skipped them. On a critical T2 (defined in AGENTS.md, Model routing; use the
+The verifier is manual only (`/verify`); shell probes of findings go to a
+`deepseek` check unit. Do not accept a T2 unit that skipped `plan-review-deep` or
+the sign-off pair. On a critical T2 (defined in AGENTS.md, Model routing; use the
 integrate unit's classify reasons) dispatch `review-critical` instead of
 `review-deep`. Record the trigger in the dispatch. At
 sign-off one `review-deep` (`review-critical` on a critical T2) and one
@@ -171,22 +222,38 @@ reviewer steps.
 Send exactly this shape, nothing looser:
 
 ```text
-ROLE: implementor unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
+ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit
 GOAL: <one outcome, one sentence>
-TIER: T0 | T1 | T2, deepseek | sonnet | explore — <why, one clause>
+TIER: T0 | T1 | T2, <band from Model routing> — <why, one clause; quote the trigger for implement-deep>
 PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md); omit for other units
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
 CHECK: <the exact command the caller expects in the PROOF block>
 RETURN: PROOF (AGENTS.md) and one PASS/FAIL line per done-when item; a
-        read-only unit returns findings and sources; a check unit returns its
-        Coverage block and the checks it ran.
+        read-only unit returns findings and sources; a plan unit returns the plan
+        with done-when and no PROOF; a check unit returns its Coverage block and
+        the checks it ran.
 ```
 
+Before every `delegate_task`, check all of these; a failure is a bug, so do not
+dispatch:
+
+- the brief has a `TIER:` line naming a tier and a band (read-only units enforce
+  this here and in Accept; the default-mode role branches also stop on it);
+- `target` is explicit and equals the Model routing row for that role or band
+  (provider instance, model and variant). A missing or differing target is a bug.
+  Check, checkpoint, integrate, explore and plan units always run on their routing
+  row pins, with no argued deviation;
+- you count your own dispatches on `claude-agent` pins that have not yet notified
+  completion, and at most 2 are outstanding. Read-only fan-out goes to explore. The
+  sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies.
+  Never poll for completion.
+
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
-`delegate_task` with the tier's pin:
-`target: { providerInstanceId: "opencode", model: "<tier model>", options: [{ id: "variant", value: "<tier variant>" }] }`,
+`delegate_task` with the band's pin (the Model routing row for the role):
+`target: { providerInstanceId: "opencode", model: "<band model>", options: [{ id: "variant", value: "<band variant>" }] }`
+(omit `options` when the routing row lists none, e.g. review-light),
 `role: "implementation"` (editing units; check units pass `"test"`), and
 `isolation: "worktree"` for every unit, so unaccepted work never reaches this
 session's checkout (except checkpoint and integrate units, which run shared because
@@ -194,8 +261,13 @@ they commit only named or accepted work). `execute` is
 left allowed only because that is how T3 is reached; use it for `delegate_task`
 only, never `fetch`, the browser, or the `opencode_*` state tools.
 
-Read-only units (explore, and review units on any review band) also pass
-`interactionMode: "plan"`, with `role: "research"` (explore) or `"review"`. Check,
+An implementor unit with band `sonnet` means `implement-deep` at `#medium`; review
+units use their band's row, with the variant the row lists (none for
+review-light).
+
+Read-only units (explore, plan, and review units on any review band) also pass
+`interactionMode: "plan"`, with `role: "research"` (explore), `"design"` (plan
+unit) or `"review"`. Check,
 implementor, checkpoint and integrate units stay in default mode. Plan mode is a
 harness instruction, not a tool fence (probe 2026-11-10: the child obeyed it over a
 brief asking for a write, and shell still ran), so the close-out below stays.
@@ -232,8 +304,8 @@ dirty tree is invisible to them.
   the integrated head and classify and baseline over the integrated range
   (`--base`). T2 sign-off reviewers run after it. Its PROOF is what satisfies
   "green is the branch head".
-- A check unit runs only to probe an unproven finding, for the close-out, or when
-  the user asks.
+- A check unit runs only to probe an unproven finding, for the close-out, for the
+  plan-lock classify for the `implement-deep` trigger (c), or when the user asks.
 - Close-out: the stream ends with the tree record. If the last unit is shared, its
   PROOF is the close-out and its brief includes the `review-log` run. Otherwise one
   check unit runs `git -C <this session's checkout path> status --short` (the brief
@@ -247,8 +319,14 @@ dirty tree is invisible to them.
 
 Accept only when all of these hold:
 
-- the chosen tier (`deepseek`, `sonnet` or `explore`) matches the table, or the
-  deviation is stated and argued;
+- the `TIER:` line is present, and the band and the `target` actually sent match
+  the AGENTS.md Model routing row for the unit's role; for implementor units the
+  only upward deviation is `implement-deep` on a quoted trigger from Classify, and
+  an `implement-deep` dispatch without its quoted trigger is rejected;
+- on a critical T2, each `critical: <path> — <token>` entry's token is the first
+  matching category for that path in (c)'s order (auth, security, migration,
+  public-contract) after the `.github/*` CI check, which yields no token; a token
+  outside that mapping is rejected;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;
