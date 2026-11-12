@@ -268,6 +268,115 @@ def main() -> int:
                                  "numbered advisor moment")
         finally:
             agents_path.write_text(agents_original)
+
+        # The four advisor triggers: a stale three-trigger list anywhere the
+        # contract names them, and the converge gates it must state.
+        try:
+            edit(agents_path, "at four named triggers (fork, stuck, dispute, converge); packet",
+                 "at three named triggers (fork, stuck, dispute); packet")
+            failed |= not expect("AGENTS.md routing row back to three triggers", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(agents_path, "(fork, stuck, dispute, converge); packet", "(fork, stuck, dispute); packet")
+            failed |= not expect("AGENTS.md routing row dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            if "oscillation" not in advisor_original:
+                raise AssertionError("agents/advisor.md: no oscillation gate to remove")
+            advisor_path.write_text(advisor_original.replace("oscillation", "repetition"))
+            failed |= not expect("advisor.md oscillation gate removed", lint(tree), "converge gate")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            if "at most one converge extension per stream" not in build_original:
+                raise AssertionError("agents/build.md: no converge ceiling to drop")
+            build_path.write_text(
+                build_original.replace("at most one converge extension per stream",
+                                       "at most two converge extensions per stream"))
+            failed |= not expect("build.md converge ceiling dropped", lint(tree), "converge gate")
+        finally:
+            build_path.write_text(build_original)
+
+        # The AGENTS.md advisor bullet's own trigger list: the anchor must stop
+        # before the separate converge bullet, which always names converge.
+        try:
+            edit(agents_path, "and `converge` (the", "")
+            failed |= not expect("AGENTS.md advisor bullet dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            agents_path.write_text(agents_original)
+
+        # The build.md trigger sentence alone: the next sentence always names
+        # converge, and the stale regex must catch the backticked three-trigger form.
+        try:
+            edit(build_path, "`dispute` or `converge`", "`dispute`")
+            failed |= not expect("build.md trigger sentence dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            build_path.write_text(build_original)
+
+        # The converge gates are checked in build.md too, not only AGENTS.md and
+        # advisor.md.
+        try:
+            if "oscillation" not in build_original:
+                raise AssertionError("agents/build.md: no oscillation gate to remove")
+            build_path.write_text(build_original.replace("oscillation", "repetition"))
+            failed |= not expect("build.md oscillation gate removed", lint(tree), "converge gate")
+        finally:
+            build_path.write_text(build_original)
+
+        # Every remaining anchor/marker gets its own mutation.
+        readme_path = tree / "README.md"
+        readme_original = readme_path.read_text()
+        try:
+            edit(readme_path, "(fork, stuck, dispute, converge)", "(fork, stuck, dispute)")
+            failed |= not expect("README.md trigger list dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            readme_path.write_text(readme_original)
+
+        try:
+            edit(advisor_path, "or a converge extension past the re-review cap",
+                 "past the re-review cap")
+            failed |= not expect("advisor.md description dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            start = advisor_original.index("## Triggers")
+            end = advisor_original.index("\nCap:", start)
+            section = advisor_original[start:end]
+            if "converge" not in section:
+                raise AssertionError("agents/advisor.md: no converge bullet to remove")
+            advisor_path.write_text(advisor_original[:start]
+                                    + section.replace("converge", "extension")
+                                    + advisor_original[end:])
+            failed |= not expect("advisor.md triggers section dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            edit(agents_path, "The ceiling is at most one converge extension per stream.",
+                 "The ceiling is at most two converge extensions per stream.")
+            failed |= not expect("AGENTS.md converge ceiling drifted", lint(tree), "converge gate")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(advisor_path, "The ceiling is at most one converge extension per stream;",
+                 "The ceiling is at most two converge extensions per stream;")
+            failed |= not expect("advisor.md converge ceiling drifted", lint(tree), "converge gate")
+        finally:
+            advisor_path.write_text(advisor_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

@@ -315,6 +315,54 @@ PROVIDERS = ROOT / "policy" / "providers.json"
 ADVISOR_CAP = re.compile(r"at\s+most\s+one\s+consult\s+per\s+trigger\s+occurrence\s+and\s+at\s+most\s+3\s+per\s+stream")
 ADVISOR_KEYS = ("decision", "why", "risk", "confidence", "escalate", "paths")
 ADVISOR_CAPS = ("at most 60 lines", "at most 15 lines", "at most 6 paths")
+ADVISOR_TRIGGERS = ("fork", "stuck", "dispute", "converge")
+ADVISOR_STALE = (
+    re.compile(r"\bfork\b`?,\s*`?stuck\b`?,?\s+(?:or\s+)?`?dispute\b`?"
+               r"(?!\s*`?\s*,?\s*(?:or\s+)?`?converge\b)"),
+    re.compile(r"three\s+named\s+triggers"),
+)
+CONVERGE_GATES = (
+    ("strictly decreased", re.compile(r"strictly\s+decreased")),
+    ("oscillation", re.compile(r"oscillation")),
+    ("original plan FILES", re.compile(r"original\s+plan\s+FILES")),
+)
+CONVERGE_CEILING = re.compile(r"at\s+most\s+one\s+converge\s+extension\s+per\s+stream")
+
+
+def block(text: str, start: str, stop: str = "") -> str:
+    """The block from `start` to `stop` (or the end); empty when `start` is absent."""
+    begin = text.find(start)
+    if begin < 0:
+        return ""
+    if not stop:
+        return text[begin:]
+    end = text.find(stop, begin + len(start))
+    return text[begin:end if end >= 0 else len(text)]
+
+
+def advisor_trigger_blocks() -> list[tuple[str, str]]:
+    """Each place the contract names the advisor triggers, as (label, text).
+
+    An extra copy of the list elsewhere must not mask the anchor that drifted, the
+    same shape as the fallback-map bullet check.
+    """
+    agents = (ROOT / "AGENTS.md").read_text()
+    build = (ROOT / "agents" / "build.md").read_text()
+    advisor = (ROOT / "agents" / "advisor.md").read_text()
+    readme = (ROOT / "README.md").read_text()
+    return [
+        ("AGENTS.md routing row",
+         next((line for line in agents.splitlines() if line.startswith("| advisor |")), "")),
+        ("AGENTS.md advisor bullet",
+         block(agents, "- The advisor consult band", "\n- `converge` is the one gated")),
+        ("agents/build.md trigger sentence",
+         block(build, "The advisor consult is spent only at", "\nAGENTS.md Model routing")),
+        ("README.md trigger list",
+         next((line for line in readme.splitlines() if "named triggers" in line), "")),
+        ("agents/advisor.md description",
+         next((line for line in advisor.splitlines() if line.startswith("description:")), "")),
+        ("agents/advisor.md triggers section", block(advisor, "## Triggers", "\n## ")),
+    ]
 
 
 def check_advisor_contract() -> None:
@@ -360,8 +408,29 @@ def check_advisor_contract() -> None:
         found = re.search(r"advisor moment|moment \d", (ROOT / rel).read_text(), flags=re.I)
         if found:
             fail(f"{rel}: numbered advisor moment ({found.group(0)!r}) is retired; name the "
-                 "trigger (fork, stuck, dispute)")
+                 "trigger (fork, stuck, dispute, converge)")
+    for label, chunk in advisor_trigger_blocks():
+        missing = [trigger for trigger in ADVISOR_TRIGGERS if not re.search(rf"\b{trigger}\b", chunk)]
+        if missing:
+            fail(f"{label}: advisor trigger list is missing {missing}; all of "
+                 f"{list(ADVISOR_TRIGGERS)} are named triggers")
+    for rel in ("AGENTS.md", "agents/build.md", "agents/advisor.md", "README.md"):
+        content = (ROOT / rel).read_text()
+        for stale in ADVISOR_STALE:
+            found = stale.search(content)
+            if found:
+                fail(f"{rel}: advisor trigger list still says {found.group(0)!r}; name all of "
+                     f"{list(ADVISOR_TRIGGERS)}")
     build_text = (ROOT / "agents" / "build.md").read_text()
+    for rel, content in (("AGENTS.md", agents_text), ("agents/build.md", build_text),
+                         ("agents/advisor.md", text)):
+        for name, pattern in CONVERGE_GATES:
+            if not pattern.search(content):
+                fail(f"{rel}: converge gate marker missing at {name!r}; state the gate in prose "
+                     "(strictly decreased, oscillation, original plan FILES)")
+        if not CONVERGE_CEILING.search(content):
+            fail(f"{rel}: converge gate ceiling missing; state at most one converge extension "
+                 "per stream")
     rationale = re.search(r"The `PROMPT:` line is required for[^.]*units", build_text)
     if not rationale or "advisor" not in rationale.group(0):
         fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "

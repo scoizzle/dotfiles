@@ -11,9 +11,9 @@ Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 Which model runs which job is the **Model routing** table there: every delegated
 job goes through T3 with the band's pinned target, so the pin does not depend on
 which harness the session runs in. The review pin is for plan lock and T2 sign-off;
-a separate capped advisor consult (Fable 5.2) answers one bounded question at three
-named triggers (fork, stuck, dispute), at most 3 per stream, and its packet and
-answer are hard-capped.
+a separate capped advisor consult (Fable 5.2) answers one bounded question at four
+named triggers (fork, stuck, dispute, converge), at most 3 per stream, and its
+packet and answer are hard-capped.
 
 Permissions come from one policy, `policy/permissions.json`, rendered for opencode,
 Claude Code and Grok Build by `bin/sync-harness` and checked by `bin/lint-config` in

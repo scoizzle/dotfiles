@@ -81,10 +81,11 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   Never edit or run mutating shell.
 - `ROLE: advisor unit` — read-only consult, `FILES: none`. The brief carries only
   the packet from `agents/advisor.md`: the question, 2-4 options, evidence within
-  its cap, the `TAILS` lines (required for stuck) or `POSITIONS` lines (required
-  for dispute), what was tried, the bundle, and the paths you may read. Read only
-  the `READ ALLOWED` paths, one pass each; open nothing else, no listing, no
-  shell, no Roslynk, no dispatch. Answer in the six keys within 15 lines and stop
+  its cap, the `TAILS` lines (required for stuck and converge) or `POSITIONS`
+  lines (required for dispute), what was tried, the bundle, and the paths you may
+  read. Read only the `READ ALLOWED` paths, one pass each; open nothing else, no
+  listing, no shell, no Roslynk, no dispatch. Answer in the six keys within 15
+  lines and stop
   — `decision`, `why`, `risk`, `confidence`, `escalate`, `paths` — and nothing
   else. No PROOF; the orchestrator triages your decision.
 - `ROLE: explore unit` — read-only, `FILES: none`: look things up with read, grep, glob
@@ -222,7 +223,12 @@ integrate unit's classify reasons) dispatch `review-critical` instead of
 sign-off one `review-deep` (`review-critical` on a critical T2) and one
 `second-opinion` run in parallel; after a fix, still one re-review dispatch, on
 the `review-deep` (`review-critical`) pin, which also checks the acted-on
-`second-opinion` findings. A third is a human escalation. Cap dispatches, not
+`second-opinion` findings. A third is a human escalation, unless the `converge`
+gates pass and the converge consult's decision is continue: then the extension's
+one fix and one re-review are permitted past the re-review cap, and that
+re-review gets both prior bundles plus the new one; after it any remaining
+finding goes to the human unconditionally.
+The ceiling is at most one converge extension per stream. Cap dispatches, not
 reviewer steps.
 
 ## Dispatch template
@@ -258,10 +264,16 @@ dispatch:
   sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies,
   and an advisor dispatch occupies one of the two `claude-agent` slots. Cap:
   at most one consult per trigger occurrence and at most 3 per stream. Never poll for completion.
+- a `converge` consult has passed its three gates first (open set strictly
+  decreased, no `oscillation`, everything inside the original plan FILES by glob)
+  and the stream's extension counter still reads `extensions: 0/1`; a failed gate
+  or a spent extension goes to the human with no consult.
 
-The advisor consult is spent only at `fork`, `stuck` or `dispute`; AGENTS.md Model
-routing and `agents/advisor.md` carry the packet, the caps and the answer keys for
-each trigger.
+The advisor consult is spent only at `fork`, `stuck`, `dispute` or `converge`;
+AGENTS.md Model routing and `agents/advisor.md` carry the packet, the caps and the
+answer keys for each trigger. `continue` at `converge` buys exactly one extra round
+— fix (`deepseek`) -> integrate -> one re-review on the review pin — and the
+ceiling is at most one converge extension per stream.
 
 Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `delegate_task` with the band's pin (the Model routing row for the role):
@@ -352,7 +364,13 @@ Accept only when all of these hold:
 - one step of diff review found no obvious scope or contract error;
 - on an advisor consult, a 4th consult in the stream, a packet over the caps in
   `agents/advisor.md`, or a decision quoted without its packet is rejected, and a
-  `paths:` line outside `READ ALLOWED` makes the evidence unchecked.
+  `paths:` line outside `READ ALLOWED` makes the evidence unchecked;
+- on a `converge` consult, a packet without gate evidence (the per-round open-set
+  counts, `oscillation: none`, and `FILES: inside` with the plan FILES globs) is
+  rejected; `escalate: yes` wins over `decision: continue`, so no extension
+  starts; and the extension's fix dispatch must quote the consult's own
+  `decision:` line verbatim in its `TIER:` clause, which must name continue, else
+  it is rejected.
 
 Reject on a missing line, an unexplained non-zero exit, a diff outside `FILES`, or
 a claim with no command. Re-dispatch once with the gap named. A second miss goes
@@ -364,4 +382,5 @@ Never ask a reviewer for PROOF. Reviewers return findings and the bundle path.
 
 End a stream with the units dispatched, the tier each used, each accepted or
 rejected, and the open risks. Do not restate the builders' prose. Record the
-advisor consults as `consults: <n>/3`.
+advisor consults as `consults: <n>/3` and the `converge` extensions as
+`extensions: <n>/1`.

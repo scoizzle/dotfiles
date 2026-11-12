@@ -43,7 +43,13 @@ T2 bullet below.
   `review-deep` (or `review-critical`) + `second-opinion` in parallel -> triage ->
   fix (cap 2, also on `deepseek`) -> integrate -> one re-review dispatch on the
   `review-deep` (`review-critical`) pin with both bundles, also checking the
-  acted-on `second-opinion` findings -> close-out. An open fork between plan
+  acted-on `second-opinion` findings -> close-out. When that one re-review still
+  has open findings and the `converge` gates pass and the consult's decision is
+  continue, it is not a close-out but the `converge` consult's one extension:
+  fix (`deepseek`) -> integrate -> one re-review on the same pin -> close-out.
+  The extension is the single fix plus re-review permitted beyond fix cap 2 and
+  beyond that one re-review, and its re-review is a named point for the review
+  pin. An open fork between plan
   options that binds the scope of the next plan-lock round is a `fork` advisor
   consult. Pins, the review pin's named points and the advisor's named triggers
   are in Model routing.
@@ -107,7 +113,8 @@ T2 bullet below.
   git, pass the changed file list.
 - **Baseline:** the integrate unit takes `review-bundle --baseline --base <preSha>`
   and keeps `05-baseline.json`; after the fix it runs again and both bundle
-  directories go to the re-reviewer.
+  directories go to the re-reviewer. After a `converge` extension's fix it runs
+  once more and the re-reviewer gets both prior bundles plus the new one.
 - **Triage:** fix every 🔴 and every 🟠 that has a repro or violates the
   done-when. An unproven 🟠 gets a probe by a check unit (or the implementor) or is
   downgraded and reported; it is not fixed as confirmed. A `dispute` advisor
@@ -115,7 +122,9 @@ T2 bullet below.
   disjoint findings, or a finding only one reviewer saw, are not a dispute. The
   packet is the disputed finding, its hunk, and one line per reviewer position in
   `POSITIONS`, never the full reports. The consult never overrides "fix every 🔴"
-  and never replaces the check-unit probe for an unproven 🟠.
+  and never replaces the check-unit probe for an unproven 🟠. A `converge` consult
+  never overrides "fix every 🔴" either: a continue answer extends the round, not
+  the triage rule.
 - **Handback:** a reproducible bug in hand is work, not a note: write its red
   test before the stream ends. A fix inside T1's limits stays T1; a larger one is
   T2. Only a person's ruling defers, recorded and dated, naming the decision it
@@ -247,7 +256,7 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 | verifier | manual build, test and contract check | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | plan-review-deep, review-deep | review pin: plan lock, sign-off, re-review | `opencode` | `claude-agent/sonnet` | `variant=high` |
 | review-critical | security, auth, schema/data migration or public-contract T2 sign-off; review-deep's prompt on the Opus pin | `opencode` | `claude-agent/opus` | `variant=high` |
-| advisor | capped consult, orchestrator only, at three named triggers (fork, stuck, dispute); packet and output capped by agents/advisor.md | `opencode` | `claude-agent/fable` | `variant=medium` |
+| advisor | capped consult, orchestrator only, at four named triggers (fork, stuck, dispute, converge); packet and output capped by agents/advisor.md | `opencode` | `claude-agent/fable` | `variant=medium` |
 
 - Call `orchestrator_capabilities` once per thread before the first delegation,
   and again only after an error or a provider the user names. Pass the pin as
@@ -291,32 +300,56 @@ belongs to T3 (the `t3-code` tools), not to a harness.
 - Replace a running child with `task_cancel`, then a new `delegate_task`; never
   poll `task_status`.
 - The review pin (`plan-review-deep`, `review-deep`, `review-critical`) is spent
-  at its named points only: plan lock, T2 sign-off, and the one re-review after a
-  fix. A T1 retry stays on the builder band. At sign-off: one `review-deep`
+  at its named points only: plan lock, T2 sign-off, the one re-review after a
+  fix, and the one `converge` extension's re-review. A T1 retry stays on the
+  builder band. At sign-off: one `review-deep`
   (`review-critical` on a critical T2) and one `second-opinion` in parallel, then
   still one re-review dispatch after a fix, on the `review-deep`
   (`review-critical`) pin, which also checks the acted-on `second-opinion`
-  findings. A third re-review is a human escalation; cap dispatches, not reviewer
-  steps. The same done-when item failing twice is the `stuck` advisor consult
-  below, not another review round.
+  findings. A third re-review is a human escalation, unless the `converge` gates
+  pass and the converge consult's decision is continue: then the extension's
+  single re-review is that named point, and after it any remaining finding goes
+  to the human unconditionally. Cap dispatches, not reviewer steps. The same
+  done-when item failing twice is the `stuck` advisor consult below, not another
+  review round.
 - The advisor consult band (`advisor`, `claude-agent/fable` at `variant=medium`)
   is orchestrator-only and read-only, at most one consult per trigger occurrence and at most 3 per stream.
-  It is spent at three named triggers, and nowhere else: `fork` (`plan-review-deep`
+  It is spent at four named triggers, and nowhere else: `fork` (`plan-review-deep`
   leaves an open fork between plan options, and the choice binds the scope of the
   next plan-lock round; it does not extend `plan-review-deep`'s fix cap of 2),
   `stuck` (the same done-when item FAILs twice; one consult carrying both PROOF
-  tails in `TAILS`, then the human, and the fix budget is not reopened), and
+  tails in `TAILS`, then the human, and the fix budget is not reopened),
   `dispute` (a finding one reviewer raised and the other explicitly
   contradicted at triage, either direction; disjoint findings are not a
   dispute, the packet is the disputed finding, its hunk, and one line per reviewer
   position in `POSITIONS`, never the full reports, and the consult never overrides
-  "fix every 🔴" or the check-unit probe for an unproven 🟠). The packet and the
+  "fix every 🔴" or the check-unit probe for an unproven 🟠), and `converge` (the
+  one re-review after the fix rounds still has open findings and every gate below
+  passes; the packet is the per-round open-set counts and the remaining findings
+  in `TAILS`, and `decision` is `continue` or `escalate`). The packet and the
   answer are capped by
   `agents/advisor.md`. An advisor dispatch occupies one of the two `claude-agent`
   slots. There is no veto: the orchestrator accepts, rejects or escalates, and
   `escalate: yes` goes to the human, never an automatic re-consult at a higher
   variant. Advisor output is never forwarded into `second-opinion` or re-review;
   only the orchestrator's triage outcome is.
+- `converge` is the one gated extension past the re-review cap, and it runs no
+  consult until the orchestrator has checked three gates itself. The open set is
+  the post-triage 🔴 plus the 🟠 accepted for fixing, deduped across both
+  sign-off reports; it must have strictly decreased, sign-off against the
+  re-review first and then round against round. No finding triage marked fixed may
+  recur: that is `oscillation`, and its identity is the orchestrator's triage
+  ledger keyed on path plus issue, never on a line number. The prior fix diff and
+  the paths named by the remaining findings must all fall inside the original plan FILES,
+  matched by glob; a legitimate need outside them fails closed to the human and is
+  not an error. Any gate that fails means the human, with no consult.
+  The ceiling is at most one converge extension per stream.
+  `continue` buys exactly one extra round: fix (`deepseek`) -> integrate -> one
+  re-review on the `review-deep` (`review-critical`) pin. After it any remaining
+  finding goes to the human unconditionally, with no second consult. A done-when
+  item failing twice is `stuck` only, never `converge`, and an oscillation on a
+  done-when item goes to the human. `converge` counts toward the 3-per-stream cap,
+  so at 3/3 it goes to the human, and an `escalate` answer is not an extension.
 - `agents/*.md` are the native fallback, not the routing source. Pins must name
   an enabled instance and an allowlisted model in `policy/providers.json`.
   `grok-4.7` is retired as of 2026-11-09 and no band pins it; `grok-4.5` stays
