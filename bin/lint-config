@@ -317,7 +317,8 @@ ADVISOR_KEYS = ("decision", "why", "risk", "confidence", "escalate", "paths")
 ADVISOR_CAPS = ("at most 60 lines", "at most 15 lines", "at most 6 paths")
 ADVISOR_TRIGGERS = ("fork", "stuck", "dispute", "converge")
 ADVISOR_STALE = (
-    re.compile(r"\bfork,\s+stuck,?\s+(?:or\s+)?dispute\b(?!,?\s+(?:or\s+)?converge)"),
+    re.compile(r"\bfork\b`?,\s*`?stuck\b`?,?\s+(?:or\s+)?`?dispute\b`?"
+               r"(?!\s*`?\s*,?\s*(?:or\s+)?`?converge\b)"),
     re.compile(r"three\s+named\s+triggers"),
 )
 CONVERGE_GATES = (
@@ -353,9 +354,9 @@ def advisor_trigger_blocks() -> list[tuple[str, str]]:
         ("AGENTS.md routing row",
          next((line for line in agents.splitlines() if line.startswith("| advisor |")), "")),
         ("AGENTS.md advisor bullet",
-         block(agents, "- The advisor consult band", "\n- `agents/*.md`")),
+         block(agents, "- The advisor consult band", "\n- `converge` is the one gated")),
         ("agents/build.md trigger sentence",
-         block(build, "The advisor consult is spent only at", "\n\n")),
+         block(build, "The advisor consult is spent only at", "\nAGENTS.md Model routing")),
         ("README.md trigger list",
          next((line for line in readme.splitlines() if "named triggers" in line), "")),
         ("agents/advisor.md description",
@@ -421,7 +422,8 @@ def check_advisor_contract() -> None:
                 fail(f"{rel}: advisor trigger list still says {found.group(0)!r}; name all of "
                      f"{list(ADVISOR_TRIGGERS)}")
     build_text = (ROOT / "agents" / "build.md").read_text()
-    for rel, content in (("AGENTS.md", agents_text), ("agents/advisor.md", text)):
+    for rel, content in (("AGENTS.md", agents_text), ("agents/build.md", build_text),
+                         ("agents/advisor.md", text)):
         for name, pattern in CONVERGE_GATES:
             if not pattern.search(content):
                 fail(f"{rel}: converge gate marker missing at {name!r}; state the gate in prose "
@@ -429,9 +431,6 @@ def check_advisor_contract() -> None:
         if not CONVERGE_CEILING.search(content):
             fail(f"{rel}: converge gate ceiling missing; state at most one converge extension "
                  "per stream")
-    if not CONVERGE_CEILING.search(build_text):
-        fail("agents/build.md: converge gate ceiling missing; state at most one converge "
-             "extension per stream")
     rationale = re.search(r"The `PROMPT:` line is required for[^.]*units", build_text)
     if not rationale or "advisor" not in rationale.group(0):
         fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "

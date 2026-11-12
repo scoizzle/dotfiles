@@ -44,11 +44,12 @@ T2 bullet below.
   fix (cap 2, also on `deepseek`) -> integrate -> one re-review dispatch on the
   `review-deep` (`review-critical`) pin with both bundles, also checking the
   acted-on `second-opinion` findings -> close-out. When that one re-review still
-  has open findings and the `converge` gates pass, it is not a close-out but the
-  `converge` consult's one extension: fix (`deepseek`) -> integrate -> one
-  re-review on the same pin -> close-out. The extension is the single fix plus
-  re-review permitted beyond fix cap 2 and beyond that one re-review, and its
-  re-review is a named point for the review pin. An open fork between plan
+  has open findings and the `converge` gates pass and the consult's decision is
+  continue, it is not a close-out but the `converge` consult's one extension:
+  fix (`deepseek`) -> integrate -> one re-review on the same pin -> close-out.
+  The extension is the single fix plus re-review permitted beyond fix cap 2 and
+  beyond that one re-review, and its re-review is a named point for the review
+  pin. An open fork between plan
   options that binds the scope of the next plan-lock round is a `fork` advisor
   consult. Pins, the review pin's named points and the advisor's named triggers
   are in Model routing.
@@ -306,11 +307,11 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   still one re-review dispatch after a fix, on the `review-deep`
   (`review-critical`) pin, which also checks the acted-on `second-opinion`
   findings. A third re-review is a human escalation, unless the `converge` gates
-  pass and the consult answers `converge: continue`: then the extension's single
-  re-review is that named point, and after it any remaining finding goes to the
-  human unconditionally. Cap dispatches, not reviewer steps. The same done-when
-  item failing twice is the `stuck` advisor consult below, not another review
-  round.
+  pass and the converge consult's decision is continue: then the extension's
+  single re-review is that named point, and after it any remaining finding goes
+  to the human unconditionally. Cap dispatches, not reviewer steps. The same
+  done-when item failing twice is the `stuck` advisor consult below, not another
+  review round.
 - The advisor consult band (`advisor`, `claude-agent/fable` at `variant=medium`)
   is orchestrator-only and read-only, at most one consult per trigger occurrence and at most 3 per stream.
   It is spent at four named triggers, and nowhere else: `fork` (`plan-review-deep`

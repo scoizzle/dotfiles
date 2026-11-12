@@ -79,7 +79,7 @@ The brief carries the packet and nothing looser. It is the only input:
 QUESTION: <one decision-shaped sentence>
 OPTIONS: <A> | <B> [| C | D]        (2-4; the question must name one)
 EVIDENCE: <at most 60 lines, default 40, each "path:line — ", quoted never paraphrased>
-TAILS: <stuck and converge only, required there: the two PROOF tails, each line prefixed "<command> tail:", or for converge "converge: per-round counts and open findings, one line each">
+TAILS: <stuck and converge only, required there: the two PROOF tails, each line prefixed "<command> tail:", or for converge the gate evidence and open findings, one line each: the per-round open-set counts, "oscillation: none" from the ledger, and "FILES: inside" with the plan FILES globs, then the remaining findings>
 POSITIONS: <dispute only, required there: one line per reviewer position>
 TRIED: <1-5 lines: attempt -> result>
 BUNDLE: <review-bundle directory, or none>
@@ -132,7 +132,7 @@ orchestrator re-consults a stronger model or a higher variant.
 
 At a `converge` consult `decision` is `continue` or `escalate`, and there is no
 third answer: `continue` buys exactly one extra round, and `escalate` is not an
-extension.
+extension. `escalate: yes` wins over `decision: continue`: no extension starts.
 
 The answer is advisory. There is no veto: the orchestrator accepts it, rejects
 it, or escalates, and owns the outcome.
@@ -164,8 +164,10 @@ The orchestrator consults you at four named triggers, and nowhere else:
   a line number. The prior fix diff and the paths named by the remaining findings
   must all fall inside the original plan FILES, matched by glob; a legitimate need
   outside them fails closed to the human and is not an error. The packet carries
-  the per-round counts and the remaining open findings in `TAILS`, one line each,
-  and `decision` is `continue` or `escalate`.
+  the gate evidence (the per-round counts, `oscillation: none`, and `FILES: inside`
+  with the plan FILES globs) and the remaining open findings in `TAILS`, one line
+  each, and `decision` is `continue` or `escalate`; `escalate: yes` wins over
+  `continue`, so no extension starts.
   The ceiling is at most one converge extension per stream; `continue` buys
   exactly one extra round, and after it any remaining finding goes to the human
   unconditionally, with no second consult. A done-when item failing twice is

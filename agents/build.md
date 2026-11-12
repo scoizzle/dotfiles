@@ -224,10 +224,11 @@ sign-off one `review-deep` (`review-critical` on a critical T2) and one
 `second-opinion` run in parallel; after a fix, still one re-review dispatch, on
 the `review-deep` (`review-critical`) pin, which also checks the acted-on
 `second-opinion` findings. A third is a human escalation, unless the `converge`
-gates pass and the consult answers `converge: continue`: then the extension's one
-fix and one re-review are permitted past the re-review cap, and after that
-re-review any remaining finding goes to the human unconditionally. The ceiling is
-at most one converge extension per stream. Cap dispatches, not
+gates pass and the converge consult's decision is continue: then the extension's
+one fix and one re-review are permitted past the re-review cap, and that
+re-review gets both prior bundles plus the new one; after it any remaining
+finding goes to the human unconditionally.
+The ceiling is at most one converge extension per stream. Cap dispatches, not
 reviewer steps.
 
 ## Dispatch template
@@ -365,8 +366,11 @@ Accept only when all of these hold:
   `agents/advisor.md`, or a decision quoted without its packet is rejected, and a
   `paths:` line outside `READ ALLOWED` makes the evidence unchecked;
 - on a `converge` consult, a packet without gate evidence (the per-round open-set
-  counts) is rejected, and the extension's fix dispatch must quote the consult's
-  `converge: continue` decision line in its `TIER:` clause, else it is rejected.
+  counts, `oscillation: none`, and `FILES: inside` with the plan FILES globs) is
+  rejected; `escalate: yes` wins over `decision: continue`, so no extension
+  starts; and the extension's fix dispatch must quote the consult's own
+  `decision:` line verbatim in its `TIER:` clause, which must name continue, else
+  it is rejected.
 
 Reject on a missing line, an unexplained non-zero exit, a diff outside `FILES`, or
 a claim with no command. Re-dispatch once with the gap named. A second miss goes
