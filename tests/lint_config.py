@@ -268,6 +268,41 @@ def main() -> int:
                                  "numbered advisor moment")
         finally:
             agents_path.write_text(agents_original)
+
+        # The four advisor triggers: a stale three-trigger list anywhere the
+        # contract names them, and the converge gates it must state.
+        try:
+            edit(agents_path, "at four named triggers (fork, stuck, dispute, converge); packet",
+                 "at three named triggers (fork, stuck, dispute); packet")
+            failed |= not expect("AGENTS.md routing row back to three triggers", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            edit(agents_path, "(fork, stuck, dispute, converge); packet", "(fork, stuck, dispute); packet")
+            failed |= not expect("AGENTS.md routing row dropped converge", lint(tree),
+                                 "advisor trigger list")
+        finally:
+            agents_path.write_text(agents_original)
+
+        try:
+            if "oscillation" not in advisor_original:
+                raise AssertionError("agents/advisor.md: no oscillation gate to remove")
+            advisor_path.write_text(advisor_original.replace("oscillation", "repetition"))
+            failed |= not expect("advisor.md oscillation gate removed", lint(tree), "converge gate")
+        finally:
+            advisor_path.write_text(advisor_original)
+
+        try:
+            if "at most one converge extension per stream" not in build_original:
+                raise AssertionError("agents/build.md: no converge ceiling to drop")
+            build_path.write_text(
+                build_original.replace("at most one converge extension per stream",
+                                       "at most two converge extensions per stream"))
+            failed |= not expect("build.md converge ceiling dropped", lint(tree), "converge gate")
+        finally:
+            build_path.write_text(build_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
