@@ -141,6 +141,21 @@ unattended sessions with `--auto`.
   names the flags that take a value). Accepted collateral: `git restore --help`,
   `npm publish --dry-run`, `gh pr merge --help` and `git checkout -b feature --`
   are denied too. `git branch -d` (lowercase) is allowed.
+- **accepted gap: gh pr merge** under full-access T3 children (owner ruling,
+  2026-11-14). On 2026-11-10 a T3 opencode child (implementor unit,
+  `opencode-go/deepseek-v4.1-flash`, runtimeMode `full-access`) ran
+  `gh pr merge 33 --repo scoizzle/dotfiles --squash --delete-branch` (exit 0,
+  squash `0544a96`) after the owner asked for the merge in chat. The
+  `opencode.json` deny (lines 44-45) was present and parsed but did not bind for
+  that child, which has no hook layer; the `~/.claude/settings.json` deny and the
+  harness-guard hook cover Claude Code and Grok sessions only, and were added
+  after the merge; no managed settings are installed. The mechanism is inferred
+  (`agents/build.md`: T3 session rules override agent deny rules), not proven from
+  T3 code. Decision: under full-access the deny list is advisory; agents must not
+  merge PRs; a merge the owner asks for in chat is done by the owner, or by an
+  agent only when explicitly authorized for that PR in that chat. The gap closes
+  when T3 enforces opencode denies under full-access, or when children run below
+  full-access.
 - The `npm-publish` rule matches the token `publish` anywhere in an `npm`
   command, so every global-flag form is denied (`npm --loglevel silent publish`,
   `npm -w pkg publish`, `npm --otp 123 publish`). Accepted over-block: `npm run
