@@ -16,7 +16,7 @@ that every later session trusts).
 | Control | Where | Strength |
 | --- | --- | --- |
 | Reviewers and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
-| `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. |
+| `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |
 | `dream` drafts with `dream-drafter` (no tools) and without `--auto` | `bin/dream`, `agents/dream-drafter.md` | Tool-level. |
 | The digest is redacted, framed as untrusted, and every returned line is validated | `bin/dream` | Heuristic. Drops, does not repair. |
@@ -114,8 +114,11 @@ unattended sessions with `--auto`.
   `git checkout .` and `git checkout HEAD <file>` (no `--`), the attached forms
   `-XDELETE` and `--method=DELETE`, `pnpm publish` and `yarn publish`,
   `git branch --delete --force`, and paths built from variables at run time.
-- `git stash drop` and `git stash clear` are denied (`git-stash-drop`), and
-  `git worktree remove` asks (`git-worktree-remove`); the guard matches the first
+- `git stash drop` and `git stash clear` are denied (`git-stash-drop`). As of
+  2026-11-14 the verifier keeps deny on `git worktree remove` and
+  `git worktree remove -f`. `skip_agents ["verifier"]` on the global ask, plus a
+  trailing verifier deny rendered after the restated block, make that deny win.
+  Other agents still ask (`git-worktree-remove`). The guard matches the first
   non-flag word after the subcommand (`subargs`), so `git stash push`,
   `git stash list`, `git worktree list` and `git worktree add` stay allowed.
 - Push deletes by empty-source refspec (`git push origin :main`) are denied.
