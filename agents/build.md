@@ -150,7 +150,27 @@ A broad read-only lookup (repo map, multi-file grep, "where is X") is an explore
 unit on the explore band (`opencode-go/deepseek-v4.1-flash`, `variant=low`), not
 something you read the repo for. Its brief's RETURN caps findings and sources in
 lines. Reading one hunk to judge a diff stays yours. If the explore pin is
-unavailable, report the unit blocked; do not substitute the session model.
+unavailable, report the unit blocked; do not substitute the session model (the
+quota fallback below is the only exception).
+
+A git-history or T3-thread lookup is a check unit with a fixed read-only list:
+`git log`, `git show`, `git diff`, `git blame`, `git rev-parse` and
+`t3_thread_read`, nothing else. Explore stays on read, grep, glob and the Roslynk
+read tools; it has no shell and no T3 thread tools.
+
+## Quota fallback
+
+When a band's pin fails on quota (`usage_limit`) or is unavailable,
+ask the user once per stream before any fallback. One answer covers every band's written
+fallback (the AGENTS.md Model routing `fallback` column) for the whole stream; do
+not ask again per band. After the answer, dispatch the written fallback through T3,
+record the run as degraded, and write `fallback: <band> -> <pin>` in the TIER line.
+When the paired `review-deep` ran on sonnet, `second-opinion` falls back to
+`claude-agent/opus` at `variant=high`. A `none` cell, or a declined answer, leaves
+the band blocked. A T3-routed fallback after the answer satisfies T2 sign-off; a
+native fallback with T3 absent stays advisory and does not. The `claude-agent` cap
+below counts every band on a fallback, and explore fan-out serializes while
+explore is on haiku.
 
 ## Pick a tier
 
@@ -233,7 +253,7 @@ Send exactly this shape, nothing looser:
 ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit | advisor unit
 GOAL: <one outcome, one sentence>
 TIER: T0 | T1 | T2, <band from Model routing> — <why, one clause; quote the trigger for implement-deep>
-PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md; an advisor unit reads advisor.md); omit for other units
+PROMPT: read and follow ~/.config/opencode/agents/<band>.md first (review-critical uses review-deep.md; an advisor unit reads advisor.md; an implementor unit reads implementor.md, implement-deep reads implement-deep.md); omit for other units
 FILES: <paths or globs this unit may touch; "none" for a read-only unit>
 OUT OF SCOPE: <what a well-meaning unit might also do, and must not>
 DONE WHEN: <observable results, each with the command that proves it>
@@ -252,7 +272,8 @@ dispatch:
 - `target` is explicit and equals the Model routing row for that role or band
   (provider instance, model and variant). A missing or differing target is a bug.
   Check, checkpoint, integrate, explore and plan units always run on their routing
-  row pins, with no argued deviation;
+  row pins, with no argued deviation; the row's written `fallback`, after the
+  user's once-per-stream answer, is the only other target;
 - you count your own dispatches on `claude-agent` pins that have not yet notified
   completion, and at most 2 are outstanding. Read-only fan-out goes to explore. The
   sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies,
@@ -271,8 +292,9 @@ Call `orchestrator_capabilities` once before the first dispatch. Then use T3
 `isolation: "worktree"` for every unit, so unaccepted work never reaches this
 session's checkout (except checkpoint and integrate units, which run shared because
 they commit only named or accepted work). `execute` is
-left allowed only because that is how T3 is reached; use it for `delegate_task`
-only, never `fetch`, the browser, or the `opencode_*` state tools.
+left allowed only because that is how T3 is reached; use it only for the tools on
+the EXECUTE ALLOWLIST below, never `fetch`, the browser, or the `opencode_*` state
+tools.
 
 An implementor unit with band `sonnet` means `implement-deep` at `#medium`; review
 units use their band's row, with the variant the row lists (none for
@@ -286,16 +308,20 @@ worktree like every other unit. Check, implementor, checkpoint and integrate
 units stay in default mode. Plan mode is a
 harness instruction, not a tool fence (probe 2026-11-10: the child obeyed it over a
 brief asking for a write, and shell still ran), so the close-out below stays.
-The `PROMPT:` line is required for review, explore and advisor units because T3
-children never load band prompts: every default-mode child is seated as `build`, so
-the severity rubric and repro rules in `agents/<band>.md` reach them only this way,
-and an advisor unit gets its packet shape and answer caps only from
-`agents/advisor.md`.
+The `PROMPT:` line is required for review, explore, advisor, implementor and
+implement-deep units because T3 children never load band prompts: every
+default-mode child is seated as `build`, so the severity rubric and repro rules in `agents/<band>.md` reach them only this way,
+an advisor unit gets its packet shape and answer caps only from
+`agents/advisor.md`, and an editing unit gets its rules only from
+`agents/implementor.md` or `agents/implement-deep.md`.
 
-EXECUTE ALLOWLIST: delegate_task
+EXECUTE ALLOWLIST: delegate_task, orchestrator_capabilities, task_cancel, t3_thread_read, link_pull_request, link_pull_requests, watch_pull_request, unwatch_pull_request
 
-That line is the whole allowlist. Any other tool name added to it is a bug, and
-`bin/lint-config` fails when the line drifts.
+That line is the whole allowlist: dispatch (`delegate_task`,
+`orchestrator_capabilities`, `task_cancel`), reading a thread (`t3_thread_read`),
+and linking and watching PRs. No merge, push, send or launch tool; any other tool
+name added to it is a bug, and `bin/lint-config` fails when the set drifts. Confirm
+each name with `search()` at runtime before its first call.
 
 If T3 is absent, report the unit blocked. Do not use a native subagent: the
 writer agents share this checkout.
@@ -340,6 +366,10 @@ Accept only when all of these hold:
   the AGENTS.md Model routing row for the unit's role; for implementor units the
   only upward deviation is `implement-deep` on a quoted trigger from Classify, and
   an `implement-deep` dispatch without its quoted trigger is rejected;
+- on a quota fallback, the TIER line carries `fallback: <band> -> <pin>`, the pin
+  is that band's written `fallback` cell (or the `second-opinion` opus swap), and
+  the run is recorded as degraded; a fallback sent before you ask the user once per
+  stream, or against a `none` cell, is rejected;
 - on a critical T2, each `critical: <path> — <token>` entry's token is the first
   matching category for that path in (c)'s order (auth, security, migration,
   public-contract) after the `.github/*` CI check, which yields no token; a token

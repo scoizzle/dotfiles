@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """bin/lint-config must pass on the tree and must fail when a policy surface
 drifts: the native fallback models in policy/permissions.json or in the AGENTS.md
-fallback bullet, a default-mode role branch that lost its TIER: stop, or the
-plan-review-deep trigger-code list."""
+fallback bullet, a default-mode role branch that lost its TIER: stop, the
+plan-review-deep trigger-code list, the routing table's quota `fallback` column,
+the EXECUTE ALLOWLIST set, or the PROMPT: rationale's implementor unit."""
 
 import json
 import shutil
@@ -203,7 +204,8 @@ def main() -> int:
         # The advisor's PROMPT line: a T3 child never loads agents/advisor.md, so
         # build.md must say the PROMPT: line is required for it too.
         try:
-            edit(build_path, "review, explore and advisor units", "review and explore units")
+            edit(build_path, "review, explore, advisor, implementor and",
+                 "review, explore, implementor and")
             failed |= not expect("build.md PROMPT rationale dropped the advisor", lint(tree),
                                  "advisor PROMPT")
         finally:
@@ -220,7 +222,7 @@ def main() -> int:
 
         # (k) AGENTS.md's PROMPT clause must name agents/advisor.md too.
         try:
-            edit(agents_path, "`agents/advisor.md`). With no T3", "its own prompt). With no T3")
+            edit(agents_path, "reading\n  `agents/advisor.md`, and for", "reading\n  its own prompt, and for")
             failed |= not expect("AGENTS.md PROMPT clause dropped agents/advisor.md", lint(tree),
                                  "advisor PROMPT")
         finally:
@@ -268,6 +270,73 @@ def main() -> int:
                                  "numbered advisor moment")
         finally:
             agents_path.write_text(agents_original)
+
+        # U6: the quota fallback column. Each case edits one routing row's sixth
+        # cell; the row is matched by its band so the edit lands on that row only.
+        def edit_row(band: str, old: str, new: str) -> None:
+            lines = agents_original.splitlines(True)
+            hits = [i for i, line in enumerate(lines) if line.startswith(f"| {band} |")]
+            if len(hits) != 1 or not lines[hits[0]].rstrip().endswith(f"| {old} |"):
+                raise AssertionError(f"AGENTS.md: no single | {band} | row ending in {old!r}")
+            line = lines[hits[0]].rstrip("\n")
+            lines[hits[0]] = line[: -len(f"{old} |")] + f"{new} |\n"
+            agents_path.write_text("".join(lines))
+
+        for name, band, old, new in (
+            ("fallback cell names an unroutable model", "implementor, plan",
+             "`claude-agent/opus` `variant=medium`", "`claude-agent/nope` `variant=medium`"),
+            ("review-critical has a fallback", "review-critical",
+             "none", "`claude-agent/sonnet` `variant=high`"),
+            ("advisor has a fallback", "advisor", "none", "`claude-agent/opus` `variant=medium`"),
+            ("fallback equals its own pin", "second-opinion",
+             "`claude-agent/sonnet` `variant=high`",
+             "`opencode-go/muse-spark-1.3-contributor` `variant=high`"),
+            ("fallback option id is not valid for the instance", "general, check, checkpoint, integrate",
+             "`claude-agent/sonnet` `variant=medium`", "`claude-agent/sonnet` `effort=medium`"),
+            ("fallback cell is malformed", "explore", "`claude-agent/haiku` none", "haiku"),
+        ):
+            try:
+                edit_row(band, old, new)
+                failed |= not expect(name, lint(tree), "fallback")
+            finally:
+                agents_path.write_text(agents_original)
+
+        try:
+            lines = agents_original.splitlines(True)
+            index = next(i for i, line in enumerate(lines) if line.startswith("| review-light |"))
+            lines[index] = lines[index].rstrip("\n").removesuffix(" none |") + "\n"
+            agents_path.write_text("".join(lines))
+            failed |= not expect("routing row without a fallback cell", lint(tree), "fallback")
+        finally:
+            agents_path.write_text(agents_original)
+
+        # U6 D1: the EXECUTE ALLOWLIST is an exact set on exactly one line.
+        allow_line = next(line for line in build_original.splitlines()
+                          if line.startswith("EXECUTE ALLOWLIST:"))
+        for name, new in (
+            ("allowlist plus t3_thread_send", allow_line + ", t3_thread_send"),
+            ("allowlist without orchestrator_capabilities",
+             allow_line.replace(" orchestrator_capabilities,", "")),
+            ("allowlist with a duplicate name", allow_line + ", task_cancel"),
+            ("allowlist on two lines", allow_line + "\n\n" + allow_line),
+        ):
+            try:
+                if new == allow_line:
+                    raise AssertionError(f"{name}: edit changed nothing")
+                edit(build_path, allow_line, new)
+                failed |= not expect(name, lint(tree), "EXECUTE ALLOWLIST set")
+            finally:
+                build_path.write_text(build_original)
+
+        # U6 D2: the PROMPT: rationale names the implementor unit (implement-deep
+        # alone does not count).
+        try:
+            edit(build_path, "advisor, implementor and\nimplement-deep units",
+                 "advisor and\nimplement-deep units")
+            failed |= not expect("build.md PROMPT rationale without implementor", lint(tree),
+                                 "implementor PROMPT")
+        finally:
+            build_path.write_text(build_original)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

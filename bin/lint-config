@@ -312,6 +312,20 @@ def check_trigger_codes() -> None:
 
 PROVIDERS = ROOT / "policy" / "providers.json"
 
+# The orchestrator's execute surface: dispatch, thread read, PR link/watch. No
+# merge, push, send or launch tool.
+EXECUTE_ALLOWLIST = {
+    "delegate_task", "orchestrator_capabilities", "task_cancel", "t3_thread_read",
+    "link_pull_request", "link_pull_requests", "watch_pull_request", "unwatch_pull_request",
+}
+
+# Bands whose quota fallback must stay `none`.
+NO_FALLBACK_BANDS = ("review-critical", "advisor")
+# Every fallback runs on this instance.
+FALLBACK_INSTANCE = "opencode"
+# `none`, or `model` `id=value`, or `model` none (a pin with no options).
+FALLBACK_CELL = re.compile(r"^(?:none|`([^`\s]+)`\s+(?:`([A-Za-z0-9_-]+=[^`\s]+)`|none))$")
+
 ADVISOR_CAP = re.compile(r"at\s+most\s+one\s+consult\s+per\s+trigger\s+occurrence\s+and\s+at\s+most\s+3\s+per\s+stream")
 ADVISOR_KEYS = ("decision", "why", "risk", "confidence", "escalate", "paths")
 ADVISOR_CAPS = ("at most 60 lines", "at most 15 lines", "at most 6 paths")
@@ -367,6 +381,10 @@ def check_advisor_contract() -> None:
         fail("agents/build.md: the PROMPT: rationale must name the advisor unit (advisor PROMPT); "
              "T3 children never load agents/advisor.md, so its packet, caps and answer keys reach "
              "it only through the PROMPT: line")
+    if not rationale or not re.search(r"\bimplementor\b", rationale.group(0)):
+        fail("agents/build.md: the PROMPT: rationale must name the implementor unit "
+             "(implementor PROMPT); a T3 child never loads agents/implementor.md, so its "
+             "rules reach it only through the PROMPT: line")
     template_prompt = next((line for line in build_text.splitlines() if line.startswith("PROMPT:")), "")
     if "advisor.md" not in template_prompt:
         fail("agents/build.md: the dispatch-template PROMPT line must name advisor.md (an advisor "
@@ -448,7 +466,8 @@ def check_instructions() -> None:
     targets = routing_targets(providers)
     pinned: set[str] = set()
     for row in rows:
-        cells = [c.strip().strip("`") for c in row.strip().strip("|").split("|")]
+        raw = [c.strip() for c in row.strip().strip("|").split("|")]
+        cells = [c.strip("`") for c in raw]
         if len(cells) < 5 or (cells[2], cells[3]) not in targets:
             fail(f"AGENTS.md: routing row does not name an enabled instance and routable model "
                  f"from policy/providers.json: {row[:80]}")
@@ -461,9 +480,47 @@ def check_instructions() -> None:
             if option_id not in allowed:
                 fail(f"AGENTS.md: row option {option!r} is not one of {allowed} for instance "
                      f"{cells[2]!r}; the option id changes with the instance: {row[:80]}")
+        check_fallback_cell(raw, providers, targets, row)
     for name, entry in providers.items():
         if entry.get("enabled") and name not in pinned:
             fail(f"AGENTS.md: enabled instance {name!r} from policy/providers.json has no routing row")
+
+
+def check_fallback_cell(raw: list[str], providers: dict[str, dict],
+                        targets: set[tuple[str, str]], row: str) -> None:
+    """Column 6, the quota fallback: `none`, or a routable model on the opencode
+    instance with a valid option id (or none), different from the row's own pin;
+    review-critical and advisor stay `none`."""
+    if len(raw) != 6:
+        fail(f"AGENTS.md: routing row needs exactly 6 cells, the last one the fallback "
+             f"(`none` or a pin): {row[:80]}")
+        return
+    cell = raw[5]
+    match = FALLBACK_CELL.match(cell)
+    if not match:
+        fail(f"AGENTS.md: fallback cell {cell!r} is not `none`, '`model` `id=value`' or "
+             f"'`model` none': {row[:80]}")
+        return
+    bands = [b.strip() for b in raw[0].split(",")]
+    model, option = match.group(1), match.group(2)
+    if model is None:
+        return
+    if any(band in NO_FALLBACK_BANDS for band in bands):
+        fail(f"AGENTS.md: {raw[0]} fallback must be none, got {cell!r}; "
+             f"{' and '.join(NO_FALLBACK_BANDS)} have no quota fallback")
+    if (FALLBACK_INSTANCE, model) not in targets:
+        fail(f"AGENTS.md: fallback model {model!r} is not a routable model of instance "
+             f"{FALLBACK_INSTANCE!r} in policy/providers.json: {row[:80]}")
+    if option:
+        allowed = (providers.get(FALLBACK_INSTANCE) or {}).get("optionIds") or []
+        if option.split("=", 1)[0] not in allowed:
+            fail(f"AGENTS.md: fallback option {option!r} is not one of {allowed} for instance "
+                 f"{FALLBACK_INSTANCE!r}: {row[:80]}")
+    own_option = raw[4].strip("`")
+    if (raw[2].strip("`"), raw[3].strip("`"), own_option if own_option != "none" else None) == \
+            (FALLBACK_INSTANCE, model, option):
+        fail(f"AGENTS.md: fallback {cell!r} equals the row's own pin; a fallback must differ "
+             f"from its pin: {row[:80]}")
 
 
 def main() -> int:
@@ -575,9 +632,15 @@ def main() -> int:
             fail("build: execute must stay allowed; T3 delegation is reached through it")
         allow = [line.strip() for line in (ROOT / "agents" / "build.md").read_text().splitlines()
                  if line.strip().startswith("EXECUTE ALLOWLIST:")]
-        if len(allow) != 1 or allow[0].split(":", 1)[1].strip() != "delegate_task":
-            fail("build: needs exactly one 'EXECUTE ALLOWLIST: delegate_task' line; "
-                 "any other tool name on it is a bug")
+        if len(allow) != 1:
+            fail(f"build: needs exactly one EXECUTE ALLOWLIST line, found {len(allow)} "
+                 "(EXECUTE ALLOWLIST set)")
+        else:
+            names = [n.strip() for n in allow[0].split(":", 1)[1].split(",")]
+            if len(names) != len(set(names)) or set(names) != EXECUTE_ALLOWLIST:
+                fail(f"build: EXECUTE ALLOWLIST set is {names}, expected exactly "
+                     f"{sorted(EXECUTE_ALLOWLIST)}; any other tool name on it is a bug "
+                     "(EXECUTE ALLOWLIST set)")
         build_text = (ROOT / "agents" / "build.md").read_text()
         if build_text.count("ROLE: implementor unit") < 2:
             fail("build: the dispatch branch and the template must both use the exact "
