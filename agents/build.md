@@ -178,15 +178,16 @@ When the paired `review-deep` ran on sonnet, `second-opinion` falls back to
 the band blocked. A T3-routed fallback after the answer satisfies T2 sign-off; a
 native fallback with T3 absent stays advisory and does not. The `claude-agent` cap
 below counts every band on a fallback, and explore fan-out serializes while
-explore is on haiku.
+explore is on its `claude-agent/haiku` fallback.
 
 ## Pick a tier
 
 Name the risk tier and the band in every dispatch's `TIER:` line and give the
 reason in one clause. The band may be any band in AGENTS.md Model routing
-(`deepseek`, `sonnet`, `explore`, `haiku`, `muse`, `opus`), not only the three
-below. Tier is risk, not implementer: a T2 is implemented on `deepseek` by
-default. When in doubt, start on `deepseek`; move up only for the triggers below.
+(`explore`, `review-light`, `second-opinion`, `review-deep`, `review-critical`,
+`advisor`, …), not only the three below. Tier is risk, not implementer: a T2 is
+implemented on `deepseek` by default. When in doubt, start on `deepseek`; move up
+only for the triggers below.
 
 | Band | Pin | Use it for |
 | --- | --- | --- |
@@ -194,41 +195,15 @@ default. When in doubt, start on `deepseek`; move up only for the triggers below
 | `sonnet` | `claude-agent/sonnet`, `variant=medium` | `implement-deep`, only on the three triggers below |
 | `explore` | `opencode-go/deepseek-v4.1-flash`, `variant=low` | read-only repo maps and multi-file grep |
 
-`implement-deep` (`sonnet`) replaces the `deepseek` implementor only when the
-dispatch's TIER clause quotes one of:
-
-- (a) the last `plan-review-deep` round's verdict line
-  `implementer: implement-deep — <code>: <plan step id>`, with `<code>` one of
-  `coupled-invariants`, `no-oracle`, `security-logic`. The separator may be an em
-  dash, an en dash or a hyphen. A missing or malformed line means `deepseek`, and
-  `implement-deep` takes only the unit implementing that plan step, not the whole
-  T2. Copy the line verbatim into TIER.
-- (b) ladder: an implementor unit's done-when line marked FAIL, or its green-phase
-  suite red; quote that done-when FAIL line, or the green-phase suite's failing
-  tail. An integrate unit's red suite goes to
-  a normal fix round on `deepseek`, not to `implement-deep`. A red-phase
-  (test-first) tail never counts, and neither does a classify stop, scope-gap
-  report or blocked unit. The retry of that item goes to `implement-deep`; the
-  same done-when item failing again is the `stuck` consult on the advisor band
-  (pass both attempts), then the human.
-- (c) critical T2, decided at plan lock: a `deepseek` check unit runs
-  `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
-  evidence; the orchestrator writes
-  `critical: <path> — auth|security|migration|public-contract` in the dispatch's
-  TIER line, one entry per path. Check `.github/*` first: a CI path is never
-  critical and yields no token, so `.github/workflows/secret-scan.yml` is CI, not
-  `security`. For every other path the token is fixed by the first match in this
-  order, from the sensitive patterns in `bin/review-bundle` (`ALWAYS`,
-  `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `AUTH_PATTERNS` (and its `DOC_SENSITIVE` auth
-  variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`, `*permission*` ->
-  `security`; `*migration*`, `SCHEMA_PATTERNS`, `*.sql` -> `migration`; any other
-  sensitive path (`agents/*`, `policy/*`, `*opencode.json`, `*global.json`,
-  `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`) ->
-  `public-contract`. `implement-deep` applies under (c) only when the token is
-  `security`, `auth` or `migration`, and only for the unit whose FILES include a
-  qualifying path; `public-contract` keeps the `deepseek` implementor and gets
-  `review-critical` at sign-off. The integrate unit's reclassify may only raise:
-  non-critical -> critical, `review-deep` -> `review-critical`, never down.
+`implement-deep` (`sonnet`) replaces the `deepseek` implementor only on the three
+triggers in AGENTS.md, Classify (the T2 bullet), the single source for their codes,
+evidence and limits: (a) the last `plan-review-deep` verdict line, (b) the
+failed-item ladder, (c) a critical T2 decided at plan lock. The dispatch's TIER
+clause quotes its trigger: under (a) copy the verdict line verbatim; under (b)
+quote the done-when FAIL line or the green-phase suite's failing tail; under (c)
+dispatch the `deepseek` check unit for the plan-lock classify, then write one
+`critical: <path> — <token>` entry per path, the token mapped from its output by
+the order in AGENTS.md, Classify.
 
 T0: no review dispatch. An audit request is an explore unit, or T1 `review-light`
 when a verdict on a diff is wanted.
@@ -248,22 +223,15 @@ decides the lane.
 An explore dispatch passes `variant=low`: pass it in `options` as
 `[{ id: "variant", value: "low" }]`.
 
-A failure that meets trigger (b) moves that item to `implement-deep`; a second
-failure of the same item is not a tier choice, it is a stop: the `stuck` consult
-on the advisor band, then the human. A T1 retry stays on the builder band.
+A second failure of an item that met trigger (b) is not a tier choice, it is a
+stop: the `stuck` consult, then the human (AGENTS.md, Classify).
 
-Reviews are not a tier. Dispatch `plan-review-deep` before a T2 plan locks, and
-`review-deep` plus `second-opinion` at T2 sign-off, on their Model routing pins.
-The verifier is manual only (`/verify`); shell probes of findings go to a
-`deepseek` check unit. Do not accept a T2 unit that skipped `plan-review-deep` or
-the sign-off pair. On a critical T2 (defined in AGENTS.md, Model routing; use the
+Reviews are not a tier. The review pin's named points (plan lock, the sign-off
+pair, the one re-review) are in AGENTS.md, Model routing. Do not accept a T2 unit
+that skipped `plan-review-deep` or the sign-off pair. On a critical T2 (use the
 integrate unit's classify reasons) dispatch `review-critical` instead of
-`review-deep`. Record the trigger in the dispatch. At
-sign-off one `review-deep` (`review-critical` on a critical T2) and one
-`second-opinion` run in parallel; after a fix, still one re-review dispatch, on
-the `review-deep` (`review-critical`) pin, which also checks the acted-on
-`second-opinion` findings. A third is a human escalation. Cap dispatches, not
-reviewer steps.
+`review-deep`, and record the trigger in the dispatch. The verifier is manual only
+(`/verify`); shell probes of findings go to a `deepseek` check unit.
 
 ## Dispatch template
 
@@ -296,7 +264,7 @@ dispatch:
   user's once-per-stream answer, is the only other target;
 - you count your own dispatches on `claude-agent` pins that have not yet notified
   completion, and at most 2 are outstanding. Read-only fan-out goes to explore. The
-  sign-off pair (`review-deep` on sonnet plus `second-opinion` on muse) complies,
+  sign-off pair (`review-deep` plus `second-opinion`, each on its pin) complies,
   and an advisor dispatch occupies one of the two `claude-agent` slots. Cap:
   at most one consult per trigger occurrence and at most 3 per stream. Never poll for completion.
 
@@ -349,13 +317,9 @@ writer agents share this checkout.
 
 What degrades without T3 is in AGENTS.md, `### Without T3`.
 
-Classify confirms; it does not gate dispatch. The editing unit runs
-`review-bundle --classify --paths <FILES>` before its first edit and stops without
-editing only when the floor is T2 and the stated tier is T0 or T1 (a T1 floor
-allows T0 or T1); you then re-run at T2, restarting from plan lock. The one
-exception: the editing unit skips the T2-floor stop only when its classify printed
-`prose-lane: candidate` and the TIER says `T1 (prose-lane: …)`. Sequences per
-tier are in AGENTS.md, Classify.
+Classify confirms; it does not gate dispatch. The editing unit's T2-floor stop,
+its prose-lane exception and the sequences per tier are in AGENTS.md, Classify.
+After a classify stop, re-run at T2, restarting from plan lock.
 
 ## Checkpoint and integrate
 
@@ -396,13 +360,14 @@ Accept only when all of these hold:
   only upward deviation is `implement-deep` on a quoted trigger from Classify, and
   an `implement-deep` dispatch without its quoted trigger is rejected;
 - on a quota fallback, the TIER line carries `fallback: <band> -> <pin>`, the pin
-  is that band's written `fallback` cell (or the `second-opinion` opus swap), and
+  is that band's written `fallback` cell (or the `second-opinion` swap to
+  `claude-agent/opus`), and
   the run is recorded as degraded; a fallback sent before you ask the user once per
   stream, or against a `none` cell, is rejected;
 - on a critical T2, each `critical: <path> — <token>` entry's token is the first
-  matching category for that path in (c)'s order (auth, security, migration,
-  public-contract) after the `.github/*` CI check, which yields no token; a token
-  outside that mapping is rejected;
+  matching category for that path in the trigger (c) order of AGENTS.md, Classify
+  (auth, security, migration, public-contract) after the `.github/*` CI check,
+  which yields no token; a token outside that mapping is rejected;
 - a T2 unit names its plan-lock and sign-off units, or the gap is in `risks:`;
 - every done-when item has PASS or FAIL and the evidence that proves it;
 - `commands:` gives a command and an exit code for every check;

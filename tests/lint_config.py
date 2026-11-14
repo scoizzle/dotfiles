@@ -5,7 +5,9 @@ fallback bullet, a default-mode role branch that lost its TIER: stop, the
 plan-review-deep trigger-code list, the routing table's quota `fallback` column,
 the EXECUTE ALLOWLIST set, the PROMPT: rationale's implementor unit, or a U7
 anchor (the 🟡 rule, the plan-mode anchor, the prose-lane stop exception,
-UNIT-BASE..sha, steps >= 120, squash-before-return, review-log --list-pending)."""
+UNIT-BASE..sha, steps >= 120, squash-before-return, review-log --list-pending), or
+agents/build.md losing its `AGENTS.md, Classify` reference or restating the
+implement-deep trigger codes AGENTS.md owns (U8)."""
 
 import json
 import re
@@ -118,10 +120,25 @@ def main() -> int:
         finally:
             agents_path.write_text(agents_original)
 
+        # U8: AGENTS.md is the single source of the trigger and classify rules.
+        # build.md must point at it, and must not restate the code list (a second
+        # copy is what drifted before).
         try:
-            edit(build_path, "`security-logic`. The separator", "`security-logic`, `performance`. The separator")
-            failed |= not expect("build.md fourth trigger code", lint(tree),
-                                 "agents/build.md: unknown implement-deep trigger code")
+            text, count = re.subn(r"AGENTS\.md,\s+Classify", "AGENTS.md", build_original)
+            if not count:
+                raise AssertionError("agents/build.md: no 'AGENTS.md, Classify' reference to remove")
+            build_path.write_text(text)
+            failed |= not expect("build.md lacks the AGENTS.md, Classify reference", lint(tree),
+                                 "AGENTS.md, Classify")
+        finally:
+            build_path.write_text(build_original)
+
+        try:
+            build_path.write_text(build_original +
+                                  "\nwith `<code>` one of `coupled-invariants`, `no-oracle`, "
+                                  "`security-logic`.\n")
+            failed |= not expect("build.md restates the trigger code list", lint(tree),
+                                 "agents/build.md: restates the implement-deep trigger code")
         finally:
             build_path.write_text(build_original)
 
@@ -133,13 +150,6 @@ def main() -> int:
                                  "AGENTS.md: missing the implement-deep trigger code")
         finally:
             agents_path.write_text(agents_original)
-
-        try:
-            edit(build_path, "with `<code>` one of", "with code one of")
-            failed |= not expect("build.md missing code list", lint(tree),
-                                 "agents/build.md: missing the implement-deep code list")
-        finally:
-            build_path.write_text(build_original)
 
         # The advisor consult band: no native fallback, its own pin, a capped packet
         # and answer, a per-stream cap, a named-trigger vocabulary, and a role branch.

@@ -291,9 +291,20 @@ def check_trigger_codes() -> None:
     and may be followed by a sentence (the separator rule), so the check reads the
     list span rather than the whole file: a fourth code there, or a missing one,
     is a lint failure.
+
+    AGENTS.md, Classify is the single source of the trigger rules: agents/build.md
+    points there (`AGENTS.md, Classify`) and must not restate the codes.
     """
     codes = ("coupled-invariants", "no-oracle", "security-logic")
-    for rel in ("AGENTS.md", "agents/build.md", "agents/plan-review-deep.md"):
+    build_text = (ROOT / "agents" / "build.md").read_text()
+    if not has_phrase(build_text, "AGENTS.md, Classify"):
+        fail("agents/build.md: must reference `AGENTS.md, Classify` for the classify and "
+             "implement-deep trigger rules; AGENTS.md is their single source")
+    restated = [c for c in codes if f"`{c}`" in build_text]
+    if restated:
+        fail(f"agents/build.md: restates the implement-deep trigger code(s) {restated}; "
+             "AGENTS.md, Classify is their single source")
+    for rel in ("AGENTS.md", "agents/plan-review-deep.md"):
         text = (ROOT / rel).read_text()
         listed = re.search(r"`<code>`\s+(?:exactly\s+)?one\s+of\s+(.+?)[.;]", text, flags=re.S)
         if not listed:

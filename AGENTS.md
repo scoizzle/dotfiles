@@ -65,7 +65,8 @@ T2 bullet below.
   red-phase (test-first) tail never counts, and neither does a classify stop,
   scope-gap report or blocked unit. The retry of that item goes to
   `implement-deep`; the same done-when item failing again is the `stuck` consult
-  on the advisor band, then the human, and it does not reopen the fix budget;
+  on the advisor band (pass both attempts), then the human, and it does not
+  reopen the fix budget;
   (c) critical T2, decided at plan lock: a `deepseek` check unit runs
   `review-bundle <repo> --classify --paths <planned FILES>` and its output is the
   evidence; the orchestrator writes
@@ -173,8 +174,9 @@ the command and its output tail is not proof.
   delete, mirror, and `+refspec` pushes are denied. Never run an unattended
   session with `--auto`: it approves every `ask`.
 - Keep diffs minimal and consistent with the surrounding code.
-- Route broad read-only lookups through `explore`: the subagent when the agent
-  has one, otherwise an explore unit. The brief caps the return at findings +
+- Route broad read-only lookups through `explore`: an explore unit through T3,
+  and the native `explore` subagent only when the T3 tools are absent (Model
+  routing). The brief caps the return at findings +
   sources. An agent that can do neither reports the gap instead of scanning. Do not
   read the whole repo in the main context.
 - Git-history and T3-thread lookups go to a check unit with a fixed read-only
@@ -320,9 +322,10 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   change), or it touches auth or a schema/data migration. The orchestrator
   records the trigger in the dispatch.
 - Read-only units (reviewers `review-light`, `review-deep`, `plan-review-deep`,
-  `review-critical`, `second-opinion`, the `advisor` consult, and explore) run as
-  T3 children with `isolation: "worktree"`, `interactionMode: "plan"`, and
-  `role: "review"` (explore: `"research"`). Check, implementor, checkpoint and
+  `review-critical`, `second-opinion`, the `advisor` consult, explore and plan
+  units) run as T3 children with `isolation: "worktree"`,
+  `interactionMode: "plan"`, and `role: "review"` (explore: `"research"`; plan
+  units: `"design"`). Check, implementor, checkpoint and
   integrate units stay in default mode, since tests write build output.
   Editing, check, checkpoint and integrate units never get plan mode. Plan mode
   is a harness instruction, not a
