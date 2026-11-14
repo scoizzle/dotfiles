@@ -293,6 +293,35 @@ def main():
         and "informational on a T1 lane" in out,
         f"--paths agents/x.md: informational note: {out!r}",
     )
+
+    # Diff modes (--base and the working tree) print the same critical: and
+    # prose-lane: lines as --paths, so the integrate reclassify carries them.
+    def diff_mode_change(repo):
+        with open(os.path.join(repo, "opencode.json"), "w") as fh:
+            fh.write('{"x": 1}\n')
+        run(["git", "add", "opencode.json"], repo)
+        body_edit(repo)
+
+    def diff_mode_ok(out):
+        lines = out.splitlines()
+        return (
+            lines[:1] == ["T2"]
+            and "  critical: opencode.json — public-contract" in lines
+            and "  critical: agents/x.md — public-contract" in lines
+            and len(prose_lane(out)) == 1
+        )
+
+    repo = make_repo()
+    base = run(["git", "rev-parse", "HEAD"], repo).strip()
+    diff_mode_change(repo)
+    run(["git", "commit", "-qam", "change"], repo)
+    out = classify_out(repo, "--base", base)
+    report(diff_mode_ok(out), f"--base opencode.json + agents/x.md: critical and prose-lane lines: {out!r}")
+
+    repo = make_repo()
+    diff_mode_change(repo)
+    out = classify_out(repo)
+    report(diff_mode_ok(out), f"working tree opencode.json + agents/x.md: critical and prose-lane lines: {out!r}")
     return 1 if failures else 0
 
 
