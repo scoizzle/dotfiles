@@ -2,11 +2,11 @@
 # Golden-set runner: runs a reviewer agent over fixture cases with one model
 # and writes results that score.py grades.
 #
-#   ./run.sh -m opencode-go/glm-5.3#max
+#   ./run.sh -m opencode-go/deepseek-v4.1-flash#high
 #   ./run.sh --tier T1 -a review-light -m claude-agent/haiku
-#   ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
-#   ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-#   ./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
+#   ./run.sh --tier T2 -a review-deep -m claude-agent/sonnet#high
+#   ./run.sh -a plan-review-deep -m claude-agent/sonnet#high -c plan-ide-storage-tab
+#   ./run.sh -a verifier -m claude-agent/sonnet#high -c concat-nonstring-operand
 #
 # `tier` is required on every case.json. `--tier` selects change cases only; a
 # plan case runs only with `-c` or `-a plan-review-deep`. `-m` is optional; when

@@ -12,9 +12,9 @@ Two artifacts are covered: a **change** (a diff, caught before it ships) and a
 ```sh
 ./run.sh                                      # every change case, agent by tier
 ./run.sh --tier T1 -a review-light -m claude-agent/haiku
-./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
-./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
+./run.sh --tier T2 -a review-deep -m claude-agent/sonnet#high
+./run.sh -a plan-review-deep -m claude-agent/sonnet#high -c plan-ide-storage-tab
+./run.sh -a verifier -m claude-agent/sonnet#high -c concat-nonstring-operand
 ```
 
 `run.sh` prints a per-case line, then the model's cost and step delta for the run,
@@ -113,8 +113,8 @@ The verifier is scored in both directions, because a verifier that never finds a
 defect and one that finds a defect everywhere both cost the same:
 
 ```sh
-./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
-./run.sh -a verifier -m xai/grok-4.7#high -c clean-enum-backing-type
+./run.sh -a verifier -m claude-agent/sonnet#high -c concat-nonstring-operand
+./run.sh -a verifier -m claude-agent/sonnet#high -c clean-enum-backing-type
 ```
 
 The first is the seeded-🟠 change `review-light` already uses. The verifier has

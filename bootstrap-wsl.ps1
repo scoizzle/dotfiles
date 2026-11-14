@@ -268,7 +268,7 @@ if ($DryRun) {
     Step 'logins'
     Say '  1. opencode auth login     # opencode providers'
     Say '  2. claude auth login       # Claude Agent integration'
-    Say '  3. opencode auth login     # choose xAI - the auth used for xai/grok-4.7'
+    Say '  3. opencode auth login     # choose Anthropic / Claude Code login'
     Say 'These are run later, in the distro, by you; this script performs none of them.'
     exit 0
 }
@@ -354,6 +354,6 @@ Step 'logins'
 
 Say '  1. opencode auth login     # opencode providers'
 Say '  2. claude auth login       # Claude Agent integration'
-Say '  3. opencode auth login     # choose xAI - the auth used for xai/grok-4.7'
+Say '  3. opencode auth login     # choose Anthropic / Claude Code login'
 Say 'These are run later, in the distro, by you; this script performs none of them.'
 exit 0

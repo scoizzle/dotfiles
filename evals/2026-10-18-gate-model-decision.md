@@ -1,5 +1,7 @@
 # Reviewer model decision — 2026-10-18
 
+> **2026-11-14:** `grok-4.7` was retired 2026-11-09; the grok pins below are historical. Current pins: `AGENTS.md`, Model routing.
+
 > **Current pins (read this first).** This file is a dated log; Phases 3 and 4
 > were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
 > and the agent files. At the last re-pin (Phase 8):

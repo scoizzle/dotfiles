@@ -85,6 +85,8 @@ T2 bullet below.
   qualifying path; `public-contract` keeps the `deepseek` implementor and gets
   `review-critical` at sign-off. The integrate unit's reclassify may only raise:
   non-critical -> critical, `review-deep` -> `review-critical`, never down.
+  The classify `critical:` line (`critical_token` in `bin/review-bundle`) is the
+  token source.
 - **Prose lane:** a T1 for a T2 floor, allowed only when the plan-time classify
   printed `prose-lane: candidate` (every T2 reason is an `AGENTS.md` or
   `agents/*.md` path). State `Tier: T1 (prose-lane: <reason>)` and write

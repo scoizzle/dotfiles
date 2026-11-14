@@ -17,6 +17,7 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK_ROOT="${EVAL_WORK_ROOT:-/private/var/folders/cy/4_ykzyn94plgzgh4v_vwhzrh0000gn/T/opencode/evals-run}"
+# grok-4.7 retired 2026-11-09; kept for historical runs.
 MODEL="${GROK_MODEL:-grok-4.7}"
 EFFORT="${GROK_EFFORT:-high}"
 ONLY=""
