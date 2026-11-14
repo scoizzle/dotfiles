@@ -7,6 +7,12 @@
 
     review-log --resolve <id> --acted 2 --dismissed 0 --unique 1
 
+    review-log --list-pending [--fail-if-any]
+
+`--list-pending` is read-only: it prints `id ts tier artifact model
+red/amber/yellow` per pending line, then `pending: <n>`, and never rewrites
+the ledger. It exits 0, or 1 with `--fail-if-any` when n is non-zero.
+
 `unique` counts findings only the second-opinion run caught and the user
 confirmed; it is the rate that justifies keeping that step.
 
@@ -64,6 +70,17 @@ def save(path: str, entries: list[dict], malformed: list[str]) -> None:
     os.replace(temp, path)
 
 
+def list_pending(entries: list[dict], fail_if_any: bool) -> int:
+    pending = [entry for entry in entries if entry.get("pending") is True]
+    for entry in pending:
+        counts = "/".join(str(entry.get(key, 0)) for key in ("red", "amber", "yellow"))
+        fields = [entry.get("id"), entry.get("ts"), entry.get("tier"),
+                  entry.get("artifact"), entry.get("model"), counts]
+        print(" ".join(str(field) if field not in (None, "") else "-" for field in fields))
+    print(f"pending: {len(pending)}")
+    return 1 if fail_if_any and pending else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ledger", default=DEFAULT_LEDGER)
@@ -83,10 +100,22 @@ def main() -> int:
     parser.add_argument("--cost", type=float, default=0.0)
     parser.add_argument("--latency", type=int, default=0)
     parser.add_argument("--pending", action="store_true")
+    parser.add_argument("--list-pending", action="store_true",
+                        help="print pending lines and a count; read-only")
+    parser.add_argument("--fail-if-any", action="store_true",
+                        help="with --list-pending, exit 1 when any line is pending")
     args = parser.parse_args()
+
+    if args.fail_if_any and not args.list_pending:
+        parser.error("--fail-if-any needs --list-pending")
+    if args.list_pending and (args.resolve or args.tier):
+        parser.error("--list-pending cannot be combined with --resolve or --tier")
 
     path = os.path.expanduser(args.ledger)
     entries, malformed = load(path)
+
+    if args.list_pending:
+        return list_pending(entries, args.fail_if_any)
 
     if args.resolve:
         if args.acted is None or args.dismissed is None:
