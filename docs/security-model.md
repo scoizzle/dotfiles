@@ -134,9 +134,12 @@ unattended sessions with `--auto`.
   `Bash(npm publish:*)` rule is prefix-only and remains a known limit.
 - The classifier treats a doc (`.md`/`.txt`) as sensitive when its name has an
   anchored `auth`/`secret` token (`auth-redesign.md`, `auth.json`), `authentication`,
-  `authorization`, or contains `migration`, `schema`, `permission` or
-  `credential`. `author-notes.md` stays T1. Source files use broad substring
-  matches (`*auth*`, `*secret*`), so `src/author.cs` and `AuthService.cs` floor T2. A security doc with an unrelated name still floors T1.
+  `authorization`, or contains `migration`, `permission` or `credential`, or a
+  basename-anchored `schema` (`schema-change.md`, `schema.json`, `Schemas/`).
+  `author-notes.md` and `json-schema.md` stay T1. Source files match `auth` followed
+  by anything but `o` (plus `authoriz*`/`authoris*`), `secret` substrings and the same
+  anchored `schema` forms: `AuthService.cs` and `OAuthClient.cs` floor T2; `src/author.cs`,
+  `Authoring.cs` and `JsonSchemaExporter.cs` stay T1. A security doc with an unrelated name still floors T1.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.

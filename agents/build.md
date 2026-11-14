@@ -2,7 +2,7 @@
 description: Always-on orchestrator primary in opencode. Plans, scopes, dispatches T3 units, and accepts only PROOF. Delegated units are implementors; this session never edits by default.
 mode: primary
 model: opencode-go/deepseek-v4.1-flash#high
-steps: 60
+steps: 150
 color: "#8ecae6"
 permissions:
   - action: edit
@@ -191,9 +191,9 @@ dispatch's TIER clause quotes one of:
   critical and yields no token, so `.github/workflows/secret-scan.yml` is CI, not
   `security`. For every other path the token is fixed by the first match in this
   order, from the sensitive patterns in `bin/review-bundle` (`ALWAYS`,
-  `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `*auth*` (and its `DOC_SENSITIVE` auth
+  `SOURCE_SENSITIVE`, `DOC_SENSITIVE`): `AUTH_PATTERNS` (and its `DOC_SENSITIVE` auth
   variants) -> `auth`; `*secret*`, `*credential*`, `*.env*`, `*permission*` ->
-  `security`; `*migration*`, `*schema*`, `*.sql` -> `migration`; any other
+  `security`; `*migration*`, `SCHEMA_PATTERNS`, `*.sql` -> `migration`; any other
   sensitive path (`agents/*`, `policy/*`, `*opencode.json`, `*global.json`,
   `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`) ->
   `public-contract`. `implement-deep` applies under (c) only when the token is
