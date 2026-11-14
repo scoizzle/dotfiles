@@ -422,7 +422,7 @@ def has_phrase(text: str, phrase: str) -> bool:
 
 
 MIN_UNIT_STEPS = 120
-SQUASH = "git reset --soft <UNIT-BASE> && git commit"
+SQUASH = 'git add -A -- <FILES> && git reset --soft <UNIT-BASE> && git commit -m "<msg>"'
 
 
 def check_review_cost() -> None:

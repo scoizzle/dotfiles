@@ -77,7 +77,7 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   `prose-lane: candidate` and the brief's TIER says `T1 (prose-lane: …)`. Record
   `UNIT-BASE:` (`git rev-parse HEAD`) before the first edit. Otherwise do the work,
   edit and test, squash to one commit in your own worktree
-  (`git reset --soft <UNIT-BASE> && git commit`), never push, and return PROOF with
+  (`git add -A -- <FILES> && git reset --soft <UNIT-BASE> && git commit -m "<msg>"`), never push, and return PROOF with
   that sha and `UNIT-BASE:`. Do not dispatch.
 - `ROLE: plan unit` — read-only, plan mode: write the plan for the brief's goal
   with a testable done-when for each outcome and the red test for each behaviour
@@ -329,7 +329,7 @@ dirty tree is invisible to them.
 - Before the first worktree unit, dispatch a checkpoint unit if the tree may be
   dirty. If dirty paths fall outside the request, ask the user first; do not guess.
 - Every editing unit always returns ONE squashed commit sha from its own worktree
-  (`git reset --soft <UNIT-BASE> && git commit`, where `UNIT-BASE` is its
+  (`git add -A -- <FILES> && git reset --soft <UNIT-BASE> && git commit -m "<msg>"`, where `UNIT-BASE` is its
   `git rev-parse HEAD` before the first edit) and never pushes; it runs the
   changed-area tests red then green there. A unit that hits its step cap returns
   `UNIT-BASE:` and its head sha, and the integrate brief lists them for

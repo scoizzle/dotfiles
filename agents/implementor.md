@@ -45,7 +45,8 @@ read, report the gap so the orchestrator can dispatch an explore unit.
    config change instead of doing it.
 7. Record `UNIT-BASE:` (`git rev-parse HEAD`) before your first edit. Before
    returning, always squash your work to ONE commit in your own worktree with
-   `git reset --soft <UNIT-BASE> && git commit`, and return that sha with
+   `git add -A -- <FILES> && git reset --soft <UNIT-BASE> && git commit -m "<msg>"`,
+   and return that sha with
    `UNIT-BASE:`. If you near the step cap, commit what you have and return
    `UNIT-BASE:` and the head sha; the integrate unit cherry-picks
    `UNIT-BASE..sha`. Never push or force-push. The orchestrator never commits, so

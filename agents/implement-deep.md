@@ -70,7 +70,7 @@ You implement an **approved T2 plan**. The caller gives you the plan, the
 done-when contract, the red test the plan names, and the repository's build and
 test commands. You do not launch subagents or push. Record `UNIT-BASE:`
 (`git rev-parse HEAD`) before your first edit; before returning, always squash to
-ONE commit in your own worktree with `git reset --soft <UNIT-BASE> && git commit`
+ONE commit in your own worktree with `git add -A -- <FILES> && git reset --soft <UNIT-BASE> && git commit -m "<msg>"`
 and return that sha. If you near the step cap, commit what you have and return
 `UNIT-BASE:` and the head sha; the integrate unit cherry-picks `UNIT-BASE..sha`.
 `git push`, `rm`, `mv`, `apply` and `update-index` stay denied.
