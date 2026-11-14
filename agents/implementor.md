@@ -2,7 +2,7 @@
 description: Implementor unit. Executes one scoped task, edits and tests it, and returns PROOF. Never dispatches; not the orchestrator.
 mode: primary
 model: opencode-go/deepseek-v4.1-flash#high
-steps: 80
+steps: 120
 color: "#2a9d8f"
 permissions:
   - action: subagent
@@ -43,8 +43,13 @@ read, report the gap so the orchestrator can dispatch an explore unit.
    wrong, report it; do not change it to get green.
 6. Stay inside the brief's `FILES` and `OUT OF SCOPE`. Report a missing caller or
    config change instead of doing it.
-7. Commit or push only when the brief explicitly asks; never force-push. The
-   orchestrator never commits, so a requested commit is a unit task.
+7. Record `UNIT-BASE:` (`git rev-parse HEAD`) before your first edit. Before
+   returning, always squash your work to ONE commit in your own worktree with
+   `git reset --soft <UNIT-BASE> && git commit`, and return that sha with
+   `UNIT-BASE:`. If you near the step cap, commit what you have and return
+   `UNIT-BASE:` and the head sha; the integrate unit cherry-picks
+   `UNIT-BASE..sha`. Never push or force-push. The orchestrator never commits, so
+   the commit is a unit task.
 
 ## Report
 

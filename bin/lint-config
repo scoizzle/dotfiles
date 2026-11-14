@@ -404,6 +404,57 @@ def check_advisor_contract() -> None:
              "triage (dispute direction)")
 
 
+def has_phrase(text: str, phrase: str) -> bool:
+    """`phrase` appears in `text`, any whitespace run (a line wrap) matching a space."""
+    pattern = r"\s+".join(re.escape(word) for word in phrase.split())
+    return re.search(pattern, text, flags=re.I) is not None
+
+
+MIN_UNIT_STEPS = 120
+SQUASH = "git reset --soft <UNIT-BASE> && git commit"
+
+
+def check_review_cost() -> None:
+    """U7 anchors: the cheap, checkable half of the review-cost and step-cap rules.
+
+    The live claude-agent dispatch count and a declared T0 that dispatched a review
+    cannot be checked from the tree; they stay prose.
+    """
+    agents_text = (ROOT / "AGENTS.md").read_text()
+    build_text = (ROOT / "agents" / "build.md").read_text()
+    for label, body in (("AGENTS.md", agents_text), ("agents/build.md", build_text)):
+        if not has_phrase(body, "🟡 findings never trigger a fix round"):
+            fail(f"{label}: needs the 🟡 rule: '🟡 findings never trigger a fix round'")
+        if not has_phrase(body, "editing, check, checkpoint and integrate units never get plan mode"):
+            fail(f"{label}: needs the plan-mode anchor: 'Editing, check, checkpoint and integrate "
+                 "units never get plan mode.'")
+        if not has_phrase(body, "skips the T2-floor stop only when its classify printed "
+                                "`prose-lane: candidate`"):
+            fail(f"{label}: the editing-unit stop rule needs its one prose-lane exception "
+                 "(prose-lane exception): skips the T2-floor stop only when its classify printed "
+                 "`prose-lane: candidate`")
+        if not has_phrase(body, "must print `prose-lane: eligible`"):
+            fail(f"{label}: the integrate reclassify must print `prose-lane: eligible` for the "
+                 "prose lane to hold (prose-lane exception)")
+        if not has_phrase(body, "review-log --list-pending"):
+            fail(f"{label}: the close-out must run `review-log --list-pending` and report the "
+                 "count (list-pending)")
+    integrate = re.search(r"^- `ROLE: integrate unit`(.*?)(?=^- `ROLE: |^[ \t]*$|\Z)",
+                          build_text, flags=re.M | re.S)
+    if not integrate or "UNIT-BASE..sha" not in integrate.group(1):
+        fail("agents/build.md: the integrate unit branch must cherry-pick `UNIT-BASE..sha` for a "
+             "unit that returned UNIT-BASE after its step cap (UNIT-BASE..sha)")
+    for name in ("implementor", "implement-deep"):
+        text = (ROOT / "agents" / f"{name}.md").read_text()
+        steps = re.search(r"^steps:\s*(\d+)\s*$", text, flags=re.M)
+        if not steps or int(steps.group(1)) < MIN_UNIT_STEPS:
+            fail(f"agents/{name}.md: steps is {steps.group(1) if steps else None!r}; editing units "
+                 f"need steps >= {MIN_UNIT_STEPS}")
+        if not has_phrase(text, SQUASH):
+            fail(f"agents/{name}.md: must squash before returning with `{SQUASH}` and return that "
+                 "one sha (squash)")
+
+
 def load_providers() -> dict[str, dict]:
     """Enabled T3 instances and the model ids the routing table may pin.
 
@@ -715,6 +766,7 @@ def main() -> int:
     check_fallback_models()
     check_trigger_codes()
     check_advisor_contract()
+    check_review_cost()
     check_instructions()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):

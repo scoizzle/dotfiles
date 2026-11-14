@@ -73,7 +73,12 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   band: stop and report, do no work. Then run
   `~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>`; stop
   without editing and report the floor when it is T2 and the brief's tier is T0 or
-  T1. Otherwise do the work, edit and test, and return PROOF. Do not dispatch.
+  T1. One exception: the unit skips the T2-floor stop only when its classify printed
+  `prose-lane: candidate` and the brief's TIER says `T1 (prose-lane: …)`. Record
+  `UNIT-BASE:` (`git rev-parse HEAD`) before the first edit. Otherwise do the work,
+  edit and test, squash to one commit in your own worktree
+  (`git reset --soft <UNIT-BASE> && git commit`), never push, and return PROOF with
+  that sha and `UNIT-BASE:`. Do not dispatch.
 - `ROLE: plan unit` — read-only, plan mode: write the plan for the brief's goal
   with a testable done-when for each outcome and the red test for each behaviour
   change. Return the plan; no PROOF. Edit nothing, dispatch nothing.
@@ -107,14 +112,17 @@ Read the first line of your dispatch brief. Branch on the `ROLE:` prefix:
   session's HEAD); stop if `git rev-parse HEAD` differs. Record `preSha`: the
   brief's `BASE: <sha>` if given (the stream's first `preSha` on a fix round), else
   HEAD. For each accepted sha and worktree path,
-  `git cherry-pick <sha>` (if the sha is missing, first
-  `git fetch <worktree path> <sha>`). On a conflict, abort and report; never
+  `git cherry-pick <sha>`; for a unit that hit its step cap and returned
+  `UNIT-BASE:` with its head sha, `git cherry-pick UNIT-BASE..sha` (if a sha is
+  missing, first `git fetch <worktree path> <sha>`). `BASE:` stays the stream's
+  `preSha`, never a unit's `UNIT-BASE`. On a conflict, abort and report; never
   resolve. Run the full suite the brief names at the new head. Run
   `review-bundle <repo> --classify --base <preSha>` and
   `review-bundle <repo> --baseline --base <preSha>`, so both bundles cover the
-  same base. Return
-  PROOF with the head sha, `preSha`, the floor and reason lines, the bundle path,
-  and `git status --short`. Never push.
+  same base. On a prose lane, the reclassify must print `prose-lane: eligible`
+  with `./bin/lint-config` green; report the line either way. Return
+  PROOF with the head sha, `preSha`, the floor, reason and `prose-lane:` lines, the
+  bundle path, and `git status --short`. Never push.
 
 If there is no `ROLE:` line, you are the top-level orchestrator: you never touch
 the tree. No edits, no shell, no builds, no tests, no commits. Everything that
@@ -225,6 +233,18 @@ dispatch's TIER clause quotes one of:
 T0: no review dispatch. An audit request is an explore unit, or T1 `review-light`
 when a verdict on a diff is wanted.
 
+Every tier: 🟡 findings never trigger a fix round; report them, do not fix them.
+
+Prose lane: a T1 for a T2 floor, allowed only when the plan-time classify printed
+`prose-lane: candidate` (every T2 reason is an `AGENTS.md` or `agents/*.md` path).
+State `Tier: T1 (prose-lane: <reason>)` and write `T1 (prose-lane: <reason>)` in
+the TIER line; review uses `review-deep`, not `review-light`. The integrate
+reclassify must print `prose-lane: eligible` with `./bin/lint-config` green;
+otherwise raise to T2 and continue from `plan-review-deep` on the integrated diff.
+`critical: … public-contract` triggers `review-critical` only at T2; on the prose
+lane it is informational. "Raise, never lower" holds: classify output, not you,
+decides the lane.
+
 An explore dispatch passes `variant=low`: pass it in `options` as
 `[{ id: "variant", value: "low" }]`.
 
@@ -305,7 +325,8 @@ consult) also pass `interactionMode: "plan"`, with `role: "research"` (explore),
 `"design"` (plan unit) or `"review"` (review units and the advisor). The advisor
 dispatch targets `opencode` / `claude-agent/fable` at `variant=medium`, in a
 worktree like every other unit. Check, implementor, checkpoint and integrate
-units stay in default mode. Plan mode is a
+units stay in default mode. Editing, check, checkpoint and integrate units never
+get plan mode. Plan mode is a
 harness instruction, not a tool fence (probe 2026-11-10: the child obeyed it over a
 brief asking for a write, and shell still ran), so the close-out below stays.
 The `PROMPT:` line is required for review, explore, advisor, implementor and
@@ -331,7 +352,9 @@ What degrades without T3 is in AGENTS.md, `### Without T3`.
 Classify confirms; it does not gate dispatch. The editing unit runs
 `review-bundle --classify --paths <FILES>` before its first edit and stops without
 editing only when the floor is T2 and the stated tier is T0 or T1 (a T1 floor
-allows T0 or T1); you then re-run at T2, restarting from plan lock. Sequences per
+allows T0 or T1); you then re-run at T2, restarting from plan lock. The one
+exception: the editing unit skips the T2-floor stop only when its classify printed
+`prose-lane: candidate` and the TIER says `T1 (prose-lane: …)`. Sequences per
 tier are in AGENTS.md, Classify.
 
 ## Checkpoint and integrate
@@ -341,8 +364,12 @@ dirty tree is invisible to them.
 
 - Before the first worktree unit, dispatch a checkpoint unit if the tree may be
   dirty. If dirty paths fall outside the request, ask the user first; do not guess.
-- Every editing worktree brief asks the unit to commit in its worktree and return
-  the sha, and to run the changed-area tests red then green there.
+- Every editing unit always returns ONE squashed commit sha from its own worktree
+  (`git reset --soft <UNIT-BASE> && git commit`, where `UNIT-BASE` is its
+  `git rev-parse HEAD` before the first edit) and never pushes; it runs the
+  changed-area tests red then green there. A unit that hits its step cap returns
+  `UNIT-BASE:` and its head sha, and the integrate brief lists them for
+  `git cherry-pick UNIT-BASE..sha`.
 - Accepted shas land only through an integrate unit, which runs the full suite at
   the integrated head and classify and baseline over the integrated range
   (`--base`). T2 sign-off reviewers run after it. Its PROOF is what satisfies
@@ -352,7 +379,9 @@ dirty tree is invisible to them.
 - Close-out: the stream ends with the tree record. If the last unit is shared, its
   PROOF is the close-out and its brief includes the `review-log` run. Otherwise one
   check unit runs `git -C <this session's checkout path> status --short` (the brief
-  names the path; the unit's own worktree is not the checkout). Whenever any review
+  names the path; the unit's own worktree is not the checkout). The close-out also
+  runs `review-log --list-pending` and reports the count (`./bin/review-log` from
+  the repo checkout while the installed copy may lag the branch). Whenever any review
   ran, the close-out runs `review-log` ("pending" if the user has not answered). A
   dirty close-out fails the stream: report the paths, never checkpoint them.
 - Only one shared-checkout unit runs at a time.

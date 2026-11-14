@@ -19,11 +19,14 @@ paths and the rules below. The first editing unit runs
 `~/.config/opencode/bin/review-bundle <repo> --classify --paths <FILES>` before its
 first edit and stops without editing only when the floor is T2 and the stated tier
 is T0 or T1 (a T1 floor allows T0 or T1); the orchestrator then re-runs at T2,
-restarting from plan lock. Before review, the integrate unit classifies the
-integrated range (`--base <preSha>`) and returns the floor and reasons. If that
-floor is above the stated tier, continue at the floor from its review step (a T2
-gets `plan-review-deep` on the integrated diff, then the sign-off bands). You may
-raise the tier, never lower it.
+restarting from plan lock. One exception: the editing unit skips the T2-floor stop
+only when its classify printed `prose-lane: candidate` and the brief's TIER says
+`T1 (prose-lane: …)` (the prose lane below). Before review, the integrate unit
+classifies the integrated range (`--base <preSha>`) and returns the floor and
+reasons. If that floor is above the stated tier, continue at the floor from its
+review step (a T2 gets `plan-review-deep` on the integrated diff, then the sign-off
+bands). You may raise the tier, never lower it; the prose lane is the one named
+exception, and classify output decides it, not the orchestrator.
 `deepseek` is the implementor row and `sonnet` the implement-deep row of Model
 routing. Tier is risk, not implementer: a T2 is implemented on `deepseek` by
 default, and `implement-deep` (sonnet) is used only on the three triggers in the
@@ -81,12 +84,26 @@ T2 bullet below.
   qualifying path; `public-contract` keeps the `deepseek` implementor and gets
   `review-critical` at sign-off. The integrate unit's reclassify may only raise:
   non-critical -> critical, `review-deep` -> `review-critical`, never down.
+- **Prose lane:** a T1 for a T2 floor, allowed only when the plan-time classify
+  printed `prose-lane: candidate` (every T2 reason is an `AGENTS.md` or
+  `agents/*.md` path). State `Tier: T1 (prose-lane: <reason>)` and write
+  `T1 (prose-lane: <reason>)` in the brief's TIER line. The editing unit skips the
+  T2-floor stop only when its classify printed `prose-lane: candidate`. Review uses
+  `review-deep`, not `review-light`. The integrate reclassify must print
+  `prose-lane: eligible` with `./bin/lint-config` green; otherwise the tier rises
+  to T2 and continues from `plan-review-deep` on the integrated diff. A
+  `critical: … public-contract` line triggers `review-critical` only at T2; on the
+  prose lane it is informational.
+- **Every tier:** 🟡 findings never trigger a fix round; they are reported, not
+  fixed.
 - **Close-out:** the stream ends with the tree record. If the last unit is a shared
   one, its PROOF is the close-out and its brief includes the `review-log` run.
   Otherwise one check unit runs `git -C <session checkout path> status --short`
   (the brief names the path; a check unit's own worktree is not the checkout) to
-  confirm every read-only unit left it unchanged. Whenever any review ran, the
-  close-out runs `review-log` (`pending` if the user has not answered). A dirty
+  confirm every read-only unit left it unchanged. The close-out also runs
+  `review-log --list-pending` and reports the count (`./bin/review-log` from the
+  repo checkout while the installed copy may lag the branch). Whenever any review
+  ran, the close-out runs `review-log` (`pending` if the user has not answered). A dirty
   close-out fails the stream: report the paths, never checkpoint them. Checkpoint
   and integrate units record `git status --short` before acting.
 
@@ -306,7 +323,8 @@ belongs to T3 (the `t3-code` tools), not to a harness.
   `review-critical`, `second-opinion`, the `advisor` consult, and explore) run as
   T3 children with `isolation: "worktree"`, `interactionMode: "plan"`, and
   `role: "review"` (explore: `"research"`). Check, implementor, checkpoint and
-  integrate units stay in default mode, since tests write build output. Plan mode
+  integrate units stay in default mode, since tests write build output.
+  Editing, check, checkpoint and integrate units never get plan mode. Plan mode
   is a harness instruction, not a
   tool fence (probe 2026-11-10: the child obeyed it over a brief asking for a
   write, and shell still ran), so the stream's close-out still checks the tree.

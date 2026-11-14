@@ -3,9 +3,12 @@
 drifts: the native fallback models in policy/permissions.json or in the AGENTS.md
 fallback bullet, a default-mode role branch that lost its TIER: stop, the
 plan-review-deep trigger-code list, the routing table's quota `fallback` column,
-the EXECUTE ALLOWLIST set, or the PROMPT: rationale's implementor unit."""
+the EXECUTE ALLOWLIST set, the PROMPT: rationale's implementor unit, or a U7
+anchor (the 🟡 rule, the plan-mode anchor, the prose-lane stop exception,
+UNIT-BASE..sha, steps >= 120, squash-before-return, review-log --list-pending)."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -337,6 +340,57 @@ def main() -> int:
                                  "implementor PROMPT")
         finally:
             build_path.write_text(build_original)
+
+        # U7: review cost, step caps, plan-mode anchor, prose-lane stop rule,
+        # squash-before-return and the close-out ledger check. Each anchor is
+        # removed everywhere it appears (line wraps included), so a second copy
+        # cannot mask the drift.
+        def edit_all(path: Path, old: str, new: str) -> None:
+            pattern = r"\s+".join(re.escape(word) for word in old.split())
+            text, count = re.subn(pattern, new, path.read_text())
+            if not count:
+                raise AssertionError(f"{path}: missing {old!r}")
+            path.write_text(text)
+
+        implementor_path = tree / "agents" / "implementor.md"
+        deep_path = tree / "agents" / "implement-deep.md"
+        stop_rule = "skips the T2-floor stop only when its classify printed `prose-lane: candidate`"
+        for name, path, old, new, marker in (
+            ("AGENTS.md lost the 🟡 rule", agents_path,
+             "🟡 findings never trigger a fix round", "🟡 findings are optional", "🟡 rule"),
+            ("build.md lost the 🟡 rule", build_path,
+             "🟡 findings never trigger a fix round", "🟡 findings are optional", "🟡 rule"),
+            ("AGENTS.md lost the plan-mode anchor", agents_path,
+             "Editing, check, checkpoint and integrate units never get plan mode.", "",
+             "plan-mode anchor"),
+            ("build.md lost the plan-mode anchor", build_path,
+             "Editing, check, checkpoint and integrate units never get plan mode.", "",
+             "plan-mode anchor"),
+            ("AGENTS.md stop rule lost the candidate exception", agents_path,
+             stop_rule, "skips the T2-floor stop", "prose-lane exception"),
+            ("build.md stop rule lost the candidate exception", build_path,
+             stop_rule, "skips the T2-floor stop", "prose-lane exception"),
+            ("AGENTS.md integrate lost prose-lane: eligible", agents_path,
+             "must print `prose-lane: eligible`", "may print anything", "prose-lane exception"),
+            ("build.md integrate lost UNIT-BASE..sha", build_path,
+             "`git cherry-pick UNIT-BASE..sha`", "`git cherry-pick <sha>`", "UNIT-BASE..sha"),
+            ("implementor steps 80", implementor_path, "steps: 120", "steps: 80", "steps"),
+            ("implement-deep steps 80", deep_path, "steps: 120", "steps: 80", "steps"),
+            ("implementor lost the squash rule", implementor_path,
+             "git reset --soft <UNIT-BASE> && git commit", "git commit", "squash"),
+            ("implement-deep lost the squash rule", deep_path,
+             "git reset --soft <UNIT-BASE> && git commit", "git commit", "squash"),
+            ("AGENTS.md close-out lost --list-pending", agents_path,
+             "review-log --list-pending", "review-log", "list-pending"),
+            ("build.md close-out lost --list-pending", build_path,
+             "review-log --list-pending", "review-log", "list-pending"),
+        ):
+            saved = path.read_text()
+            try:
+                edit_all(path, old, new)
+                failed |= not expect(name, lint(tree), marker)
+            finally:
+                path.write_text(saved)
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
