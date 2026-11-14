@@ -50,6 +50,7 @@ CASES = [
     ("docs/schema-change.md", True),
     ("notes/auth-secrets.txt", True),
     ("README.md", False),
+    ("AGENTS.md", True),
     ("agents/build.md", True),
     ("policy/permissions.json", True),
     ("src/PermissionService.cs", True),
@@ -72,6 +73,7 @@ TOKEN_CASES = [
     ("prisma/schema.prisma", "migration"),
     ("app.slnx", "public-contract"),
     ("README.md", None),
+    ("AGENTS.md", "public-contract"),
 ]
 
 AGENTS_MD = """# Global instructions
@@ -275,10 +277,32 @@ def main():
     )
     edit(repo, "AGENTS.md", "Classify confirms.", "Classify only confirms.")
     out = classify_out(repo)
+    lanes = prose_lane(out)
     report(
-        out.splitlines()[0] == "T1" and not prose_lane(out) and "lines: not measured" not in out,
-        f"AGENTS.md-only diff: T1, no prose-lane, no lines note: {out!r}",
+        out.splitlines()[:1] == ["T2"]
+        and len(lanes) == 1
+        and lanes[0].startswith("prose-lane: ineligible — ")
+        and "### Classify" in lanes[0]
+        and "  critical: AGENTS.md — public-contract" in out.splitlines()
+        and "lines: not measured" not in out,
+        f"AGENTS.md-only diff under ### Classify: T2, ineligible, public-contract: {out!r}",
     )
+
+    def agents_only(old, new, state, label):
+        tree = make_repo()
+        edit(tree, "AGENTS.md", old, new)
+        got = classify_out(tree)
+        lanes = prose_lane(got)
+        ok = (
+            got.splitlines()[:1] == ["T2"]
+            and len(lanes) == 1
+            and lanes[0].startswith(f"prose-lane: {state} — ")
+            and "  critical: AGENTS.md — public-contract" in got.splitlines()
+        )
+        report(ok, f"AGENTS.md-only diff under {label}: T2, {state}, public-contract: {got!r}")
+
+    agents_only("Reviewers are read-only.", "Reviewers stay read-only.", "ineligible", "### Safety")
+    agents_only("Run review-log after", "Run review-log once after", "eligible", "### Ledger")
 
     repo = make_repo()
     out = classify_out(repo, "--paths", "opencode.json", ".github/workflows/secret-scan.yml")

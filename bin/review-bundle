@@ -139,6 +139,7 @@ T1_MAX_LINES = 400
 ALWAYS = (
     ".github/*",
     "agents/*",
+    "AGENTS.md",
     "policy/*",
     "memory/core/*",
     "*opencode.json",

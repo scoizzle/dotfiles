@@ -123,6 +123,17 @@ def verifier_block(policy: dict) -> str:
     lines = [BEGIN, "  # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here."]
     shell = [r for r in render_opencode(policy) if r["action"] == "shell"]
     lines += [f'  - {{ action: shell, resource: "{r["resource"]}", effect: {r["effect"]} }}' for r in shell]
+    # A restated global ask matches after the verifier's own deny, so last match
+    # would be ask. Re-deny those globs for any ask that skips the verifier.
+    trailing = []
+    for ask in policy["shell"]["ask"]:
+        if "verifier" not in ask.get("skip_agents", []):
+            continue
+        for glob in ask["opencode"]:
+            trailing.append(f'  - {{ action: shell, resource: "{glob}", effect: deny }}')
+    if trailing:
+        lines.append("  # verifier deny after the restated ask: last match wins, so this stays deny.")
+        lines.extend(trailing)
     lines.append(END)
     return "\n".join(lines)
 

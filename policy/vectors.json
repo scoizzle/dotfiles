@@ -1666,7 +1666,32 @@
   {
    "kind": "shell",
    "input": "git worktree remove /x",
-   "expect": "ask"
+   "expect": "ask",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree remove /x",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree remove -f",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "verifier"
+   ]
   },
   {
    "kind": "shell",

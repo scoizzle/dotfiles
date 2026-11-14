@@ -26,6 +26,9 @@
         ],
         "native": [
           "Bash(git worktree remove:*)"
+        ],
+        "skip_agents": [
+          "verifier"
         ]
       }
     ],

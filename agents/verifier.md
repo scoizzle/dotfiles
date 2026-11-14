@@ -149,6 +149,9 @@ permissions:
   - { action: shell, resource: "*service.json*", effect: deny }
   - { action: shell, resource: "*auth.json*", effect: deny }
   - { action: shell, resource: "*.netrc*", effect: deny }
+  # verifier deny after the restated ask: last match wins, so this stays deny.
+  - { action: shell, resource: "*git worktree remove*", effect: deny }
+  - { action: shell, resource: "*git -* worktree remove*", effect: deny }
   # END managed by bin/sync-harness
 ---
 
