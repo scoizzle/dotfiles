@@ -30,6 +30,12 @@ never lower it. It reads the current diff, or the planned files named by --paths
 (no line count is known before the edit, so only the file rules apply there).
 With --paths, --base is validated but ignored for classification.
 
+After the reasons, --classify prints: with --paths, a `lines: not measured` note;
+`critical: <path> — <token>` for each path critical_token() gives a token
+(auth|security|migration|public-contract, first match in AGENTS.md order; never
+.github/*); and, when the floor is T2, exactly one `prose-lane:` line
+(candidate|eligible|ineligible — <reason>). Line 1, the floor, never changes.
+
 Read-only: only `status`, `diff`, `ls-files`, `show`, `rev-parse`, and
 `hash-object` run, with optional locks disabled. Nothing is staged and the index
 is never written. A git failure aborts the run rather than emitting an empty
@@ -41,6 +47,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -159,14 +166,8 @@ SOURCE_SENSITIVE = (
     "*.env*",
     "*permission*",
 )
-DOC_SENSITIVE = (
-    "*.sql",
-    "*migration*",
-    *SCHEMA_PATTERNS,
-    "*.csproj",
-    "*.sln",
-    "*.slnx",
-    "*Dockerfile*",
+# The auth and secret variants of DOC_SENSITIVE, named so critical_token can reuse them.
+DOC_AUTH_PATTERNS = (
     "*auth-*",
     "*auth.*",
     "*auth_*",
@@ -177,28 +178,191 @@ DOC_SENSITIVE = (
     "*auth.yaml",
     "*authentication*",
     "*authorization*",
+)
+DOC_SECRET_PATTERNS = (
     "*secret-*",
     "*secret.*",
     "*secrets.*",
     "*secret_*",
     "*/secrets/*",
+)
+DOC_SENSITIVE = (
+    "*.sql",
+    "*migration*",
+    *SCHEMA_PATTERNS,
+    "*.csproj",
+    "*.sln",
+    "*.slnx",
+    "*Dockerfile*",
+    *DOC_AUTH_PATTERNS,
+    *DOC_SECRET_PATTERNS,
     "*credential*",
     "*.env*",
     "*permission*",
 )
+# critical_token categories, in AGENTS.md order (Classify, trigger (c)).
+SECURITY_PATTERNS = ("*secret*", "*credential*", "*.env*", "*permission*")
+DOC_SECURITY_PATTERNS = (*DOC_SECRET_PATTERNS, "*credential*", "*.env*", "*permission*")
+MIGRATION_PATTERNS = ("*migration*", *SCHEMA_PATTERNS, "*.sql")
+
+
+def _is_doc(low):
+    return low.endswith((".md", ".txt"))
+
+
+def _matches(low, pats):
+    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in pats)
 
 
 def is_sensitive(rel):
     low = rel.lower()
-    if any(fnmatch.fnmatchcase(low, pat.lower()) for pat in ALWAYS):
+    if _matches(low, ALWAYS):
         return True
-    pats = DOC_SENSITIVE if low.endswith((".md", ".txt")) else SOURCE_SENSITIVE
-    return any(fnmatch.fnmatchcase(low, pat.lower()) for pat in pats)
+    pats = DOC_SENSITIVE if _is_doc(low) else SOURCE_SENSITIVE
+    return _matches(low, pats)
 
 
-def classify(repo, planned, ref="HEAD"):
-    """Return (floor, reasons). T2 when any rule trips; otherwise T1."""
+def critical_token(rel):
+    """Critical-T2 token for a path, or None. First match wins, in AGENTS.md order:
+    .github/* -> None (CI is never critical); auth; security; migration; any other
+    sensitive path -> public-contract. Doc paths use the DOC_SENSITIVE variants, so
+    a token is only ever given to a path is_sensitive flags."""
+    low = rel.lower()
+    if fnmatch.fnmatchcase(low, ".github/*") or not is_sensitive(rel):
+        return None
+    doc = _is_doc(low)
+    if _matches(low, DOC_AUTH_PATTERNS if doc else AUTH_PATTERNS):
+        return "auth"
+    if _matches(low, DOC_SECURITY_PATTERNS if doc else SECURITY_PATTERNS):
+        return "security"
+    if _matches(low, MIGRATION_PATTERNS):
+        return "migration"
+    return "public-contract"
+
+
+# Prose lane (agents/*.md bodies and some AGENTS.md sections): a T2 floor whose only
+# reasons are prose paths may be eligible for a lighter lane. Line 1 never changes.
+PROSE_AGENTS_SECTIONS = (
+    "## Memory",
+    "### Pull requests",
+    "### Ledger",
+    "### Manual overrides",
+    "## C# / .NET work",
+)
+PROSE_BLOCKERS = (
+    re.compile(r"\b(claude-agent|opencode-go|opencode|xai)/\S+"),
+    re.compile(r"deny", re.IGNORECASE),
+    re.compile(r"permission", re.IGNORECASE),
+    re.compile(r"EXECUTE ALLOWLIST"),
+    re.compile(r"PROMPT:"),
+    re.compile(r"steps:"),
+)
+HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def is_prose_path(rel):
+    return rel == "AGENTS.md" or fnmatch.fnmatchcase(rel, "agents/*.md")
+
+
+def frontmatter_end(text):
+    """Last line number (1-based) of a leading --- frontmatter block, or 0."""
+    lines = text.splitlines()
+    if not lines or lines[0].rstrip() != "---":
+        return 0
+    for i, line in enumerate(lines[1:], start=2):
+        if line.rstrip() == "---":
+            return i
+    return len(lines)
+
+
+def sections_by_line(text):
+    """Map each 1-based line to the nearest markdown heading at or above it,
+    ignoring headings inside fenced code blocks."""
+    out, current, fence = [None], None, False
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence and re.match(r"#{1,6} ", stripped):
+            current = stripped
+        out.append(current)
+    return out
+
+
+def _read_new(repo, rel):
+    try:
+        with open(os.path.join(repo, rel), encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _read_old(repo, ref, rel):
+    res = git(repo, ["show", f"{ref}:{rel}"])
+    return res.stdout if res.returncode == 0 else ""
+
+
+def prose_lane(repo, info, planned, ref):
+    """Return the prose-lane state line for a T2 floor: candidate, eligible or
+    ineligible, each with a reason."""
+    if info["other_reasons"]:
+        return f"ineligible — {info['other_reasons'][0]}"
+    blockers = [p for p in info["sensitive"] if not is_prose_path(p)]
+    if blockers:
+        return f"ineligible — {blockers[0]} is not an AGENTS.md or agents/*.md path"
+    if planned:
+        return "candidate — every T2 reason is an AGENTS.md or agents/*.md path; the diff decides eligibility"
+    # (a) no file added, deleted or renamed; untracked files count as added.
+    for row in (git_ok(repo, ["diff", "--name-status", "-M", ref]).stdout or "").splitlines():
+        status = row.split("\t", 1)[0]
+        if status[:1] in ("A", "D", "R", "C"):
+            return f"ineligible — (a) {row.split(chr(9))[-1]} is added, deleted or renamed ({status})"
+    if info["untracked"]:
+        return f"ineligible — (a) {info['untracked'][0]} is added (untracked)"
+    for rel in info["paths"]:
+        diff = git_ok(repo, ["diff", "-U0", "--no-color", "--no-ext-diff", ref, "--", rel]).stdout or ""
+        old_text, new_text = _read_old(repo, ref, rel), _read_new(repo, rel)
+        old_fm, new_fm = frontmatter_end(old_text), frontmatter_end(new_text)
+        new_sec = sections_by_line(new_text) if rel == "AGENTS.md" else None
+        old_sec = sections_by_line(old_text) if rel == "AGENTS.md" else None
+        for line in diff.splitlines():
+            m = HUNK_RE.match(line)
+            if m:
+                o_start, o_len = int(m.group(1)), int(m.group(2) or "1")
+                n_start, n_len = int(m.group(3)), int(m.group(4) or "1")
+                # (b) the hunk touches the leading frontmatter, in either file.
+                if (o_len and o_start <= old_fm) or (n_len and n_start <= new_fm) or (
+                    not n_len and new_fm and n_start < new_fm
+                ):
+                    return f"ineligible — (b) {rel} hunk at line {n_start} touches the frontmatter"
+                # (d) every AGENTS.md hunk must sit under an allowlisted section.
+                if new_sec is not None:
+                    news = range(n_start, n_start + n_len) if n_len else [n_start]
+                    olds = range(o_start, o_start + o_len)
+                    secs = [new_sec[i] if i < len(new_sec) else new_sec[-1] for i in news]
+                    secs += [old_sec[i] if i < len(old_sec) else old_sec[-1] for i in olds]
+                    for sec in secs:
+                        if sec not in PROSE_AGENTS_SECTIONS:
+                            return (
+                                f"ineligible — (d) AGENTS.md hunk at line {n_start} is under "
+                                f"{sec or 'no heading'}, not a prose-lane section"
+                            )
+                continue
+            if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+                continue
+            # (c) no added or removed line carries a pin, permission or control key.
+            for pat in PROSE_BLOCKERS:
+                hit = pat.search(line[1:])
+                if hit:
+                    return f"ineligible — (c) {rel} changes a line with {hit.group(0)!r}"
+    return "eligible — body-only edit to existing AGENTS.md/agents/*.md prose"
+
+
+def classify_detail(repo, planned, ref="HEAD"):
+    """Return the classify facts: floor, reasons, paths, sensitive paths, the
+    non-path reasons, and untracked paths."""
     lines = 0
+    untracked = []
     if planned:
         paths = list(planned)
     else:
@@ -214,21 +378,58 @@ def classify(repo, planned, ref="HEAD"):
         listed = git_ok(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout or ""
         for rel in (p for p in listed.split("\0") if p):
             paths.append(rel)
+            untracked.append(rel)
             try:
                 with open(os.path.join(repo, rel), "rb") as fh:
                     lines += fh.read().count(b"\n")
             except OSError:
                 pass
-    reasons = []
+    other = []
     source = [p for p in paths if not p.lower().endswith((".md", ".txt"))]
     if len(source) > T1_MAX_FILES:
-        reasons.append(f"{len(source)} non-doc files (T1 allows {T1_MAX_FILES})")
+        other.append(f"{len(source)} non-doc files (T1 allows {T1_MAX_FILES})")
     if lines > T1_MAX_LINES:
-        reasons.append(f"{lines} changed lines (T1 allows {T1_MAX_LINES})")
-    for rel in paths:
-        if is_sensitive(rel):
-            reasons.append(f"{rel} is a public-contract, security, data, or CI path")
-    return ("T2" if reasons else "T1"), reasons
+        other.append(f"{lines} changed lines (T1 allows {T1_MAX_LINES})")
+    sensitive = [rel for rel in paths if is_sensitive(rel)]
+    reasons = other + [f"{rel} is a public-contract, security, data, or CI path" for rel in sensitive]
+    return {
+        "floor": "T2" if reasons else "T1",
+        "reasons": reasons,
+        "paths": paths,
+        "sensitive": sensitive,
+        "other_reasons": other,
+        "untracked": untracked,
+    }
+
+
+def classify(repo, planned, ref="HEAD"):
+    """Return (floor, reasons). T2 when any rule trips; otherwise T1."""
+    info = classify_detail(repo, planned, ref)
+    return info["floor"], info["reasons"]
+
+
+def classify_lines(repo, planned, ref="HEAD"):
+    """The --classify output: line 1 is the floor, then indented detail lines."""
+    info = classify_detail(repo, planned, ref)
+    out = [info["floor"]] + [f"  {r}" for r in info["reasons"]]
+    if planned:
+        out.append(
+            f"  lines: not measured (planned paths); integrate --base applies the {T1_MAX_LINES}-line limit"
+        )
+    informational = False
+    for rel in info["paths"]:
+        token = critical_token(rel)
+        if token:
+            out.append(f"  critical: {rel} — {token}")
+            informational |= token == "public-contract" and is_prose_path(rel)
+    if informational:
+        out.append(
+            "  note: critical … public-contract for AGENTS.md/agents/*.md is informational "
+            "on a T1 lane (it triggers review-critical only at T2)"
+        )
+    if info["floor"] == "T2":
+        out.append(f"  prose-lane: {prose_lane(repo, info, planned, ref)}")
+    return out
 
 
 def is_binary(data):
@@ -288,10 +489,8 @@ def main(argv):
     ref = base_sha or "HEAD"
 
     if classify_only:
-        floor, reasons = classify(repo, planned, ref)
-        print(floor)
-        for reason in reasons:
-            print(f"  {reason}")
+        for line in classify_lines(repo, planned, ref):
+            print(line)
         return 0
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

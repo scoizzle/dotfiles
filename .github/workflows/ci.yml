@@ -357,6 +357,9 @@ jobs:
           [ "$(./bin/review-bundle . --classify --paths opencode.json | head -1)" = T2 ]
           [ "$(./bin/review-bundle . --classify --paths .github/workflows/ci.yml | head -1)" = T2 ]
           [ "$(./bin/review-bundle . --classify --paths a.cs b.cs c.cs d.cs | head -1)" = T2 ]
+          out="$(./bin/review-bundle . --classify --paths opencode.json)"
+          printf '%s\n' "$out" | grep -qF 'critical: opencode.json — public-contract'
+          printf '%s\n' "$out" | grep -qF 'lines: not measured'
 
       # The drafter is untrusted-input facing: no --auto, a tool-less agent,
       # redaction before the prompt leaves, unsafe lines dropped, and a human
