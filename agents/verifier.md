@@ -82,6 +82,8 @@ permissions:
   # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here.
   - { action: shell, resource: "*git push*", effect: ask }
   - { action: shell, resource: "*git -* push*", effect: ask }
+  - { action: shell, resource: "*git worktree remove*", effect: ask }
+  - { action: shell, resource: "*git -* worktree remove*", effect: ask }
   - { action: shell, resource: "*git push*--force*", effect: deny }
   - { action: shell, resource: "*git -* push*--force*", effect: deny }
   - { action: shell, resource: "*git push* -f*", effect: deny }
@@ -92,10 +94,18 @@ permissions:
   - { action: shell, resource: "*git -* push*--delete*", effect: deny }
   - { action: shell, resource: "*git push*--mirror*", effect: deny }
   - { action: shell, resource: "*git -* push*--mirror*", effect: deny }
+  - { action: shell, resource: "*git push* :*", effect: deny }
+  - { action: shell, resource: "*git push* ':*", effect: deny }
+  - { action: shell, resource: "*git -* push* :*", effect: deny }
+  - { action: shell, resource: "*git -* push* ':*", effect: deny }
   - { action: shell, resource: "*git reset*--hard*", effect: deny }
   - { action: shell, resource: "*git -* reset*--hard*", effect: deny }
   - { action: shell, resource: "*git clean*", effect: deny }
   - { action: shell, resource: "*git -* clean*", effect: deny }
+  - { action: shell, resource: "*git stash drop*", effect: deny }
+  - { action: shell, resource: "*git stash clear*", effect: deny }
+  - { action: shell, resource: "*git -* stash drop*", effect: deny }
+  - { action: shell, resource: "*git -* stash clear*", effect: deny }
   - { action: shell, resource: "*rm -rf*", effect: deny }
   - { action: shell, resource: "*rm -fr*", effect: deny }
   - { action: shell, resource: "*rm -r -f*", effect: deny }

@@ -138,7 +138,7 @@ def check_policy(agents: dict) -> None:
             if got != v["expect"]:
                 fail(f"harness-guard: {label} is {got}, expected {v['expect']}")
         if "opencode" in engines:
-            for name in ("(global)", "verifier", "implementor"):
+            for name in v.get("agents", ["(global)", "verifier", "implementor"]):
                 if name in v.get("skip_agents", []):
                     continue
                 got = effective(agents[name], action[v["kind"]], v["input"])

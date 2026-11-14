@@ -114,9 +114,23 @@ unattended sessions with `--auto`.
   `git checkout .` and `git checkout HEAD <file>` (no `--`), the attached forms
   `-XDELETE` and `--method=DELETE`, `pnpm publish` and `yarn publish`,
   `git branch --delete --force`, and paths built from variables at run time.
-- The builder's git denies (`commit`, `add`, `stage`, `update-index`, `push`,
-  `rm`, `mv`, `apply`) are generated into `agents/implement-deep.md` from
-  `builder_git_deny` in the policy; edit the policy, not the block.
+- `git stash drop` and `git stash clear` are denied (`git-stash-drop`), and
+  `git worktree remove` asks (`git-worktree-remove`); the guard matches the first
+  non-flag word after the subcommand (`subargs`), so `git stash push`,
+  `git stash list`, `git worktree list` and `git worktree add` stay allowed.
+- Push deletes by empty-source refspec (`git push origin :main`) are denied.
+  The guard is authoritative: it parses the refspec after shell unquoting. The
+  opencode globs are best effort for refspec forms (bare and single-quoted
+  `:<ref>` only; a double-quoted `":main"` is caught by the guard alone), and the
+  native rules carry no refspec glob.
+- The builder's git denies (`update-index`, `push`, `rm`, `mv`, `apply`) are
+  generated into `agents/implement-deep.md` from `builder_git_deny` in the
+  policy; edit the policy, not the block. `implement-deep` may stage and commit
+  locally in its own worktree; it never pushes.
+- The repo render (`./bin/sync-harness --scope repo --apply`) covers
+  `opencode.json` and the agent files only. `~/.claude/settings.json` and the
+  managed Claude settings pick up the new native rules only when a person runs
+  the home or managed render after merge.
 - The guard normalizes `\` to `/` in `protected_path`, `protected_name` and
   `in_no_edit` (`tests/guard_windows.py` proves it with a Windows-shaped home).
   It cannot help where the shell has already eaten the backslashes: `shlex` turns
