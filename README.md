@@ -7,13 +7,11 @@ Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 
 ## Workflow
 
-`AGENTS.md` classifies each request as T0, T1, or T2 and names the review gate.
-Which model runs which job is the **Model routing** table there: every delegated
-job goes through T3 with the band's pinned target, so the pin does not depend on
-which harness the session runs in. The review pin is for plan lock and T2 sign-off;
-a separate capped advisor consult (Fable 5.2) answers one bounded question at three
-named triggers (fork, stuck, dispute), at most 3 per stream, and its packet and
-answer are hard-capped.
+`AGENTS.md` is the contract every harness loads. The default agent does the work.
+A broad lookup may go to the explore agent. One read-only review is for a
+sensitive change (auth, secrets, a schema or data migration, or a public
+contract), when you ask, or after the same check has failed twice. Ordinary
+edits are not dispatched.
 
 Permissions come from one policy, `policy/permissions.json`, rendered for opencode,
 Claude Code and Grok Build by `bin/sync-harness` and checked by `bin/lint-config` in
@@ -24,22 +22,13 @@ One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 `~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
 [`docs/security-model.md`](docs/security-model.md).
 
-## Orchestrator primary
+## Default agent
 
-In opencode, the top-level `build` agent is the orchestrator: it plans, scopes,
-and dispatches each unit through T3 `delegate_task` with `isolation: "worktree"`
-(checkpoint and integrate units run shared and commit locally), then accepts only a verified `PROOF`. `agents/build.md` is the source; the tracked
-`.opencode/agents/build.md` symlink is the project override opencode loads. It does not edit or run mutating shell
-itself. `implementor` is the direct-work agent (`opencode --agent implementor`);
-delegated units follow the `ROLE: implementor unit | plan unit | review unit | explore unit | check unit | checkpoint unit | integrate unit | advisor unit`
-branch in `agents/build.md`.
-
-Run the orchestrator in `auto` or `full-access` so children can edit:
-`approval-required` pauses each child at its first write or command, and the
-orchestrator cannot approve it.
-The no-hands rule is the agent prompt, not a T3 fence. Plan mode is a read-only
-planning phase and cannot spawn a writable child; use it to explore, then switch
-the thread to `build`.
+In opencode, the top-level `build` agent edits. `agents/build.md` is the source;
+the tracked `.opencode/agents/build.md` symlink is the project override opencode
+loads. `implementor` (`opencode --agent implementor`) is the same job for a
+direct `opencode run`: one task, no dispatch. Extra agent files remain installed
+so a lookup or a review can still be called. They are not the default path.
 
 ## Install on a new machine
 
