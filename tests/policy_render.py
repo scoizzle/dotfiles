@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/sync-harness must render agents/implement-deep.md from policy/permissions.json."""
+"""bin/sync-harness must render agents/verifier.md from policy/permissions.json."""
 
 import importlib.machinery
 import importlib.util
@@ -15,11 +15,11 @@ _loader.exec_module(sync)
 
 policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
 targets = sync.repo_targets(policy, ROOT)
-path = ROOT / "agents" / "implement-deep.md"
+path = ROOT / "agents" / "verifier.md"
 if path not in targets:
-    print("FAIL: repo_targets does not render agents/implement-deep.md")
+    print("FAIL: repo_targets does not render agents/verifier.md")
     sys.exit(1)
 if targets[path] != path.read_text():
-    print("FAIL: agents/implement-deep.md drifted from policy/permissions.json")
+    print("FAIL: agents/verifier.md drifted from policy/permissions.json")
     sys.exit(1)
 print("ok")

@@ -49,7 +49,7 @@ def main() -> int:
 
         policy_path = tree / "policy" / "permissions.json"
         original = policy_path.read_text()
-        for name in ("explore", "second-opinion"):
+        for name in ("explore", "review-deep"):
             policy = json.loads(original)
             current = policy["readonly_agents"]["models"][name]
             policy["readonly_agents"]["models"][name] = "opus" if current != "opus" else "haiku"

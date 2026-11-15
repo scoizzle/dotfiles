@@ -96,15 +96,15 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 
 | path            | what it is                                        | reaches |
 | --------------- | ------------------------------------------------- | ------- |
-| `AGENTS.md`     | global workflow, routing table, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
+| `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
-| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; the four read-only reviewers and `explore` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
+| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore` and `review-deep` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
-| `policy/`       | the permission policy, its test vectors, and the T3 provider snapshot the routing table is linted against | permissions reach all three via `bin/sync-harness`; the snapshot is read by `bin/lint-config` |
+| `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle` (also `--classify`), `review-log`, `smoke-workflow`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
+| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
 `install.cs` makes the links; `bin/sync-harness --apply` writes the parts that

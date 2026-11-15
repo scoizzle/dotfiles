@@ -134,7 +134,7 @@ jobs:
           PY
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/smoke-workflow bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
 
       - name: classifier and policy render tests
         run: |

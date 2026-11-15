@@ -126,10 +126,6 @@ unattended sessions with `--auto`.
   opencode globs are best effort for refspec forms (bare and single-quoted
   `:<ref>` only; a double-quoted `":main"` is caught by the guard alone), and the
   native rules carry no refspec glob.
-- The builder's git denies (`update-index`, `push`, `rm`, `mv`, `apply`) are
-  generated into `agents/implement-deep.md` from `builder_git_deny` in the
-  policy; edit the policy, not the block. `implement-deep` may stage and commit
-  locally in its own worktree; it never pushes.
 - The guard normalizes `\` to `/` in `protected_path`, `protected_name` and
   `in_no_edit` (`tests/guard_windows.py` proves it with a Windows-shaped home).
   It cannot help where the shell has already eaten the backslashes: `shlex` turns
