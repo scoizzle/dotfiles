@@ -16,7 +16,7 @@ that every later session trusts).
 | Control | Where | Strength |
 | --- | --- | --- |
 | Reviewers and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
-| `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
+| `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |
 | `dream` drafts with `dream-drafter` (no tools) and without `--auto` | `bin/dream`, `agents/dream-drafter.md` | Tool-level. |
 | The digest is redacted, framed as untrusted, and every returned line is validated | `bin/dream` | Heuristic. Drops, does not repair. |
@@ -114,26 +114,9 @@ unattended sessions with `--auto`.
   `git checkout .` and `git checkout HEAD <file>` (no `--`), the attached forms
   `-XDELETE` and `--method=DELETE`, `pnpm publish` and `yarn publish`,
   `git branch --delete --force`, and paths built from variables at run time.
-- `git stash drop` and `git stash clear` are denied (`git-stash-drop`). As of
-  2026-11-14 the verifier keeps deny on `git worktree remove` and
-  `git worktree remove -f`. `skip_agents ["verifier"]` on the global ask, plus a
-  trailing verifier deny rendered after the restated block, make that deny win.
-  Other agents still ask (`git-worktree-remove`). The guard matches the first
-  non-flag word after the subcommand (`subargs`), so `git stash push`,
-  `git stash list`, `git worktree list` and `git worktree add` stay allowed.
-- Push deletes by empty-source refspec (`git push origin :main`) are denied.
-  The guard is authoritative: it parses the refspec after shell unquoting. The
-  opencode globs are best effort for refspec forms (bare and single-quoted
-  `:<ref>` only; a double-quoted `":main"` is caught by the guard alone), and the
-  native rules carry no refspec glob.
-- The builder's git denies (`update-index`, `push`, `rm`, `mv`, `apply`) are
-  generated into `agents/implement-deep.md` from `builder_git_deny` in the
-  policy; edit the policy, not the block. `implement-deep` may stage and commit
-  locally in its own worktree; it never pushes.
-- The repo render (`./bin/sync-harness --scope repo --apply`) covers
-  `opencode.json` and the agent files only. `~/.claude/settings.json` and the
-  managed Claude settings pick up the new native rules only when a person runs
-  the home or managed render after merge.
+- The builder's git denies (`commit`, `add`, `stage`, `update-index`, `push`,
+  `rm`, `mv`, `apply`) are generated into `agents/implement-deep.md` from
+  `builder_git_deny` in the policy; edit the policy, not the block.
 - The guard normalizes `\` to `/` in `protected_path`, `protected_name` and
   `in_no_edit` (`tests/guard_windows.py` proves it with a Windows-shaped home).
   It cannot help where the shell has already eaten the backslashes: `shlex` turns
@@ -144,21 +127,6 @@ unattended sessions with `--auto`.
   names the flags that take a value). Accepted collateral: `git restore --help`,
   `npm publish --dry-run`, `gh pr merge --help` and `git checkout -b feature --`
   are denied too. `git branch -d` (lowercase) is allowed.
-- **accepted gap: gh pr merge** under full-access T3 children (owner ruling,
-  2026-11-14). On 2026-11-10 a T3 opencode child (implementor unit,
-  `opencode-go/deepseek-v4.1-flash`, runtimeMode `full-access`) ran
-  `gh pr merge 33 --repo scoizzle/dotfiles --squash --delete-branch` (exit 0,
-  squash `0544a96`) after the owner asked for the merge in chat. The
-  `opencode.json` deny (lines 44-45) was present and parsed but did not bind for
-  that child, which has no hook layer; the `~/.claude/settings.json` deny and the
-  harness-guard hook cover Claude Code and Grok sessions only, and were added
-  after the merge; no managed settings are installed. The mechanism is inferred
-  (inferred while `agents/build.md` was the no-hands dispatcher: T3 session rules override agent deny rules), not proven from
-  T3 code. Decision: under full-access the deny list is advisory; agents must not
-  merge PRs; a merge the owner asks for in chat is done by the owner, or by an
-  agent only when explicitly authorized for that PR in that chat. The gap closes
-  when T3 enforces opencode denies under full-access, or when children run below
-  full-access.
 - The `npm-publish` rule matches the token `publish` anywhere in an `npm`
   command, so every global-flag form is denied (`npm --loglevel silent publish`,
   `npm -w pkg publish`, `npm --otp 123 publish`). Accepted over-block: `npm run
@@ -166,12 +134,9 @@ unattended sessions with `--auto`.
   `Bash(npm publish:*)` rule is prefix-only and remains a known limit.
 - The classifier treats a doc (`.md`/`.txt`) as sensitive when its name has an
   anchored `auth`/`secret` token (`auth-redesign.md`, `auth.json`), `authentication`,
-  `authorization`, or contains `migration`, `permission` or `credential`, or a
-  basename-anchored `schema` (`schema-change.md`, `schema.json`, `Schemas/`).
-  `author-notes.md` and `json-schema.md` stay T1. Source files match `auth` followed
-  by anything but `o` (plus `authoriz*`/`authoris*`), `secret` substrings and the same
-  anchored `schema` forms: `AuthService.cs` and `OAuthClient.cs` floor T2; `src/author.cs`,
-  `Authoring.cs` and `JsonSchemaExporter.cs` stay T1. A security doc with an unrelated name still floors T1.
+  `authorization`, or contains `migration`, `schema`, `permission` or
+  `credential`. `author-notes.md` stays T1. Source files use broad substring
+  matches (`*auth*`, `*secret*`), so `src/author.cs` and `AuthService.cs` floor T2. A security doc with an unrelated name still floors T1.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.
