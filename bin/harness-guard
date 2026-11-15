@@ -292,8 +292,14 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
         sub, rest = git_parts(seg[1:])
         if sub != rule["git"]:
             return False
-        if not any(k in rule for k in ("flags", "short", "refspec", "pathspec")):
+        if not any(k in rule for k in ("flags", "short", "refspec", "pathspec", "subargs")):
             return True
+        if "subargs" in rule:  # the first non-flag word after the subcommand, e.g. `stash drop`
+            first = next((tok for tok in rest if not tok.startswith("-")), None)
+            if first not in rule["subargs"]:
+                return False
+            if not any(k in rule for k in ("flags", "short", "refspec", "pathspec")):
+                return True
         if rule.get("pathspec") and "--" in rest:
             return True
         for tok in rest:

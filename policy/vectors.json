@@ -1,5 +1,5 @@
 {
- "doc": "Expected decisions per engine. engines defaults to guard+opencode; guard-only vectors need real parsing (heredocs, nesting, wrappers) that text globs cannot do. Every allow vector must also not be blocked by the native Claude/Grok rules. native_overblock_ok on an allow vector records a known case where the native glob blocks it anyway.",
+ "doc": "Expected decisions per engine. engines defaults to guard+opencode; agents (opencode only) defaults to (global), verifier and implementor; guard-only vectors need real parsing (heredocs, nesting, wrappers) that text globs cannot do. Every allow vector must also not be blocked by the native Claude/Grok rules. native_overblock_ok on an allow vector records a known case where the native glob blocks it anyway.",
  "vectors": [
   {
    "kind": "shell",
@@ -1591,6 +1591,144 @@
    "expect": "deny",
    "engines": [
     "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin :main",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin ':main'",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git -C x push origin :feat",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin \":main\"",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ],
+   "note": "the double-quoted refspec has no opencode glob: sync-harness writes YAML resources unescaped; the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "git stash drop",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git stash clear",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git stash push -m t",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git stash list",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree remove /x",
+   "expect": "ask",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree remove /x",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree remove -f",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree list",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git worktree add ../x",
+   "expect": "allow",
+   "skip_agents": [
+    "verifier"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -m x",
+   "expect": "allow",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "implement-deep"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git update-index --assume-unchanged x",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "implement-deep"
    ]
   }
  ]

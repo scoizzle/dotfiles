@@ -13,6 +13,23 @@
         "native": [
           "Bash(git push:*)"
         ]
+      },
+      {
+        "id": "git-worktree-remove",
+        "git": "worktree",
+        "subargs": [
+          "remove"
+        ],
+        "opencode": [
+          "*git worktree remove*",
+          "*git -* worktree remove*"
+        ],
+        "native": [
+          "Bash(git worktree remove:*)"
+        ],
+        "skip_agents": [
+          "verifier"
+        ]
       }
     ],
     "deny": [
@@ -39,7 +56,11 @@
           "*git push*--delete*",
           "*git -* push*--delete*",
           "*git push*--mirror*",
-          "*git -* push*--mirror*"
+          "*git -* push*--mirror*",
+          "*git push* :*",
+          "*git push* ':*",
+          "*git -* push* :*",
+          "*git -* push* ':*"
         ],
         "native": [
           "Bash(git push --force:*)",
@@ -77,6 +98,24 @@
         ],
         "native": [
           "Bash(git clean:*)"
+        ]
+      },
+      {
+        "id": "git-stash-drop",
+        "git": "stash",
+        "subargs": [
+          "drop",
+          "clear"
+        ],
+        "opencode": [
+          "*git stash drop*",
+          "*git stash clear*",
+          "*git -* stash drop*",
+          "*git -* stash clear*"
+        ],
+        "native": [
+          "Bash(git stash drop:*)",
+          "Bash(git stash clear:*)"
         ]
       },
       {
@@ -376,9 +415,6 @@
     }
   },
   "builder_git_deny": [
-    "commit",
-    "add",
-    "stage",
     "update-index",
     "push",
     "rm",
