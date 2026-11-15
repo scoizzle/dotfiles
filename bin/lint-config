@@ -376,9 +376,9 @@ def main() -> int:
         fail("build: agents/build.md is missing; it is the default agent")
     else:
         build_text = (ROOT / "agents" / "build.md").read_text()
-        if not re.search(r"^model:\s*opencode-go/deepseek-v4\.1-flash#high\s*$",
+        if not re.search(r"^model:\s*opencode-go/deepseek-v4\.1-flash#low\s*$",
                          build_text, flags=re.M):
-            fail("build: model must be opencode-go/deepseek-v4.1-flash#high")
+            fail("build: model must be opencode-go/deepseek-v4.1-flash#low")
         if config.get("default_agent") != "build":
             fail("build: default_agent must be build")
         if effective(build, "read", "src/x.cs") != "allow":

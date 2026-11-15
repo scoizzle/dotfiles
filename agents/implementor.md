@@ -1,7 +1,7 @@
 ---
 description: Direct-edit agent. Does one task, tests it, and reports the commands it ran. Does not dispatch.
 mode: primary
-model: opencode-go/deepseek-v4.1-flash#high
+model: opencode-go/deepseek-v4.1-flash#low
 steps: 120
 color: "#2a9d8f"
 permissions:

@@ -103,17 +103,17 @@
   ],
   "agents": {
     "build": {
-      "model": "opencode-go/deepseek-v4.1-flash#high"
+      "model": "opencode-go/deepseek-v4.1-flash#low"
     },
     "implementor": {
-      "model": "opencode-go/deepseek-v4.1-flash#high"
+      "model": "opencode-go/deepseek-v4.1-flash#low"
     },
     "general": {
-      "model": "opencode-go/deepseek-v4.1-flash#high"
+      "model": "opencode-go/deepseek-v4.1-flash#low"
     },
     "plan": {
       "mode": "all",
-      "model": "opencode-go/deepseek-v4.1-flash#high"
+      "model": "opencode-go/deepseek-v4.1-flash#low"
     }
   },
   "mcp": {
