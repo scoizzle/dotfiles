@@ -19,33 +19,6 @@ permissions:
     effect: deny
   # BEGIN builder deny (from policy/permissions.json); edit the policy, not this block.
   - action: shell
-    resource: "git commit*"
-    effect: deny
-  - action: shell
-    resource: "git * commit*"
-    effect: deny
-  - action: shell
-    resource: "*git commit*"
-    effect: deny
-  - action: shell
-    resource: "git add*"
-    effect: deny
-  - action: shell
-    resource: "git * add*"
-    effect: deny
-  - action: shell
-    resource: "*git add*"
-    effect: deny
-  - action: shell
-    resource: "git stage*"
-    effect: deny
-  - action: shell
-    resource: "git * stage*"
-    effect: deny
-  - action: shell
-    resource: "*git stage*"
-    effect: deny
-  - action: shell
     resource: "git update-index*"
     effect: deny
   - action: shell

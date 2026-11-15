@@ -131,21 +131,30 @@ T1_MAX_FILES = 3
 T1_MAX_LINES = 400
 ALWAYS = (
     ".github/*",
+    "AGENTS.md",
     "agents/*",
     "policy/*",
     "memory/core/*",
     "*opencode.json",
     "*global.json",
 )
+# Anchored forms. The old `*schema*` / `*auth*` substrings flagged JSON-schema exporters
+# and "Authoring". `auth[!o]` skips author/authoring/authority; authoriz*/authoris* keep
+# authorization. `*auth` covers a bare name or directory ending in auth.
+SCHEMA_PATTERNS = (
+    "schema.*", "*/schema.*", "schema-*", "*/schema-*", "schema_*", "*/schema_*",
+    "schema/*", "*/schema/*", "schemas/*", "*/schemas/*", "*dbschema*",
+)
+AUTH_PATTERNS = ("*auth", "*auth[!o]*", "*authoriz*", "*authoris*")
 SOURCE_SENSITIVE = (
     "*.sql",
     "*migration*",
-    "*schema*",
+    *SCHEMA_PATTERNS,
     "*.csproj",
     "*.sln",
     "*.slnx",
     "*Dockerfile*",
-    "*auth*",
+    *AUTH_PATTERNS,
     "*secret*",
     "*credential*",
     "*.env*",
@@ -154,7 +163,7 @@ SOURCE_SENSITIVE = (
 DOC_SENSITIVE = (
     "*.sql",
     "*migration*",
-    "*schema*",
+    *SCHEMA_PATTERNS,
     "*.csproj",
     "*.sln",
     "*.slnx",
