@@ -31,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
 EFFECTS = {"allow", "deny", "ask"}
-READ_ONLY = ("review-light", "review-deep", "plan-review-deep", "second-opinion", "explore", "dream-drafter", "advisor")
+READ_ONLY = ("review-deep", "explore", "dream-drafter")
 MACHINE_PATH = re.compile(r"/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|/private/var/folders|[A-Z]:\\Users\\")
 
 failures: list[str] = []
@@ -195,7 +195,7 @@ def check_shared_surfaces() -> None:
     sync = load_script("sync-harness")
     policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
     spec = policy["readonly_agents"]
-    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter", "advisor"}:
+    if set(spec["models"]) != set(READ_ONLY) - {"dream-drafter"}:
         fail(f"policy readonly_agents {sorted(spec['models'])} != the read-only agents in agents/")
     writers = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch"}
     missing = [n for n in spec["models"] if not (ROOT / "agents" / f"{n}.md").exists()]
@@ -214,14 +214,14 @@ def check_shared_surfaces() -> None:
             fail(f"rendered Claude read-only agent {name} has a bad header")
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
-        mine = home / ".claude" / "agents" / "review-light.md"
+        mine = home / ".claude" / "agents" / "explore.md"
         mine.parent.mkdir(parents=True)
-        mine.write_text("---\nname: review-light\n---\nMy own prompt.\n")
+        mine.write_text("---\nname: explore\n---\nMy own prompt.\n")
         for path, text in sync.agents_changes(policy, ROOT, home):
             sync.write_agent(path, text)
         if sync.agents_changes(policy, ROOT, home):
             fail("sync-harness agent rendering is not idempotent")
-        backups = list(mine.parent.glob("review-light.md.bak-*"))
+        backups = list(mine.parent.glob("explore.md.bak-*"))
         if len(backups) != 1 or "My own prompt." not in backups[0].read_text():
             fail("sync-harness overwrote a user's own agent file without a backup")
         if list(mine.parent.glob("review-deep.md.bak-*")):
@@ -255,10 +255,7 @@ def check_shared_surfaces() -> None:
 
 
 EXPECTED_FALLBACK_MODELS = {
-    "review-light": "haiku",
     "review-deep": "sonnet",
-    "plan-review-deep": "sonnet",
-    "second-opinion": "sonnet",
     "explore": "haiku",
 }
 

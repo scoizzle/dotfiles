@@ -407,18 +407,8 @@
       "open_solution"
     ],
     "models": {
-      "review-light": "haiku",
       "review-deep": "sonnet",
-      "plan-review-deep": "sonnet",
-      "second-opinion": "sonnet",
       "explore": "haiku"
     }
-  },
-  "builder_git_deny": [
-    "update-index",
-    "push",
-    "rm",
-    "mv",
-    "apply"
-  ]
+  }
 }
