@@ -292,6 +292,13 @@ def check_instructions() -> None:
         fail("agents/build.md: missing the T3 Code pointer; the default agent falls back to shell git")
     if "ends the live session" not in text:
         fail("AGENTS.md: t3_worktree_handoff must say it ends the live session")
+    for needle in (
+        "this review is required",
+        "different family than the one that wrote the diff",
+        "skipping the review is not the fallback",
+    ):
+        if needle not in text:
+            fail(f"AGENTS.md: missing {needle!r}; the sensitive review is skippable again")
     verify = (ROOT / "commands" / "verify.md").read_text()
     for needle in (
         "review-bundle . --show AGENTS.md --show agents/review-deep.md",

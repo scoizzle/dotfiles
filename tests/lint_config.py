@@ -134,6 +134,18 @@ def main() -> int:
         finally:
             agents_path.write_text(saved)
 
+        for needle in (
+            "this review is required",
+            "different family than the one that wrote the diff",
+            "skipping the review is not the fallback",
+        ):
+            saved = agents_path.read_text()
+            try:
+                agents_path.write_text(saved.replace(needle, "optional"))
+                failed |= not expect(f"AGENTS.md: sensitive review skippable ({needle!r})", lint(tree), "sensitive review")
+            finally:
+                agents_path.write_text(saved)
+
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 

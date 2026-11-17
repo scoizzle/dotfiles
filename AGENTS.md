@@ -9,7 +9,7 @@ You do the work. Do not dispatch a writer to avoid editing.
 Before the first edit, name the kind of change:
 
 - **Ordinary.** Do it. A behavior change gets a failing check first. Run it red, then green. Record the command and the exit code.
-- **Sensitive.** Auth, secrets, credentials, a schema or data migration, or a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`, `evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`. A CI workflow is not sensitive. Write the outcome, the done-when, and the red check in a few lines before editing. After the change, one independent read-only review (`agents/review-deep.md`), or say that no second model was available. A diff that touches these checks is reviewed against their base copies, and a rule it weakens is a 🔴 for a person to decide, not a finding the same reviewer may waive. Stop and ask before a change with no undo: a migration, a delete, or money.
+- **Sensitive.** Auth, secrets, credentials, a schema or data migration, or a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`, `evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`. A CI workflow is not sensitive. Write the outcome, the done-when, and the red check in a few lines before editing. After the change, one independent read-only review (`agents/review-deep.md`); for a sensitive change this review is required, never optional. It must come from a different family than the one that wrote the diff. If no model from a different family is available, stop and ask; skipping the review is not the fallback. A diff that touches these checks is reviewed against their base copies, and a rule it weakens is a 🔴 for a person to decide, not a finding the same reviewer may waive. Stop and ask before a change with no undo: a migration, a delete, or money.
 
 Green means the commit you name and a tree whose `git status` you have read. Never delete, skip, weaken, or retarget a test to make a failing change pass. If a test's expectation was wrong, say so and say why. A nit that does not break the done-when is reported, not fixed.
 
@@ -18,7 +18,7 @@ Test cleanup is its own change: a duplicate of a test that already covers the sa
 Dispatch only when it earns the tokens:
 
 - A broad lookup (a repo map, a multi-file grep) may go to the explore agent. It is read-only and returns findings and sources. Do not paste the repo into this context.
-- One reviewer, for a sensitive change, when the user asks, or after the same check has failed twice. It does not edit and does not rebuild. A second reviewer is not the default.
+- One reviewer, required for a sensitive change, and otherwise only when the user asks or after the same check has failed twice. It does not edit and does not rebuild. A second reviewer is not the default.
 
 If dispatch is unavailable, do the work yourself and say so. Do not block an ordinary edit on a missing dispatcher.
 
@@ -53,7 +53,7 @@ either one.
 
 ## Model choice
 
-Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review should use a different model family than the one that wrote the diff, when one is available. If it is not, say so and continue. Do not stop to ask about fallbacks.
+Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.
 
 ## Memory
 
