@@ -29,6 +29,28 @@ If dispatch is unavailable, do the work yourself and say so. Do not block an ord
 - The explore agent and the review agents are read-only.
 - A one-click revert can proceed. Name cleanup before landing shared state or auth. Wait for a person when there is no undo.
 
+## T3 Code
+
+When the `t3-code*` tools are present, they own branch and PR state, and the shell
+is the fallback:
+
+- `t3_worktree_status` before work that assumes a branch, or before a handoff;
+  `t3_worktree_list` to see refs and checkouts. `t3_worktree_handoff` goes last
+  in the turn: it ends the live session, and it fails if this thread already has
+  a worktree.
+- After creating a PR, `link_pull_request` is the next call. Read state with
+  `list_thread_pull_requests`. `watch_pull_request` once when the work waits on
+  checks or reviews, then end the turn; the watch survives each wake, must not be
+  re-armed, and a wake is not a merge decision. Call `unwatch_pull_request`
+  before handing the thread back. For a diff too large to read in one pass,
+  `write_pull_request_guides`, then `read_pull_request_guide` when its run
+  finishes.
+
+They do not stage, commit, push, or open or merge PRs. Those stay `git` and
+`gh pr create`, run by hand and only when asked. A merge is a person's click:
+`gh pr merge` is denied here and T3 has no merge action, so do not route around
+either one.
+
 ## Model choice
 
 Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review should use a different model family than the one that wrote the diff, when one is available. If it is not, say so and continue. Do not stop to ask about fallbacks.

@@ -118,6 +118,22 @@ def main() -> int:
             finally:
                 path.write_text(saved)
 
+        build_path = tree / "agents" / "build.md"
+        saved = build_path.read_text()
+        try:
+            build_path.write_text(saved.replace("T3 Code", "shell git"))
+            failed |= not expect("build.md lost the T3 pointer", lint(tree), "T3 Code")
+        finally:
+            build_path.write_text(saved)
+
+        agents_path = tree / "AGENTS.md"
+        saved = agents_path.read_text()
+        try:
+            agents_path.write_text(saved.replace("ends the live session", "moves you"))
+            failed |= not expect("AGENTS.md lost the handoff caveat", lint(tree), "ends the live session")
+        finally:
+            agents_path.write_text(saved)
+
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
