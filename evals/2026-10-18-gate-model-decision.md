@@ -13,6 +13,7 @@
 > | `explore` | `opencode-go/deepseek-v4.1-flash#low` |
 > | `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
 > | `review-deep` | `claude-agent/opus#medium` |
+> | `advisor` | `claude-agent/opus#medium` |
 > | `verifier` | `claude-agent/sonnet#high` |
 >
 > **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are

@@ -31,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
 EFFECTS = {"allow", "deny", "ask"}
-READ_ONLY = ("review-deep", "explore", "dream-drafter")
+READ_ONLY = ("review-deep", "advisor", "explore", "dream-drafter")
 MACHINE_PATH = re.compile(r"/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|/private/var/folders|[A-Z]:\\Users\\")
 
 failures: list[str] = []
@@ -259,6 +259,7 @@ def check_shared_surfaces() -> None:
 
 EXPECTED_FALLBACK_MODELS = {
     "review-deep": "opus",
+    "advisor": "opus",
     "explore": "haiku",
 }
 
@@ -387,6 +388,26 @@ def check_instructions() -> None:
             fail(f"{name}: missing 'after any required review'; an unreviewed sensitive change may be pushed and opened")
     if "gh pr create" not in (ROOT / "agents" / "implementor.md").read_text():
         fail("agents/implementor.md: missing 'gh pr create'; a finished change does not open its PR")
+    for needle in (
+        "An advisory consult is required",
+        "capped at two per change",
+        "claude-agent/opus#medium",
+        "never replaces the sensitive review",
+    ):
+        if needle not in text:
+            fail(f"AGENTS.md: missing {needle!r}; the advisor consult is gone and hard work has no escalation")
+    for name, needles in (
+        ("agents/build.md", ("advisor triggers", "at most twice")),
+        ("agents/implementor.md", ("cannot dispatch", "advisor trigger")),
+    ):
+        body = (ROOT / name).read_text()
+        for needle in needles:
+            if needle not in body:
+                fail(f"{name}: missing {needle!r}; the advisor consult is invisible to this agent")
+    for stale in ("Tier: T0", "plan-review-deep", "review-light", "second-opinion"):
+        for name in ("AGENTS.md", "agents/build.md"):
+            if stale in (ROOT / name).read_text():
+                fail(f"{name}: the retired tier cascade is back ({stale!r})")
     verify = (ROOT / "commands" / "verify.md").read_text()
     for needle in (
         "review-bundle . --show AGENTS.md --show agents/review-deep.md",
