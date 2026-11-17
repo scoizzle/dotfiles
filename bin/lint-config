@@ -394,6 +394,52 @@ def check_instructions() -> None:
                 fail(f"{name}: missing skill wiring {needle!r}")
 
 
+def check_plugins() -> None:
+    """OpenCode 2 loads a plugin only as a default definition with an id and a
+    setup or effect. It rejects the v1 named-export shape with one warn line in
+    a log, so lint has to catch that shape instead.
+
+    This is a text match of the file, not a parse and not a load: a comment can
+    satisfy the shape, and a future API rename is invisible here. The load path
+    itself was verified against opencode 2.3.0 by running a server with this
+    file and reading the Claude child's environment. The id pattern is a local
+    convention, not a documented host rule.
+    """
+    plugin_dir = ROOT / "plugins"
+    files = sorted(plugin_dir.glob("*.js")) if plugin_dir.is_dir() else []
+    if not files:
+        fail("plugins/: no plugin files; the Claude entrypoint label is gone")
+        return
+    seen: dict[str, str] = {}
+    for path in files:
+        text = path.read_text()
+        export = re.search(r"^export\s+default\s+", text, flags=re.M)
+        if not export:
+            fail(f"plugins/{path.name}: no `export default`; OpenCode 2 rejects a named export at load")
+            continue
+        definition = text[export.end():]
+        ident = re.search(r"""\bid:\s*["']([^"']+)["']""", definition)
+        if not ident:
+            fail(f"plugins/{path.name}: the default definition has no quoted id")
+            continue
+        if not re.search(r"\b(setup|effect)\s*[(:]", definition):
+            fail(f"plugins/{path.name}: the default definition has no setup or effect")
+        name = ident.group(1)
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", name):
+            fail(f"plugins/{path.name}: bad plugin id {name!r}")
+        elif name in seen:
+            fail(f"plugins/{path.name}: duplicate plugin id {name!r} (also in {seen[name]})")
+        seen.setdefault(name, path.name)
+    entry = plugin_dir / "claude-entrypoint.js"
+    if not entry.exists():
+        fail("plugins/claude-entrypoint.js is missing; the Claude entrypoint label is gone")
+        return
+    entry_text = entry.read_text()
+    export = re.search(r"^export\s+default\s+", entry_text, flags=re.M)
+    if export and not re.search(r"process\.env\.CLAUDE_CODE_ENTRYPOINT\s*=", entry_text[export.end():]):
+        fail("plugins/claude-entrypoint.js: no longer assigns CLAUDE_CODE_ENTRYPOINT; Claude traffic is metered as sdk-*")
+
+
 def main() -> int:
     config = json.loads((ROOT / "opencode.json").read_text())
     base = [rule(r["action"], r["resource"], r["effect"]) for r in config.get("permissions", [])]
@@ -514,6 +560,7 @@ def main() -> int:
     check_fallback_models()
     check_sandbox()
     check_instructions()
+    check_plugins()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):
         target = ROOT / rel
