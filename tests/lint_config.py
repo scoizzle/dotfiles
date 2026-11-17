@@ -134,6 +134,42 @@ def main() -> int:
         finally:
             agents_path.write_text(saved)
 
+        for needle in (
+            "this review is required",
+            "different family than the one that wrote the diff",
+            "skipping the review is not the fallback",
+            "stops for a person",
+            "Family means vendor",
+            "dispatch the review on a different-family model",
+            "returns `unreviewed` to its parent",
+        ):
+            saved = agents_path.read_text()
+            try:
+                agents_path.write_text(saved.replace(needle, "optional"))
+                failed |= not expect(f"AGENTS.md: sensitive review skippable ({needle!r})", lint(tree), "sensitive review")
+            finally:
+                agents_path.write_text(saved)
+
+        for stale in (
+            "or say that no second model was available",
+            "say so and continue",
+            "Do not stop to ask about fallbacks",
+        ):
+            saved = agents_path.read_text()
+            try:
+                agents_path.write_text(saved.replace("## Memory", f"{stale}\n\n## Memory"))
+                failed |= not expect(f"AGENTS.md: old escape hatch restored ({stale!r})", lint(tree), "sensitive review")
+            finally:
+                agents_path.write_text(saved)
+
+        for needle in ("required for a sensitive change", "never skip the review"):
+            build_saved = build_path.read_text()
+            try:
+                build_path.write_text(build_saved.replace(needle, "optional"))
+                failed |= not expect(f"agents/build.md: sensitive review skippable ({needle!r})", lint(tree), "sensitive review")
+            finally:
+                build_path.write_text(build_saved)
+
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
