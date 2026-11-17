@@ -2,6 +2,7 @@
 """Collect the complete uncommitted change of a repo into a bundle directory.
 
 Usage: review-bundle <repo> [--show <path>]... [--baseline] [--base <rev>]
+                      [--check <cmd>]... [--check-timeout <sec>]
        review-bundle <repo> --classify [--paths <path>...] [--base <rev>]
 
 --base <rev> diffs against <rev> instead of HEAD (default HEAD), e.g. to bundle
@@ -17,12 +18,33 @@ the directory on success. Section files:
   03-untracked-NN.txt the contents of every untracked, non-ignored, non-secret file
   04-show-NN.txt     the contents of each --show <path> at <base> (default HEAD)
   05-baseline.json   diff hash and untracked git hashes for a later delta re-review
+  06-test-changes-NN.txt removed test declarations and assertions, added skips, deleted
+                     and moved test files; a removal carries the old file's line
+                     number and an addition the new one, so the quoted text is
+                     findable either way; a marker that
+                     sits on its own line inside a multi-line string is reported
+                     too, and the line is quoted so the reader can judge it
+  07-checks-NN.txt   each --check run: command, exit code, duration, output
   99-omitted.txt     binary, non-UTF-8, secret, and unreadable files, with reason and size
 
-Large sections (diff, untracked, show) are split into at most CHUNK lines per
-file, so a reviewer's 2000-line read cap is never hit. Nothing is cut except
-secret paths, which are excluded from the diff and untracked contents and listed
-in 99-omitted.txt.
+Large sections (diff, untracked, show, test changes, checks) are split into at most
+CHUNK lines per file, so a reviewer's 2000-line read cap is never hit. Nothing is
+cut except secret paths, which are excluded from the diff and untracked contents
+and listed in 99-omitted.txt. 07-checks output is the exception: it is the command
+you named, recorded verbatim, so a check that prints a secret puts it in the bundle.
+
+--check '<cmd>' runs one command and records it as evidence. It is the only mode
+that runs anything beyond git, so each command goes through bin/harness-guard first
+and a denied or ask-class one aborts before a bundle is written: this tool cannot
+show a prompt, so an ask is a refusal. The command runs with /bin/sh in the repo
+and its exit code is recorded, not judged, so a failing check still produces a
+bundle. It is killed after --check-timeout seconds (default 900) together with its
+process group, and the run is recorded as timed out. A check whose shell exits but
+leaves a child holding the output pipe is read until that timeout, so it is
+recorded as a timeout even when the command itself succeeded; use a check that
+does not daemonize. Pass it once per check. A
+bundle with no 07-checks explains why a reviewer is reading a claim instead of a
+run.
 
 --classify prints a tier floor instead of a bundle: line 1 is T1 or T2, then one
 reason per line. It is a ratchet, not a verdict: the caller may raise the tier but
@@ -30,26 +52,75 @@ never lower it. It reads the current diff, or the planned files named by --paths
 (no line count is known before the edit, so only the file rules apply there).
 With --paths, --base is validated but ignored for classification.
 
-Read-only: only `status`, `diff`, `ls-files`, `show`, `rev-parse`, and
-`hash-object` run, with optional locks disabled. Nothing is staged and the index
-is never written. A git failure aborts the run rather than emitting an empty
-section.
+Read-only in every mode but --check: `git status`, `diff`, `diff --name-status`,
+`ls-files`, `show`, `rev-parse`, and `hash-object` run, with optional locks
+disabled. Nothing is staged and the index is never written. A git failure aborts
+the run rather than emitting an empty section.
 """
 
 import datetime
 import fnmatch
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
+import re
+import signal
 import subprocess
 import sys
+import time
 
 CHUNK = 1500
+# Pin the diff shape 06 parses: a user's diff.noprefix, mnemonicPrefix, color or
+# external diff driver would otherwise change the `+++ b/path` lines.
+DIFF_FLAGS = ("--no-ext-diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/")
 LIMIT = 20 * 1024 * 1024
 # OPENCODE_TMP wins; otherwise a per-user temp dir. TMPDIR is /var/folders/.../T on macOS
 # and usually /tmp on Linux — the old literal was macOS-only and crashed on Linux with
 # permission denied on /private. Resolve through /private/var on macOS is the same inode.
 DEFAULT_TMP = os.path.join(os.environ.get("TMPDIR") or "/tmp", "opencode")
+CHECKS_TIMEOUT = 900
+
+# A test file by convention: a test directory, a `*.Tests` or `*.UnitTests` project,
+# a `*.test.ts` / `*.spec.js` name, or a `test_`/`_test` file. Deliberately narrower
+# than is_sensitive: a doc that mentions a test is not a test.
+TEST_PATH = re.compile(
+    r"(^|/)(tests?|__tests__|specs?)(/|$)"
+    r"|(^|/)[^/]*\.(unit|integration|functional|acceptance|e2e|system)?tests?(/|$)"
+    r"|(^|/)(test|spec)_[^/]*\.[a-z0-9]+$"
+    r"|_(test|tests|spec)\.[a-z0-9]+$"
+    r"|\.(test|spec)\.[a-z0-9]+$"
+    r"|[Tt]ests?\.(cs|java|kt|scala|vb)$",
+    re.I,
+)
+# A removed line matching one of these is a test that lost a case or a check.
+DECLARATION = re.compile(
+    r"\[(Fact|Theory|Test|TestMethod|TestCase|TestClass)\b"
+    r"|\bdef\s+test\w*\s*\("
+    r"|\bfunc\s+Test\w+\s*\("
+    r"|^\s*(async\s+)?(public\s+|private\s+)?(void|Task)\s+\w+\s*\("
+    r"|^\s*(it|test|describe)\s*\("
+    r"|@(Test|ParameterizedTest)\b",
+    re.I,
+)
+ASSERTION = re.compile(
+    r"\bassert\b|Assert\.|\bassert[A-Z_]\w*\(|\.should\b|\bexpect\(|XCTAssert"
+    r"|\bt\.(Fatal|Error|Fatalf|Errorf|Fail)\w*\(|require\.\w+\(|\bexpectThat\("
+    r"|\bdeepEqual\(|\bverify\(",
+    re.I,
+)
+# An added line matching one of these turns a test off instead of fixing it. The
+# `Skip =` form needs an attribute's `(` or `,` before it: a variable named SKIP is
+# not a skipped test, and a false positive here costs a reviewer's attention.
+SKIP = re.compile(
+    r"[,(\[]\s*Skip\s*="
+    r"|,\s*(Ignore|Explicit)\b"
+    r"|\[(Ignore|Explicit|Disabled)\b|\.skip\(|\bxit\(|\bxdescribe\("
+    r"|pytest\.mark\.(skip|xfail)|\bt\.Skip\w*\(|@(Disabled|Ignore|DisabledForTest)\b",
+    re.I,
+)
+HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 SECRET_NAMES = {
     "service.json",
@@ -240,9 +311,249 @@ def is_binary(data):
     return b"\x00" in data[:8192]
 
 
+def skip_marker(line):
+    """The skip marker this line carries, or None when the word is only quoted in a string.
+
+    Three shapes carry a marker: inside an attribute list on one line
+    (`[Fact(Skip = "x")]`, `[Theory, Skip="x"]`, `[Test, Ignore("x")]`), as the
+    statement itself (`@pytest.mark.skip`, `#[ignore]`, `t.Skip(`), or as a call
+    chain (`it.skip(`, `describe.skip(`, `test.skip(`). A fixture that quotes the
+    word is none of these, and a section that cries wolf is one a reviewer learns
+    to skip.
+    """
+    stripped = line.strip()
+    for match in SKIP.finditer(line):
+        before = line[: match.start()].strip()
+        head = line[: match.end()]
+        # Inside an attribute list, opened anywhere earlier on the line:
+        # [Fact(Skip = "x")], [Test] [Ignore("x")], #[test] #[ignore].
+        if (stripped.startswith("[") or stripped.startswith("#[")) and head.count("[") > head.count("]"):
+            return match.group(0)
+        # The marker is the statement: @pytest.mark.skip, #[ignore], t.Skip(.
+        if before in ("", "@", "#"):
+            return match.group(0)
+        # A run of decorators on one line: @Test @Disabled.
+        if re.fullmatch(r"(?:@[\w.]+(?:\([^)]*\))?\s*)+", before):
+            return match.group(0)
+        # A call chain: it.skip(, describe.skip(, test.skip(.
+        if re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*", before):
+            return match.group(0)
+    return None
+
+
+def is_test_path(rel):
+    return bool(TEST_PATH.search(rel))
+
+
+def test_change_evidence(repo, ref, diff):
+    """Report what a diff does to tests: removals, added skips, deleted and moved files.
+
+    Evidence, not a verdict: a removed assertion is legitimate when the behaviour
+    went with it. The point is that the reviewer sees it instead of trusting a
+    paragraph explaining it. Line numbers are the old file's, so a reader can
+    reach the removed text.
+    """
+    removed_checks = []
+    removed_cases = []
+    added_skips = []
+    path = None
+    old = new = 0
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path, old, new = None, 0, 0
+            continue
+        if path is None:
+            if line.startswith("+++ "):
+                target = line[4:].strip()
+                path = target[2:] if target.startswith("b/") else target
+            continue
+        match = HUNK.match(line)
+        if match:
+            old, new = int(match.group(1)), int(match.group(2))
+            continue
+        if line.startswith("+"):
+            body = line[1:]
+            if skip_marker(body) is not None:
+                added_skips.append((path, new, body.strip()))
+            new += 1
+        elif line.startswith("-"):
+            body = line[1:]
+            if is_test_path(path):
+                if DECLARATION.search(body):
+                    removed_cases.append((path, old, body.strip()))
+                elif ASSERTION.search(body):
+                    removed_checks.append((path, old, body.strip()))
+            old += 1
+        elif line.startswith(" "):
+            old += 1
+            new += 1
+
+    deleted, moved = [], []
+    for row in (
+        git_ok(repo, ["diff", "--name-status", "-M", *DIFF_FLAGS, ref, "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    ).splitlines():
+        parts = row.split("\t")
+        if len(parts) < 2:
+            continue
+        status, name = parts[0][:1], parts[1]
+        if status == "D" and is_test_path(name):
+            deleted.append(name)
+        elif status == "R" and len(parts) == 3 and is_test_path(name) and not is_test_path(parts[2]):
+            moved.append(f"{name} -> {parts[2]}")
+
+    # An untracked file is part of the change and has no diff, so read it for skip
+    # markers directly. Its assertions are new, not removed, so only skips matter.
+    listed = git_ok(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout or ""
+    for rel in (p for p in listed.split("\0") if p):
+        if is_secret(rel) or not is_test_path(rel):
+            continue
+        if os.path.islink(os.path.join(repo, rel)):
+            continue
+        try:
+            with open(os.path.join(repo, rel), "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if is_binary(data):
+            continue
+        for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            if skip_marker(line) is not None:
+                added_skips.append((rel, number, line.strip()))
+
+    counts = (
+        f"{len(removed_cases)} removed declaration(s), {len(removed_checks)} removed assertion(s), "
+        f"{len(added_skips)} added skip(s), {len(deleted)} deleted test file(s), "
+        f"{len(moved)} moved out of a test path"
+    )
+    if not (removed_cases or removed_checks or added_skips or deleted or moved):
+        return "test changes: none (no removed declaration or assertion, no added skip, no deleted test file, among files that look like tests; focus markers such as .only are not checked)\n"
+    out = [f"test changes: {counts}\n"]
+    for title, rows in (
+        ("removed test declaration", removed_cases),
+        ("removed assertion", removed_checks),
+        ("added skip", added_skips),
+    ):
+        if not rows:
+            continue
+        out.append(f"\n### {title}\n")
+        for rel, line, body in rows:
+            out.append(f"{rel}:{line}: {body}\n")
+    if deleted:
+        out.append("\n### deleted test file\n")
+        for rel in deleted:
+            out.append(f"{rel}\n")
+    if moved:
+        out.append("\n### test file moved out of a test path\n")
+        for rel in moved:
+            out.append(f"{rel}\n")
+    return "".join(out)
+
+
+def guard_refusal(commands, repo):
+    """Return (command, reason) for the first --check the guard denies or would ask about.
+
+    review-bundle runs what it is told, which would otherwise be a second spelling
+    of a command harness-guard already refused, or a way to run an `ask` with nobody
+    to answer it: a control-plane write, a fetch piped into a shell, a push. This
+    tool cannot show a prompt, so an ask is a refusal. The guard is loaded from
+    beside this script so the policy is the live one, and a guard that cannot load
+    refuses the run rather than allowing it.
+    """
+    try:
+        loader = importlib.machinery.SourceFileLoader(
+            "harness_guard", os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness-guard")
+        )
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+    except Exception as error:
+        return commands[0], f"cannot check it against harness-guard ({type(error).__name__}: {error})"
+    for command in commands:
+        try:
+            found = module.decide({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": repo})
+        except Exception as error:
+            return command, f"harness-guard could not check it ({type(error).__name__}: {error})"
+        for decision in sorted(found, key=lambda d: d.kind != "deny"):
+            if decision.kind == "deny":
+                return command, f"harness-guard denies it ({decision.reason})"
+            if decision.kind == "ask":
+                return command, (
+                    f"harness-guard would ask a person ({decision.reason}), and --check cannot prompt"
+                )
+    return None
+
+
+def checks_evidence(repo, commands, timeout):
+    """Run each --check command and record its command, exit code, and output.
+
+    stdin is closed so a check that prompts fails fast instead of waiting out the
+    timeout, and each command gets its own session so a timeout kills the whole
+    process group, not just the shell: a test runner left alive would keep writing
+    to the tree the diff describes.
+    """
+    out = [
+        "# the diff in this bundle was captured before these checks ran;"
+        " a check that rewrites the tree is not reflected in 02 or 05\n\n"
+    ]
+    for command in commands:
+        started = time.monotonic()
+        status, body = "", ""
+        try:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                cwd=repo,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                start_new_session=True,
+            )
+        except OSError as error:
+            proc = None
+            status, body = f"exit: could not run ({error.strerror})", ""
+        if proc is not None:
+            try:
+                body, _ = proc.communicate(timeout=timeout)
+                status = f"exit: {proc.returncode}"
+            except subprocess.TimeoutExpired as stuck:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except OSError:
+                    proc.kill()
+                partial = stuck.output or ""
+                if isinstance(partial, bytes):
+                    partial = partial.decode("utf-8", "replace")
+                try:
+                    # CPython keeps what communicate already read, so this returns
+                    # the partial text again, not just the rest. Assign, do not add.
+                    body, _ = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired as second:
+                    # A child that escaped the group (setsid, a daemon) still holds
+                    # the pipe. Record what was read instead of blocking the bundle.
+                    body = second.output or ""
+                    if isinstance(body, bytes):
+                        body = body.decode("utf-8", "replace")
+                    body = body or partial
+                    if body and not body.endswith("\n"):
+                        body += "\n"
+                    body += "(output cut: a child outlived its process group)\n"
+                    proc.kill()
+                status = f"exit: timeout after {timeout}s (process group killed)"
+        elapsed = time.monotonic() - started
+        out.append(f"### check: {command}\ncwd: {repo}\n{status}\nseconds: {elapsed:.2f}\n--- output\n")
+        out.append(body if body.endswith("\n") or body == "" else body + "\n")
+        if body == "":
+            out.append("(no output)\n")
+        out.append("\n")
+    return "".join(out)
+
+
 def main(argv):
     if not argv:
-        print("usage: review-bundle <repo> [--show <path>]... [--baseline] [--base <rev>] | --classify [--paths <path>...] [--base <rev>]", file=sys.stderr)
+        print("usage: review-bundle <repo> [--show <path>]... [--baseline] [--base <rev>] [--check <cmd>]... [--check-timeout <sec>] | --classify [--paths <path>...] [--base <rev>]", file=sys.stderr)
         return 2
     repo = os.path.abspath(argv[0])
     shows = []
@@ -250,6 +561,8 @@ def main(argv):
     base_rev = None
     classify_only = False
     planned = []
+    checks = []
+    check_timeout = CHECKS_TIMEOUT
     rest = argv[1:]
     while rest:
         if rest[0] == "--classify":
@@ -266,6 +579,18 @@ def main(argv):
                 return 2
             shows.append(rest[1])
             rest = rest[2:]
+        elif rest[0] == "--check":
+            if len(rest) < 2:
+                print("--check needs a command", file=sys.stderr)
+                return 2
+            checks.append(rest[1])
+            rest = rest[2:]
+        elif rest[0] == "--check-timeout":
+            if len(rest) < 2 or not rest[1].isdigit() or int(rest[1]) < 1:
+                print("--check-timeout needs a positive number of seconds", file=sys.stderr)
+                return 2
+            check_timeout = int(rest[1])
+            rest = rest[2:]
         elif rest[0] == "--base":
             if len(rest) < 2:
                 print("--base needs a rev", file=sys.stderr)
@@ -279,9 +604,20 @@ def main(argv):
             print(f"unknown argument: {rest[0]}", file=sys.stderr)
             return 2
 
+    if checks and classify_only:
+        print("--check records a bundle; it cannot be combined with --classify", file=sys.stderr)
+        return 2
+
     if git(repo, ["rev-parse", "--is-inside-work-tree"]).returncode != 0:
         print(f"not a git repo: {repo}", file=sys.stderr)
         return 2
+
+    if checks:
+        refusal = guard_refusal(checks, repo)
+        if refusal is not None:
+            command, reason = refusal
+            print(f"refusing --check {command!r}: {reason}", file=sys.stderr)
+            return 2
 
     base_sha = None
     if base_rev is not None:
@@ -322,7 +658,7 @@ def main(argv):
     with open(os.path.join(root, "01-diffstat.txt"), "w") as fh:
         fh.write(diffstat)
 
-    diff = git_ok(repo, ["diff", ref, "--", ".", *SECRET_PATHSPECS]).stdout or ""
+    diff = git_ok(repo, ["diff", *DIFF_FLAGS, ref, "--", ".", *SECRET_PATHSPECS]).stdout or ""
     for rel in (git_ok(repo, ["diff", "--name-only", ref]).stdout or "").splitlines():
         if os.path.basename(rel) == ".env.example":
             omitted.append(f"{rel} (excluded by env glob; not secret)")
@@ -390,6 +726,8 @@ def main(argv):
     if show_parts:
         total += write_parts(root, "04-show", "".join(show_parts))
 
+    total += write_parts(root, "06-test-changes", test_change_evidence(repo, ref, diff))
+
     if baseline:
         untracked_hashes = []
         for rel in untracked:
@@ -415,6 +753,9 @@ def main(argv):
             json.dump(payload, fh, indent=2)
             fh.write("\n")
         total += os.path.getsize(path)
+
+    if checks:
+        total += write_parts(root, "07-checks", checks_evidence(repo, checks, check_timeout))
 
     if omitted:
         path = os.path.join(root, "99-omitted.txt")
