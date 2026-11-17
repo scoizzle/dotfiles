@@ -124,6 +124,7 @@ jobs:
       - name: classifier and policy render tests
         run: |
           python3 tests/classify.py
+          python3 tests/review_bundle.py
           python3 tests/eval_writer.py
           python3 tests/policy_render.py
           python3 tests/lint_config.py
@@ -141,6 +142,7 @@ jobs:
           test -d "$bundle"
           test -f "$bundle/00-status.txt"
           test -f "$bundle/01-diffstat.txt"
+          test -f "$bundle/06-test-changes-00.txt"
           bundle="$(./bin/review-bundle . --base HEAD)"
           echo "bundle (--base HEAD): $bundle"
           test -d "$bundle"

@@ -6,6 +6,15 @@ Review the current uncommitted change.
 
 Bundle: !`~/.config/opencode/bin/review-bundle . --show AGENTS.md --show agents/review-deep.md`
 
+The bundle's `06-test-changes-NN.txt` is what the diff did to tests: removed
+declarations and assertions, added skips, deleted and moved test files. It is a
+heuristic, not a proof: its `none` line names the paths it looked at and the focus
+markers it does not check. When the
+change ran a check, run the bundle yourself with `--check '<cmd>'` (same `--show`
+flags) so `07-checks-NN.txt` holds that command, its exit code, and its output. A
+bundle without `07-checks` gives the reviewer a claim instead of a run. `--check`
+refuses anything `harness-guard` would deny or ask about, because it cannot prompt.
+
 Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
 Send the bundle directory, the contract, and the recorded check command and output
