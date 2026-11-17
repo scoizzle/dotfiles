@@ -161,6 +161,9 @@ def check_policy(agents: dict) -> None:
         ({"toolName": "run_terminal_command", "toolInput": {"command": "git status"}}, 0, None),
         ({"tool_name": "Read", "tool_input": {"file_path": "~/.ssh/id_rsa"}}, 2, "deny"),
         ({"toolName": "read_file", "toolInput": {"command": "x"}, "toolInputTruncated": True}, 2, "deny"),
+        ({"tool_name": "Edit", "tool_input": {"file_path": "notes.md", "old_string": "x", "new_string": "x"}}, 2, "deny"),
+        ({"toolName": "search_replace", "toolInput": {"path": "notes.md", "old_str": "x", "new_str": "x"}}, 2, "deny"),
+        ({"tool_name": "Edit", "tool_input": {"file_path": "notes.md", "old_string": "x", "new_string": "y"}}, 0, None),
     ):
         run = subprocess.run([sys.executable, str(ROOT / "bin" / "harness-guard")], input=json.dumps(payload), capture_output=True, text=True, env=dict(os.environ))
         said = json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"] if run.stdout.strip() else None

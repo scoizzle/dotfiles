@@ -14,7 +14,12 @@ Unlike the text globs in opencode.json, this parses the command: quoting,
 `&&`/`;`/`|` chains, `$(...)`, `sh -c "..."`, `env`/`command` wrappers, git's
 global options (`git -C x push`), heredoc bodies, and clustered short flags
 (`-fu`), `xargs` and `find -delete`, a base64/xxd/openssl decode piped into a
-shell (deny), and curl/wget piped into a shell (ask). It is still best effort. It
+shell (deny), and curl/wget piped into a shell (ask). A heredoc body copied into a
+file (or handed to tee/dd) is denied, because that write leaves the tool no way to
+check the result; a body an interpreter reads as its program is an ask. An edit
+whose old and new text are identical is denied as a no-op. Those last two are
+Claude Code and a trusted-folder Grok Build only, because opencode has no hook:
+its shell and edit calls never reach this file. It is still best effort. It
 does not understand `python -c`, a decode done by another tool, or variables built
 at run time. It is a convenience layer, not a sandbox: the user owns the file that
 registers it. See docs/security-model.md.
@@ -70,7 +75,12 @@ XARGS_VALUE_OPTIONS = {"-n", "-I", "-P", "-L", "-s", "-d", "-E", "-a", "-J", "-R
 SEPARATORS = set(";&|()\n")
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"}
 NESTED = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+# Programs that read their program from stdin; a heredoc body fed to one is code, not data.
+INTERPRETERS = {"python", "perl", "node", "ruby", "php", "lua", "deno", "bun", "tsx"}
+PYTHONISH = re.compile(r"python[0-9.]*$")
+# Edit keys that carry the old and new text of one replacement.
+NOOP_PAIRS = (("old_string", "new_string"), ("old_str", "new_str"), ("oldString", "newString"), ("old_text", "new_text"))
 MAX_DEPTH = 5
 
 
@@ -512,8 +522,133 @@ def writes(seg: list[str]) -> bool:
     return prog in WRITERS
 
 
+STREAM_TARGETS = {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+# Programs whose whole job is copying stdin to stdout: a redirect of theirs writes the body itself.
+BODY_COPIERS = {"cat", "tee", "dd"}
+REDIRECTS = {">", ">>", ">|", "&>"}
+# Shell words that lead a simple command (`{ cat …`, `then cat …`), not programs.
+SHELL_WORDS = {"{", "}", "!", "if", "then", "elif", "else", "while", "until", "do"}
+
+
+def strip_keywords(seg: list[str]) -> list[str]:
+    i = 0
+    while i < len(seg) and seg[i] in SHELL_WORDS:
+        i += 1
+    return seg[i:]
+
+
+def copier_target(seg: list[str]) -> str:
+    """The file a body copier writes: `cat > f`, `tee f`, `dd of=f`."""
+    name = os.path.basename(seg[0])
+    if name == "tee":
+        return tee_target(seg)
+    if name == "dd":
+        return next((tok[3:] for tok in seg if tok.startswith("of=") and len(tok) > 3), "")
+    if name == "cat":
+        return redirect_target(seg, body_copier=True)
+    return ""
+
+
+def redirect_target(seg: list[str], body_copier: bool) -> str:
+    """The file this segment writes, when the target is a real file and not a stream or an fd."""
+    for i, tok in enumerate(seg):
+        if tok not in REDIRECTS or i + 1 >= len(seg):
+            continue
+        if i and seg[i - 1].isdigit() and seg[i - 1] != "1":
+            continue  # `2>` sends stderr, not the body
+        target = seg[i + 1]
+        if not target or target.startswith("&") or target.isdigit() or target in STREAM_TARGETS:
+            continue
+        if body_copier:
+            return target
+    return ""
+
+
+def tee_target(seg: list[str]) -> str:
+    for i, tok in enumerate(seg):
+        if i and not tok.startswith("-"):
+            return tok
+    return ""
+
+
+def program_from_stdin(seg: list[str]) -> bool:
+    """An interpreter with no script file reads its program from stdin, so a heredoc body is code."""
+    for i, tok in enumerate(seg):
+        if tok == "-" and i:
+            return True  # an explicit `-` is stdin, whatever follows is a script argument
+        if i == 0 or tok.startswith("-"):
+            continue  # the program and its flags are not a script file
+        if tok.startswith(("<<", ">", "|", "&")):
+            return True  # reached the heredoc operator, so no script file was named
+        return False  # `python3 script.py <<JSON` feeds data, not code
+    return True
+
+
+def heredoc_line_decisions(line: str) -> list[Decision]:
+    """Decisions for the pipeline whose standard input is the heredoc opened on `line`."""
+    found: list[Decision] = []
+    for pipe in pipelines(line):
+        segs = [part for part in (unwrap(strip_keywords(p)) for p in pipe) if part]
+        if not segs:
+            continue
+        owner = next((i for i, seg in enumerate(segs) if any(tok.startswith("<<") for tok in seg)), None)
+        if owner is None:
+            continue  # the heredoc opens on another pipeline of this line; that one is checked
+        seg, name = segs[owner], os.path.basename(segs[owner][0])
+        target = copier_target(seg) if name in BODY_COPIERS else ""
+        for later in segs[owner + 1 :]:
+            target = target or copier_target(later)
+        if target:
+            found.append(Decision("deny", "heredoc-write",
+                                  f"heredoc-write: the body would write `{target[:60]}`; use the write/edit tool"))
+            continue
+        if (name in INTERPRETERS or PYTHONISH.match(name)) and program_from_stdin(seg):
+            found.append(Decision("ask", "heredoc-program",
+                                  f"heredoc-program: `{name}` runs the body as a program (confirm)"))
+        elif any(python_reads_stdin(later) for later in segs[owner + 1 :]):
+            found.append(Decision("ask", "heredoc-program",
+                                  "heredoc-program: an interpreter downstream runs the body as a program (confirm)"))
+    return found
+
+
+def python_reads_stdin(seg: list[str]) -> bool:
+    name = os.path.basename(seg[0])
+    return (name in INTERPRETERS or bool(PYTHONISH.match(name))) and program_from_stdin(seg)
+
+
+def heredoc_decisions(command: str) -> list[Decision]:
+    """A heredoc whose body lands in a file, or that an interpreter runs as a program.
+
+    Only the line that opens the heredoc is examined; body lines are data, and a
+    commit message that quotes `cat > x <<EOF` must stay allowed. A redirect counts
+    only when the heredoc's own segment copies the body to stdout, so
+    `git commit -F - <<EOF > log` and `python3 - <<PY 2> err` are not file writes.
+    """
+    found: list[Decision] = []
+    tag = None
+    for line in command.replace("\\\n", " ").split("\n"):
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+            continue
+        match = HEREDOC.search(line)
+        if match:
+            tag = match.group(2)
+            found += heredoc_line_decisions(line)
+    return found
+
+
+def noop_edit(tool_input: dict) -> list[Decision]:
+    """An edit whose old and new text are identical is a no-op: the file will not change."""
+    for old_key, new_key in NOOP_PAIRS:
+        if old_key in tool_input and new_key in tool_input and tool_input[old_key] == tool_input[new_key]:
+            return [Decision("deny", "no-op-edit",
+                             f"no-op-edit: `{old_key}` and `{new_key}` are identical, so nothing would change; reread the region")]
+    return []
+
+
 def check_shell(policy: dict, command: str, depth: int = 0) -> list[Decision]:
-    found: list[Decision] = pipe_chains(command)
+    found: list[Decision] = pipe_chains(command) + heredoc_decisions(command)
     if depth < MAX_DEPTH:
         for script in heredoc_scripts(command) + herestring_scripts(command) + literal_scripts(command):
             found += check_shell(policy, script, depth + 1) + substituted(script, depth)
@@ -565,7 +700,7 @@ def decide(event: dict) -> list[Decision]:
     if tool in READ_TOOLS:
         return check_paths(policy, tool_input, writing=False)
     if tool in WRITE_TOOLS:
-        return check_paths(policy, tool_input, writing=True)
+        return (noop_edit(tool_input) if isinstance(tool_input, dict) else []) + check_paths(policy, tool_input, writing=True)
     return []
 
 
