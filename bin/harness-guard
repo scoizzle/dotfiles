@@ -17,7 +17,11 @@ global options (`git -C x push`), heredoc bodies, and clustered short flags
 shell (deny), and curl/wget piped into a shell (ask). A heredoc body copied into a
 file (or handed to tee/dd) is denied, because that write leaves the tool no way to
 check the result; a body an interpreter reads as its program is an ask. An edit
-whose old and new text are identical is denied as a no-op. Those last two are
+whose old and new text are identical is denied as a no-op. A write to live
+harness configuration, the installed paths and the checkout this guard was loaded
+from, asks: resolving both sides catches the checkout wherever it lives, and the
+edit would be live for every session at once. A deny ends with a sentence saying
+it is a boundary, not an obstacle. The heredoc, no-op and control-plane checks are
 Claude Code and a trusted-folder Grok Build only, because opencode has no hook:
 its shell and edit calls never reach this file. It is still best effort. It
 does not understand `python -c`, a decode done by another tool, or variables built
@@ -41,6 +45,9 @@ from pathlib import Path
 
 POLICY = Path(os.environ.get("HARNESS_POLICY") or Path(__file__).resolve().parent.parent / "policy" / "permissions.json")
 HOME = os.environ.get("HARNESS_HOME") or os.path.expanduser("~")
+# The checkout this guard was loaded from. Its own policy, bin, agents and plugins are
+# live for every session, whether or not install.cs linked them into the home.
+ROOT = os.environ.get("HARNESS_ROOT") or str(Path(__file__).resolve().parent.parent)
 
 SHELL_TOOLS = {"bash", "run_terminal_command", "shell"}
 READ_TOOLS = {"read", "read_file", "grep", "glob", "ls", "list_dir", "notebookread"}
@@ -82,6 +89,8 @@ PYTHONISH = re.compile(r"python[0-9.]*$")
 # Edit keys that carry the old and new text of one replacement.
 NOOP_PAIRS = (("old_string", "new_string"), ("old_str", "new_str"), ("oldString", "newString"), ("old_text", "new_text"))
 MAX_DEPTH = 5
+# A policy denial is a decision, not an invitation to find another spelling.
+BOUNDARY = "This is a boundary, not an obstacle: do not retry it in another form; take a safer path or stop and ask."
 
 
 class Decision:
@@ -515,6 +524,53 @@ def in_no_edit(policy: dict, raw: str) -> bool:
     return any(norm == d or norm.startswith(d + "/") or f"/{d}/" in norm + "/" for d in policy["no_edit"])
 
 
+def control_plane(policy: dict, raw: str, cwd: str | None = None) -> str | None:
+    """The live-configuration entry `raw` resolves into, or None.
+
+    Both sides are real paths, so an edit through ~/.config/opencode/bin and one
+    through the checkout it links to land on the same file, while the same file in
+    another checkout resolves elsewhere. An entry missing on this machine matches
+    nothing. The checkout the running guard was loaded from (ROOT) is live through
+    each `repo_paths` entry even when install.cs linked nothing into the home.
+    """
+    section = policy.get("control_plane") or {}
+    path = expand(raw.split("=", 1)[-1])
+    if not path:
+        return None
+    if not os.path.isabs(path):
+        try:
+            path = os.path.join(cwd or os.getcwd(), path)
+        except OSError:
+            return None
+    try:
+        real = os.path.realpath(path)
+    except OSError:
+        return None
+    for entry in section.get("installed", []):
+        target = expand(entry)
+        if not os.path.exists(target):
+            continue
+        try:
+            target = os.path.realpath(target)
+        except OSError:
+            continue
+        if real == target or real.startswith(target + "/"):
+            return entry
+    for rel in section.get("repo_paths", []):
+        base = os.path.join(ROOT, rel.rstrip("/"))
+        try:
+            base = os.path.realpath(base)
+        except OSError:
+            continue
+        if real == base or real.startswith(base + "/"):
+            return f"{rel} in the live checkout"
+    return None
+
+
+def control_plane_decision(live: str) -> Decision:
+    return Decision("ask", "control-plane", f"control-plane: `{live}` is live harness configuration loaded by every session")
+
+
 def writes(seg: list[str]) -> bool:
     prog = os.path.basename(seg[0])
     if prog == "sed":
@@ -647,23 +703,54 @@ def noop_edit(tool_input: dict) -> list[Decision]:
     return []
 
 
-def check_shell(policy: dict, command: str, depth: int = 0) -> list[Decision]:
+def cd_base(seg: list[str], base: str | None) -> str | None:
+    """The base directory after a `cd` segment, or None when the base must stay.
+
+    `cd` with no argument, `cd -`, and an argument containing `$` are left alone:
+    the guard cannot know the target, and a guess could under-ask. A relative
+    target is joined to the current base, and `~` is expanded first.
+    """
+    args = [t for t in seg[1:] if not (t.startswith("-") and t != "-")]
+    if not args:
+        return None
+    target = args[0]
+    if target == "-" or "$" in target:
+        return None
+    target = expand(target)
+    if not os.path.isabs(target):
+        try:
+            target = os.path.join(base or os.getcwd(), target)
+        except OSError:
+            return None
+    return os.path.normpath(target)
+
+
+def check_shell(policy: dict, command: str, depth: int = 0, cwd: str | None = None) -> list[Decision]:
     found: list[Decision] = pipe_chains(command) + heredoc_decisions(command)
     if depth < MAX_DEPTH:
         for script in heredoc_scripts(command) + herestring_scripts(command) + literal_scripts(command):
-            found += check_shell(policy, script, depth + 1) + substituted(script, depth)
+            found += check_shell(policy, script, depth + 1, cwd) + substituted(script, depth)
+    base = cwd
     for seg in segments(command):
         prog = os.path.basename(seg[0])
+        if prog == "cd":
+            moved = cd_base(seg, base)
+            if moved is not None:
+                base = moved
         for kind in ("deny", "ask"):
             for rule in policy["shell"][kind]:
                 if rule_matches(rule, seg):
                     found.append(Decision(kind, rule["id"], f"{rule['id']}: `{' '.join(seg)[:120]}`"))
         for i, tok in enumerate(seg):
+            writing = writes(seg) or (i > 0 and seg[i - 1] in (">", ">>"))
             hit = protected_path(policy, tok) or protected_name(policy, tok, path_like_only=prog not in READERS)
             if hit:
                 found.append(Decision("deny", "protected-path", f"protected-path: `{hit}` named in `{' '.join(seg)[:100]}`"))
-            if in_no_edit(policy, tok) and (writes(seg) or (i > 0 and seg[i - 1] in (">", ">>"))):
+            if in_no_edit(policy, tok) and writing:
                 found.append(Decision("deny", "no-edit", f"no-edit: `{tok}` is read-only for agents"))
+            live = control_plane(policy, tok, base) if writing else None
+            if live:
+                found.append(control_plane_decision(live))
     return found
 
 
@@ -679,7 +766,7 @@ def path_values(value, key: str = "") -> list[str]:
     return []
 
 
-def check_paths(policy: dict, tool_input, writing: bool) -> list[Decision]:
+def check_paths(policy: dict, tool_input, writing: bool, cwd: str | None = None) -> list[Decision]:
     found: list[Decision] = []
     for raw in path_values(tool_input):
         hit = protected_path(policy, raw) or protected_name(policy, raw, path_like_only=True)
@@ -687,6 +774,9 @@ def check_paths(policy: dict, tool_input, writing: bool) -> list[Decision]:
             found.append(Decision("deny", "protected-path", f"protected-path: `{hit}` ({raw[:80]})"))
         if writing and in_no_edit(policy, raw):
             found.append(Decision("deny", "no-edit", f"no-edit: `{raw[:80]}` is read-only for agents"))
+        live = control_plane(policy, raw, cwd) if writing else None
+        if live:
+            found.append(control_plane_decision(live))
     return found
 
 
@@ -694,13 +784,14 @@ def decide(event: dict) -> list[Decision]:
     policy = load_policy()
     tool = str(event.get("tool_name") or event.get("toolName") or "").lower()
     tool_input = event.get("tool_input") if event.get("tool_input") is not None else event.get("toolInput") or {}
+    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else None
     if tool in SHELL_TOOLS:
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
-        return check_shell(policy, command) if isinstance(command, str) else []
+        return check_shell(policy, command, cwd=cwd) if isinstance(command, str) else []
     if tool in READ_TOOLS:
-        return check_paths(policy, tool_input, writing=False)
+        return check_paths(policy, tool_input, writing=False, cwd=cwd)
     if tool in WRITE_TOOLS:
-        return (noop_edit(tool_input) if isinstance(tool_input, dict) else []) + check_paths(policy, tool_input, writing=True)
+        return (noop_edit(tool_input) if isinstance(tool_input, dict) else []) + check_paths(policy, tool_input, writing=True, cwd=cwd)
     return []
 
 
@@ -726,7 +817,7 @@ def main(argv: list[str]) -> int:
         return 2
     denies = [d for d in found if d.kind == "deny"]
     if denies:
-        reason = "; ".join(dict.fromkeys(d.reason for d in denies))
+        reason = "; ".join(dict.fromkeys(d.reason for d in denies)) + " " + BOUNDARY
         sys.stderr.write(f"blocked by harness-guard: {reason}\n")
         emit("deny", reason)
         return 2

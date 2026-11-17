@@ -3,14 +3,15 @@
 # and writes results that score.py grades.
 #
 #   ./run.sh -m opencode-go/glm-5.3#max
-#   ./run.sh --tier T1 -a review-light -m claude-agent/haiku
-#   ./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
-#   ./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-#   ./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
+#   ./run.sh --tier T1 -a review-deep -m claude-agent/haiku
+#   ./run.sh -a review-deep -m xai/grok-4.7#high -c concat-nonstring-operand
+#   ./run.sh -a verifier -m xai/grok-4.7#high -c plan-ide-storage-tab
 #
-# `tier` is required on every case.json. `--tier` selects change cases only; a
-# plan case runs only with `-c` or `-a plan-review-deep`. `-m` is optional; when
-# omitted the agent's configured model is used (cost attribution is then zero).
+# `tier` is required on every case.json. It is a case label, not an agent
+# selector: `--tier` filters change cases, and every change case runs on
+# review-deep. A plan case runs on verifier, and only with `-c` (or `-a verifier`
+# with `-c`). `-m` is optional; when omitted the agent's configured model is used
+# (cost attribution is then zero).
 #
 # Each case clones the fixture repo at its base commit into a scratch checkout and
 # runs the agent there. A "change" case applies its patch first; a "plan" case
@@ -49,23 +50,11 @@ case "$TIER" in
   *) usage ;;
 esac
 
-if [ -n "$AGENT" ] && [ -z "$ONLY" ] && [ -z "$TIER" ] && [ "$AGENT" != "plan-review-deep" ]; then
-  echo "error: -a needs -c or --tier (or -a plan-review-deep for the plan case)" >&2
+if [ -n "$AGENT" ] && [ -z "$ONLY" ] && [ -z "$TIER" ]; then
+  echo "error: -a needs -c or --tier" >&2
   exit 2
 fi
 
-if [ "$AGENT" = "review-light" ] && [ "$TIER" = "T2" ]; then
-  echo "error: review-light is T1 only" >&2
-  exit 2
-fi
-if [ "$AGENT" = "second-opinion" ] && [ "$TIER" = "T1" ]; then
-  echo "error: second-opinion is T2 only" >&2
-  exit 2
-fi
-if [ "$AGENT" = "plan-review-deep" ] && [ -n "$TIER" ]; then
-  echo "error: a plan case runs with -c, not --tier" >&2
-  exit 2
-fi
 field() { python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2"; }
 
 # Expand a leading ~/ or $HOME/ so eval cases stay portable across machines.
@@ -132,40 +121,20 @@ for dir in "$HERE"/cases/*/; do
     if [ -n "$TIER" ] && [ "$tier" != "$TIER" ]; then continue; fi
   fi
 
-  if [ -n "$AGENT" ] && [ "$AGENT" = "plan-review-deep" ] && [ "$artifact" != "plan" ]; then
+  # A plan case runs only with an explicit -c, and only on the verifier: a bare
+  # run and --tier are change cases only.
+  if [ -z "$ONLY" ] && [ "$artifact" = "plan" ]; then
     continue
   fi
-  if [ -n "$AGENT" ] && [ "$AGENT" != "plan-review-deep" ] && [ "$artifact" = "plan" ]; then
-    if [ -n "$ONLY" ]; then
-      echo "error: plan case $id needs -a plan-review-deep" >&2
-      exit 2
-    fi
-    continue
-  fi
-  if [ -n "$AGENT" ] && [ "$AGENT" = "review-light" ] && [ "$tier" = "T2" ]; then
-    echo "error: review-light is T1 only ($id)" >&2
+  if [ -n "$AGENT" ] && [ "$artifact" = "plan" ] && [ "$AGENT" != "verifier" ]; then
+    echo "error: plan case $id needs -a verifier" >&2
     exit 2
-  fi
-  if [ -n "$AGENT" ] && [ "$AGENT" = "second-opinion" ] && [ "$tier" != "T2" ]; then
-    if [ -n "$ONLY" ]; then
-      echo "error: second-opinion is T2 only ($id)" >&2
-      exit 2
-    fi
-    continue
-  fi
-
-  # A plan case runs only with an explicit -c or -a plan-review-deep. A bare
-  # run is change cases only.
-  if [ -z "$ONLY" ] && [ "$artifact" = "plan" ] && [ "$AGENT" != "plan-review-deep" ]; then
-    continue
   fi
 
   if [ -n "$AGENT" ]; then
     agent="$AGENT"
   elif [ "$artifact" = "plan" ]; then
-    agent="plan-review-deep"
-  elif [ "$tier" = "T1" ]; then
-    agent="review-light"
+    agent="verifier"
   else
     agent="review-deep"
   fi

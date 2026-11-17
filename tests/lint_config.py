@@ -63,6 +63,25 @@ def main() -> int:
                 print(f"ok drift detected: {name}")
         policy_path.write_text(original)
 
+        # A sandbox write path must not reach a location whose contents run or are
+        # loaded outside the sandbox: a sandboxed command could replace them.
+        for entry in ("~/.dotnet", "~/.dotnet/tools", "~", "~/.config/opencode/bin"):
+            policy = json.loads(original)
+            policy["sandbox"]["allow_write"] = [entry]
+            policy_path.write_text(json.dumps(policy, indent=2) + "\n")
+            run = lint(tree)
+            out = run.stdout + run.stderr
+            if run.returncode != 1 or "could replace something that runs unsandboxed" not in out:
+                print(f"FAIL: sandbox allow_write {entry!r}: rc={run.returncode}, "
+                      f"expected 1 naming the entry\n{out}")
+                failed = True
+            elif entry not in out:
+                print(f"FAIL: sandbox allow_write {entry!r}: the failure does not name the entry\n{out}")
+                failed = True
+            else:
+                print(f"ok sandbox allow_write rejects {entry}")
+        policy_path.write_text(original)
+
         agents_path = tree / "AGENTS.md"
         build_path = tree / "agents" / "build.md"
         build_original = build_path.read_text()

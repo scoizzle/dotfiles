@@ -10,12 +10,15 @@ Two artifacts are covered: a **change** (a diff, caught before it ships) and a
 ## Run it
 
 ```sh
-./run.sh                                      # every change case, agent by tier
-./run.sh --tier T1 -a review-light -m claude-agent/haiku
-./run.sh --tier T2 -a review-deep -m xai/grok-4.7#high
-./run.sh -a plan-review-deep -m xai/grok-4.7#high -c plan-ide-storage-tab
-./run.sh -a verifier -m xai/grok-4.7#high -c concat-nonstring-operand
+./run.sh                                      # every change case, on review-deep
+./run.sh --tier T1 -a review-deep -m claude-agent/haiku
+./run.sh -a review-deep -m xai/grok-4.7#high -c concat-nonstring-operand
+./run.sh -a verifier -m xai/grok-4.7#high -c plan-ide-storage-tab
 ```
+
+A change case runs on `review-deep` whatever its tier. A plan case runs on
+`verifier`, which has a plan mode, and only with `-c` (or `-a verifier` with
+`-c`).
 
 `run.sh` prints a per-case line, then the model's cost and step delta for the run,
 then the results directory. Grade it:
@@ -68,6 +71,8 @@ cases/<case-id>/change.patch   the diff, for a change case
 cases/<case-id>/plan.md        the plan, for a plan case
 run.sh                         run one model over the case set
 run-grok.sh                    run the same cases through Grok Build's harness
+run-writer.sh                  run a writer on the bugged cases and score it
+writer-checks.json             writer oracle per case: check command and protected paths
 score.py                       grade results against expectations
 cost.py                        per-model cost/steps for one run (called by run.sh)
 scoreboard.py                  standing view of the gates, from the session store
@@ -79,7 +84,7 @@ scoreboard.py                  standing view of the gates, from the session stor
 | --- | --- |
 | `id` | Case name; matches the directory. |
 | `artifact` | `change` (default) or `plan`. |
-| `tier` | Required: `T0`, `T1`, or `T2`. `--tier` selects change cases only; T1 uses `review-light`, T2 uses `review-deep`, and a plan case uses `plan-review-deep`. |
+| `tier` | Required: `T0`, `T1`, or `T2`. A case label, not an agent selector: `--tier` filters change cases only, and every change case runs on `review-deep`. |
 | `repo` | Fixture repository path. |
 | `base` | Commit the artifact is presented against. |
 | `patch` | Change cases: patch file, default `change.patch`. |
@@ -104,8 +109,8 @@ scoreboard.py                  standing view of the gates, from the session stor
 | `clean-enum-backing-type` | change | a real merged fix (`f887d880`) replayed at its parent | none — `must_pass`; any 🔴 or 🟠 is a false alarm |
 
 Tier assignment: `concat-nonstring-operand`, `for-zero-records-noop`, and
-`mcp-nav-rendering` are T1; the rest are T2. The enum case is deliberately T2,
-so `review-light` is never scored on it.
+`mcp-nav-rendering` are T1; the rest are T2. The tier is a difficulty label on
+the case, not a routing rule: every change case runs on `review-deep`.
 
 ## Verifier gate
 
@@ -117,7 +122,7 @@ defect and one that finds a defect everywhere both cost the same:
 ./run.sh -a verifier -m xai/grok-4.7#high -c clean-enum-backing-type
 ```
 
-The first is the seeded-🟠 change `review-light` already uses. The verifier has
+The first is the seeded-🟠 change the reviewer cases use. The verifier has
 shell, so it is expected to run the repository's build and changed-area tests; a
 red test is the finding. The second is a real merged fix whose tests fail if the
 production change is reverted: `must_pass` makes any 🔴 or 🟠 a failure. The pair
@@ -133,6 +138,82 @@ verifier found, correctly, that its added tests pass with the fix reverted.
 With `-a verifier`, `run.sh` leaves the diff out of the prompt. A pasted diff
 lets the verifier skip the build and the tests, which is the behaviour this gate
 measures.
+
+## Writer eval
+
+The reviewer cases double as a writer oracle. A change case's `base` is the fix
+commit and `change.patch` reverts only the production files, so the fix's own
+tests are in the tree and fail once the patch is applied. `run-writer.sh` runs a
+writer on that bugged tree and scores whether it fixed the production code
+without touching the tests.
+
+```sh
+./run-writer.sh -m opencode-go/deepseek-v4.1-flash#low
+./run-writer.sh -m opencode-go/deepseek-v4.1-flash#low -c mcp-nav-rendering --runs 3
+```
+
+`-m` is required. For each selected case the script clones the fixture repo at
+`base` into a scratch directory under `$EVAL_WORK_ROOT`, applies the patch,
+commits that state inside the scratch clone only, runs
+`opencode run --standalone --agent build --model <model> --auto "<prompt>"`
+(`-a` names another agent; `build` is the default agent, whose pin this measures)
+there under the same 900-second cap as `run.sh`, then runs the case's check. The
+prompt names the failing check, gives the defect as the case's `expected[].notes`
+bug report, and forbids editing the protected test paths; it does not contain the
+fix.
+
+A run is `PASS` only when the check exits 0 and no protected path differs from
+the committed bugged state. Otherwise it is `FAIL` with a reason: check failed,
+touched tests, writer exit, or timeout. `--runs N` repeats every case N times,
+prints `k/N` per case and a `TOTAL` line, writes each run's writer and check
+output under the results directory, and exits non-zero if any run failed.
+
+`EVAL_WRITER_CMD` replaces the opencode invocation: it is run in the scratch
+clone with the prompt as its one argument. `tests/eval_writer.py` uses that to
+exercise the harness without a model.
+
+`writer-checks.json` maps a case id to `check` (a command run in the clone;
+exit 0 means fixed) and `protect` (paths or git pathspecs the writer must not
+change). It is separate from `case.json` because `evals/cases/**` are gate
+fixtures and do not carry writer metadata.
+
+### Adding a check
+
+Prove the oracle before adding it. In a scratch clone of the fixture repo:
+
+1. Check out `base` and run the check: it must exit 0.
+2. Apply the case's `change.patch` and run it again: it must exit non-zero.
+
+If either step disagrees, the fixture does not discriminate for the writer and
+the check is not added. Use the repository's own test command — Poly's `AGENTS.md`
+names `dotnet run --project Poly.Tests/Poly.Tests.csproj`, with
+`-- --treenode-filter` for the fix's tests — and protect every test file and
+golden the check reads.
+
+Proved: `array-element-access`, `concat-nonstring-operand`,
+`createin-previous-stage`, `for-zero-records-noop`, `mcp-nav-rendering`,
+`storage-enum-backing-type`.
+
+Left out, so not in `writer-checks.json`:
+
+| Case | Why |
+| --- | --- |
+| `wip-slice-c8-tc2` | a frozen uncommitted change with no test that fails for either defect, so no command's exit code means fixed |
+| `plan-ide-storage-tab` | a plan, not a change: no patch and no production defect to fix |
+| `clean-enum-backing-type` | `must_pass`: the tree is already the fixed state, so it measures a reviewer staying quiet, not a writer fixing anything |
+
+### Paired comparison
+
+The reason the writer eval exists: the default writer moved from
+`opencode-go/deepseek-v4.1-flash#high` to `#low` with no measurement. Run the
+same cases at both variants, several runs each, and report `k/N` per case:
+
+```sh
+./run-writer.sh -m opencode-go/deepseek-v4.1-flash#low --runs 3
+./run-writer.sh -m opencode-go/deepseek-v4.1-flash#high --runs 3
+```
+
+One run of one case is a smoke test, not a result; the pair is the measurement.
 
 ## Three ways to add a case
 

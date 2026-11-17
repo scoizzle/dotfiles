@@ -5,6 +5,7 @@
     dream --since 48h             # duration, or an ISO date (UTC)
     dream --sessions 10           # cap sessions inside the window
     dream --dry-run               # print the proposed append, write nothing
+    dream --no-user-text          # leave user message heads out of the digest
     dream --promote [--yes]       # move reviewed pending lines into memory agents read
     dream --db PATH               # override the opencode session store
     dream --source auto|t3|opencode  # which stores to read (default auto)
@@ -108,6 +109,18 @@ UNSAFE_BODY = re.compile(
     re.IGNORECASE,
 )
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# User follow-ups are read one message at a time, before the session text is
+# truncated, so a message near the end of a long session is still seen.
+FOLLOWUP_CHARS = 200
+FOLLOWUP_MIN_CHARS = 20
+FOLLOWUP_LIMIT = 20
+# A harness, not the person, writes these. They steer nothing.
+HARNESS_PREFIXES = (
+    "Delegated task ",
+    "Update on pull request",
+    "<system",
+    "Continue where you left off",
+)
 PATH_MARKERS = re.compile(
     r"(?:No such file or directory|FileNotFoundError|ENOENT)"
     r"(?::\s*|\s+)'?([^'\s\"]+)'?",
@@ -128,6 +141,8 @@ End every line with the layer that owns it: [harness], [loop], or [graph].
 - harness: config, tools, installer, memory layout.
 - loop: a repeated step inside one task (fix, test, retry).
 - graph: how work is split across agents or review gates.
+
+The digest lists what failed, what recovered, and what the person said after the first message in a session. Most follow-ups are ordinary instructions for that one task; skip them. A correction or a standing preference is usually a known: or derived: line.
 
 Skip one-offs. If the digest has no durable lesson, reply with exactly: (none)
 
@@ -439,9 +454,11 @@ def t3_blob(
     provider_thread_id: str,
     thread_id: str,
     include_messages: bool,
-) -> tuple[str, list[dict], bool]:
-    """Plain text, tool events, and whether this thread is itself a dream pass."""
+) -> tuple[str, list[dict], bool, list[str]]:
+    """Plain text, tool events, whether this thread is a dream pass, and follow-ups."""
     texts: list[str] = []
+    said: list[str] = []
+    table_messages = 0
     if include_messages:
         for role, raw in connection.execute(
             f"select role, payload_json from {T3_MESSAGES} where thread_id = ? order by created_at",
@@ -449,10 +466,16 @@ def t3_blob(
         ).fetchall():
             payload = parse_data(raw)
             text = payload.get("text")
+            if str(role or "") == "user":
+                # One entry per user message, even an empty one, so the first
+                # slot stays the task message that gets skipped.
+                said.append(text if isinstance(text, str) else "")
             if isinstance(text, str) and text:
                 texts.append(f"{role or 'message'}: {text[:MESSAGE_CHARS]}")
+                table_messages += 1
 
     events: list[dict] = []
+    item_user_texts: list[str] = []
     placeholders = ",".join("?" for _ in T3_ITEM_TYPES)
     items = connection.execute(
         f"select type, status, payload_json from {T3_ITEMS} "
@@ -465,19 +488,25 @@ def t3_blob(
         if kind in ("assistant_message", "user_message"):
             # Messages carry the same text; only fall back when the message
             # table has nothing for this thread.
-            if not texts:
-                text = payload.get("text")
-                if isinstance(text, str) and text:
-                    texts.append(f"{kind}: {text[:MESSAGE_CHARS]}")
+            text = payload.get("text")
+            if not texts and isinstance(text, str) and text:
+                texts.append(f"{kind}: {text[:MESSAGE_CHARS]}")
+            if include_messages and not table_messages and kind == "user_message":
+                item_user_texts.append(text if isinstance(text, str) else "")
             continue
         event = t3_event(str(kind), str(status or ""), payload)
         if event is not None:
             events.append(event)
 
+    if include_messages and not table_messages:
+        said = item_user_texts
+
     joined = "\n".join(texts)
     if "DREAM-PASS" in joined:
-        return "", [], True
-    return joined[: MESSAGE_CHARS * 4], events, False
+        return "", [], True, []
+    # Nothing on the projection row or in its payload_json is documented or
+    # probed as a parent reference, so every T3 thread counts as top-level.
+    return joined[: MESSAGE_CHARS * 4], events, False, user_followups(said)
 
 
 def load_sessions(
@@ -676,10 +705,35 @@ def text_bits(payload: dict) -> list[str]:
     return bits
 
 
-def session_blob(connection: sqlite3.Connection, session: dict) -> tuple[str, list[dict], bool]:
-    """Plain text, tool events, and whether this session is itself a dream pass."""
+def followup_line(raw: str) -> str:
+    """One user message as a digest line, or '' when it is not worth listing."""
+    said = " ".join(raw.split())[:FOLLOWUP_CHARS]
+    if len(said) < FOLLOWUP_MIN_CHARS:
+        return ""
+    if said.startswith(HARNESS_PREFIXES):
+        return ""
+    return said
+
+
+def user_followups(messages: list[str]) -> list[str]:
+    """Every user message after the first; the first is the task itself."""
+    found: list[str] = []
+    for index, raw in enumerate(messages):
+        if index == 0:
+            continue
+        said = followup_line(raw)
+        if said:
+            found.append(said)
+    return found
+
+
+def session_blob(
+    connection: sqlite3.Connection, session: dict
+) -> tuple[str, list[dict], bool, list[str]]:
+    """Plain text, tool events, whether this session is a dream pass, and follow-ups."""
     texts: list[str] = []
     events: list[dict] = []
+    said: list[str] = []
     for message in message_rows(connection, str(session["id"]), session["schema"]):
         payload = parse_data(message.get("data"))
         kind = message.get("type") or payload.get("role") or ""
@@ -692,14 +746,21 @@ def session_blob(connection: sqlite3.Connection, session: dict) -> tuple[str, li
                 found.extend(tool_events({"content": [part_payload]}))
         blob = "\n".join(bits)
         if "DREAM-PASS" in blob:
-            return "", [], True
+            return "", [], True, []
         if blob:
             texts.append(f"{kind}: {blob[:MESSAGE_CHARS]}")
+        if kind == "user":
+            # One entry per user message, even an empty one, so the first slot
+            # stays the task message that gets skipped.
+            said.append(blob)
         events.extend(found)
     joined = "\n".join(texts)
     if "DREAM-PASS" in joined:
-        return "", [], True
-    return joined[: MESSAGE_CHARS * 4], events, False
+        return "", [], True, []
+    # A delegated child is not the person steering this machine's own work, so
+    # only a top-level session contributes follow-ups.
+    followups = [] if session.get("parent_id") else user_followups(said)
+    return joined[: MESSAGE_CHARS * 4], events, False, followups
 
 
 def normalize_sig(text: str) -> str:
@@ -713,19 +774,28 @@ def note_path(paths: dict[str, int], found: str) -> None:
         paths[cleaned] = paths.get(cleaned, 0) + 1
 
 
-def collect_patterns(sessions: list[dict], details: list[tuple[dict, str, list[dict]]]) -> dict:
+def collect_patterns(
+    sessions: list[dict],
+    details: list[tuple[dict, str, list[dict], list[str]]],
+    user_text: bool = True,
+) -> dict:
     failures: dict[str, int] = {}
     commands: dict[str, dict[str, int]] = {}
     paths: dict[str, int] = {}
     workarounds: list[str] = []
+    recoveries: list[str] = []
+    followups: list[str] = []
     failed_idle: list[str] = []
     singles_seen: dict[str, int] = {}
 
-    for session, _text, events in details:
+    for session, text, events, said in details:
         saw_shell_error = False
         saw_shell_ok_after = False
         failed_cmd = ""
+        first_failed_cmd = ""
+        recovered = False
         for event in events:
+            is_shell = event["name"] in ("shell", "bash")
             signature = normalize_sig(
                 f"{event['name']}: {event['error'] or event['command'] or event['status']}"
             )
@@ -743,17 +813,22 @@ def collect_patterns(sessions: list[dict], details: list[tuple[dict, str, list[d
                     bucket["ok"] += 1
             for found in PATH_MARKERS.findall(f"{event['error']} {event['command']}"):
                 note_path(paths, found)
-            if event["name"] in ("shell", "bash") and errored:
+            if is_shell and errored:
                 saw_shell_error = True
                 failed_cmd = command or event["error"]
-            elif (
-                event["name"] in ("shell", "bash")
-                and status in ("completed", "ok", "success")
-                and saw_shell_error
-            ):
+                if not first_failed_cmd:
+                    first_failed_cmd = failed_cmd
+            elif is_shell and status in ("completed", "ok", "success") and saw_shell_error:
                 saw_shell_ok_after = True
-        for found in PATH_MARKERS.findall(_text):
+                if first_failed_cmd and not recovered:
+                    recovered = True
+                    recoveries.append(
+                        f"{normalize_sig(first_failed_cmd)} → {normalize_sig(command) or '(unnamed)'}"
+                    )
+        for found in PATH_MARKERS.findall(text):
             note_path(paths, found)
+        if user_text and not session.get("parent_id"):
+            followups.extend(said)
         if saw_shell_error and saw_shell_ok_after:
             title = session.get("title") or session.get("id")
             workarounds.append(
@@ -785,6 +860,8 @@ def collect_patterns(sessions: list[dict], details: list[tuple[dict, str, list[d
         "paths": [f"{path} ({count})" for path, count in sorted(paths.items(), key=lambda item: -item[1])[:12]],
         "workarounds": workarounds[:8],
         "failed_idle": failed_idle[:12],
+        "recoveries": recoveries[:8],
+        "followups": list(dict.fromkeys(followups))[:FOLLOWUP_LIMIT],
         "single": [sig for _count, sig in single[:8]],
     }
 
@@ -802,6 +879,7 @@ def digest_lines(
     sessions: list[dict],
     patterns: dict,
     recorded: list[str],
+    no_user_text: bool = False,
 ) -> str:
     since = datetime.datetime.fromtimestamp(since_ms / 1000, datetime.timezone.utc).isoformat()
     lines = [
@@ -826,6 +904,15 @@ def digest_lines(
     lines.append("sessions that ended failed:")
     lines.extend(f"- {item}" for item in patterns["failed_idle"] or ["(none)"])
     lines.append("")
+    lines.append("recoveries (failed, then this completed):")
+    lines.extend(f"- {item}" for item in patterns["recoveries"] or ["(none)"])
+    lines.append("")
+    lines.append("user follow-ups (said after the first message):")
+    if no_user_text:
+        lines.append("- (omitted)")
+    else:
+        lines.extend(f"- {item}" for item in patterns["followups"] or ["(none)"])
+    lines.append("")
     lines.append("single failures (usually skip):")
     lines.extend(f"- {item}" for item in patterns["single"] or ["(none)"])
     if recorded:
@@ -843,7 +930,10 @@ def digest_lines(
 def has_signal(patterns: dict) -> bool:
     # A one-off tool error is listed in the digest when something else already
     # qualifies. On its own it is not worth a draft.
-    return any(patterns[key] for key in ("repeated", "flaky", "paths", "workarounds", "failed_idle"))
+    return any(
+        patterns[key]
+        for key in ("repeated", "flaky", "paths", "workarounds", "failed_idle", "followups")
+    )
 
 
 def recorded_lines(learnings: Path) -> list[str]:
@@ -1399,6 +1489,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--since", default=DEFAULT_SINCE, help="window: 30m, 24h, 7d, or an ISO date (default 24h)")
     parser.add_argument("--sessions", type=int, default=DEFAULT_SESSIONS, help="max sessions in the window (default 50)")
     parser.add_argument("--dry-run", action="store_true", help="print the proposed append and write nothing")
+    parser.add_argument(
+        "--no-user-text",
+        action="store_true",
+        help="leave user message heads out of the digest sent to the drafting model",
+    )
     parser.add_argument("--db", default=DEFAULT_DB, help=f"opencode session store (default {DEFAULT_DB})")
     parser.add_argument("--t3-db", default=DEFAULT_T3_DB, help=f"T3 store (default {DEFAULT_T3_DB})")
     parser.add_argument(
@@ -1432,7 +1527,7 @@ def main(argv: list[str] | None = None) -> int:
     # Drafts are staged where no agent reads them. --promote moves them.
     target = memory / "learnings" / PENDING_DIR / f"{moment.strftime('%Y-%m-%d')}.md"
 
-    details: list[tuple[dict, str, list[dict]]] = []
+    details: list[tuple[dict, str, list[dict], list[str]]] = []
     schema_parts: list[str] = []
     opencode_ids: set[str] = set()
 
@@ -1445,10 +1540,10 @@ def main(argv: list[str] | None = None) -> int:
                     # Record every id, including dream passes, so their T3
                     # mirrors are skipped rather than re-ingested.
                     opencode_ids.add(str(session["id"]))
-                    text, events, is_dream = session_blob(connection, session)
+                    text, events, is_dream, followups = session_blob(connection, session)
                     if is_dream:
                         continue
-                    details.append((session, text, events))
+                    details.append((session, text, events, followups))
             finally:
                 connection.close()
             schema_parts.append(schema)
@@ -1507,7 +1602,7 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     else:
                         rows = t3_threads(connection, since_iso, args.sessions, None)
-                    staged: list[tuple[dict, str, list[dict]]] = []
+                    staged: list[tuple[dict, str, list[dict], list[str]]] = []
                     seen_messages: set[str] = set()
                     for row in rows:
                         provider_thread_id, thread_id, provider, _status, _updated, payload = row
@@ -1518,7 +1613,7 @@ def main(argv: list[str] | None = None) -> int:
                                 continue
                         include_messages = thread_id not in seen_messages
                         seen_messages.add(thread_id)
-                        text, events, is_dream = t3_blob(
+                        text, events, is_dream, followups = t3_blob(
                             connection,
                             str(provider_thread_id or thread_id),
                             str(thread_id),
@@ -1526,7 +1621,7 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         if is_dream:
                             continue
-                        staged.append((t3_session(row), text, events))
+                        staged.append((t3_session(row), text, events, followups))
                     details.extend(staged)
                     t3_read = True
                     schema_parts.append("t3")
@@ -1541,15 +1636,17 @@ def main(argv: list[str] | None = None) -> int:
     details = details[: args.sessions]
     sessions = [item[0] for item in details]
 
-    opencode_count = sum(1 for session, _text, _events in details if session.get("schema") != "t3")
+    opencode_count = sum(
+        1 for session, _text, _events, _said in details if session.get("schema") != "t3"
+    )
     t3_stats: dict[str, int] = {}
-    for session, _text, _events in details:
+    for session, _text, _events, _said in details:
         if session.get("schema") == "t3":
             provider = str(session.get("provider"))
             t3_stats[provider] = t3_stats.get(provider, 0) + 1
     unbound = sum(
         1
-        for session, _text, _events in details
+        for session, _text, _events, _said in details
         if session.get("schema") != "t3" and str(session["id"]) not in bound
     )
 
@@ -1568,10 +1665,12 @@ def main(argv: list[str] | None = None) -> int:
         print("nothing to append")
         return 0
 
-    patterns = collect_patterns(sessions, details)
+    patterns = collect_patterns(sessions, details, user_text=not args.no_user_text)
     if not has_signal(patterns):
         where = db_path if not t3_read else f"{db_path} and {t3_path}"
-        print(f"{len(sessions)} sessions in {where}, no failures, flaky commands, or missing paths")
+        reason = "no failures, flaky commands, or missing paths"
+        reason += " (user follow-ups omitted)" if args.no_user_text else ", or user follow-ups"
+        print(f"{len(sessions)} sessions in {where}, {reason}")
         print("nothing to append")
         return 0
 
@@ -1584,7 +1683,13 @@ def main(argv: list[str] | None = None) -> int:
         prior = sha256_file(target) if learnings.is_dir() else None
         recorded = recorded_lines(learnings)
         digest = digest_lines(
-            store_label, since_ms, schema_label, sessions, patterns, recorded[-RECORDED_LIMIT:]
+            store_label,
+            since_ms,
+            schema_label,
+            sessions,
+            patterns,
+            recorded[-RECORDED_LIMIT:],
+            no_user_text=args.no_user_text,
         )
         prompt = PROMPT_HEAD + digest + PROMPT_TAIL
         lines = draft(binary, prompt, args.timeout, args.model)

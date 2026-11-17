@@ -99,7 +99,22 @@
     { "action": "read", "resource": "**/.env.example", "effect": "allow" },
     { "action": "read", "resource": ".env.example", "effect": "allow" },
     { "action": "edit", "resource": "memory/core/*", "effect": "deny" },
-    { "action": "edit", "resource": "*/memory/core/*", "effect": "deny" }
+    { "action": "edit", "resource": "*/memory/core/*", "effect": "deny" },
+    { "action": "edit", "resource": "~/.config/opencode/AGENTS.md", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/opencode.json", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/bin/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/policy/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/agents/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/plugins/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/.claude/CLAUDE.md", "effect": "ask" },
+    { "action": "edit", "resource": "~/.claude/settings.json", "effect": "ask" },
+    { "action": "edit", "resource": "~/.grok/AGENTS.md", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/AGENTS.md", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/opencode.json", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/bin/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/policy/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/agents/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/plugins/*", "effect": "ask" }
   ],
   "agents": {
     "build": {

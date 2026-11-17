@@ -124,9 +124,12 @@ jobs:
       - name: classifier and policy render tests
         run: |
           python3 tests/classify.py
+          python3 tests/eval_writer.py
           python3 tests/policy_render.py
           python3 tests/lint_config.py
           python3 tests/guard_windows.py
+          python3 tests/guard_control_plane.py
+          python3 tests/sandbox_render.py
           python3 tests/skills_negative.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
@@ -177,6 +180,7 @@ jobs:
           git check-ignore -q memory/learnings/2099-01-01.md
           git check-ignore -q memory/learnings/working.md
           python3 tests/dream_compact.py
+          python3 tests/dream_digest.py
           if git check-ignore -q memory/learnings/README.md; then
             echo "README.md should stay tracked"
             exit 1

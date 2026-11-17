@@ -1,17 +1,19 @@
 # Reviewer model decision — 2026-10-18
 
 > **Current pins (read this first).** This file is a dated log; Phases 3 and 4
-> were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
-> and the agent files. At the last re-pin (Phase 8):
+> were reversed by Phase 5, and several roles it names no longer exist. These are
+> the agents that exist today, at the model each `agents/*.md` file pins. The
+> standing state is `agents/*.md` and `opencode.json`; this table is a copy, and
+> a disagreement is resolved in their favour.
 >
-> | Role | Pin |
+> | Agent | Pin |
 > | --- | --- |
-> | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
-> | `build`, `plan`, `general`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
-> | `second-opinion` | `xai/grok-4.7#high` |
-> | `implement-deep` | `claude-agent/sonnet#medium` |
-> | `review-deep`, `plan-review-deep` | `claude-agent/sonnet#high` |
-> | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` was dropped from the routable allowlist on 2026-11-08 for having no clean-case gate, and is re-added only after one passes |
+> | `build` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `implementor` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `explore` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
+> | `review-deep` | `claude-agent/opus#medium` |
+> | `verifier` | `claude-agent/sonnet#high` |
 >
 > **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are
 > `session_v2.cost`, which opencode computes from list price, not an invoice.
@@ -545,3 +547,83 @@ cannot render Muse.
 Revisit when a second-opinion gate run on Muse Spark 1.3 Contributor misses a
 seeded 🟠 or 🔴 finding, or when `opencode-go/grok-4.7` is advertised again
 and the pin can be re-evaluated.
+
+## Phase 10 — ungated pins (2026-11-16)
+
+The default agent now edits and the dispatch graph is gone (`ca809b5`). The pins
+that came with that change have no gate run in this log:
+
+- `build`, `implementor`, `general` and `plan` on
+  `opencode-go/deepseek-v4.1-flash#low` (`ca809b5`).
+- `review-deep` on `claude-agent/opus#medium`, the model
+  `agents/review-deep.md` names.
+
+No case was scored on any of them, in any role. The writer eval
+(`evals/run-writer.sh`, documented in `evals/README.md`) exists to measure the
+first: the same bugged cases at `#low` and `#high`, several runs each, reported
+as `k/N` per case. Until that comparison is recorded here, the writer pin is a
+default, not a gated result.
+
+## Phase 11 — first readings on DeepSeek `#low` (2026-11-16)
+
+One run per cell, so these are first readings, not a gate: they cannot rank two
+variants, and a single miss or pass here could be noise. Fixture repo
+`~/Projects/Poly/Poly`, one machine, opencode 2.3.0.
+
+### Reviewer: `review-deep` on `opencode-go/deepseek-v4.1-flash#low`
+
+```sh
+./run.sh -m 'opencode-go/deepseek-v4.1-flash#low'
+```
+
+| Case | Result | Seconds |
+| --- | --- | --- |
+| `array-element-access` | 1/1 | 376 |
+| `concat-nonstring-operand` | 1/1 | 540 |
+| `createin-previous-stage` | 1/1 | 154 |
+| `for-zero-records-noop` | 1/1 | 213 |
+| `mcp-nav-rendering` | 2/2 | 126 |
+| `storage-enum-backing-type` | 1/1 | 65 |
+| `wip-slice-c8-tc2` | 2/2 | 170 |
+| `clean-enum-backing-type` (`must_pass`) | PASS, 🟡/🟢 only | 319 |
+
+9/9 expected findings recovered, median 192 s, and quiet on the clean change.
+Phase 5 recorded the same model at `#high` raising a false 🔴 on that clean case
+as `verifier`; this is a different role, prompt and variant, so the two results
+do not contradict each other and neither settles the other.
+
+Read with these in mind:
+
+- The agent prompt was the installed `review-deep`, which on the machine that
+  ran this differed from `agents/review-deep.md` at this commit (an unpushed
+  local `main`). The model and variant came from `-m`.
+- Every change case drew extra 🔴 and 🟠 findings beyond `expected`. The scorer
+  does not measure precision and nobody triaged them.
+- Recall is file-plus-regex matching; the reports were not read for reasoning.
+
+### Writer: `build` on DeepSeek V4.1 Flash, `#low` against `#high`
+
+```sh
+./run-writer.sh -m 'opencode-go/deepseek-v4.1-flash#low'
+./run-writer.sh -m 'opencode-go/deepseek-v4.1-flash#high'
+```
+
+| Case | `#low` | Seconds | `#high` | Seconds |
+| --- | --- | --- | --- | --- |
+| `array-element-access` | PASS | 319 | PASS | 228 |
+| `concat-nonstring-operand` | PASS | 285 | FAIL (timeout) | 903 |
+| `createin-previous-stage` | PASS | 121 | PASS | 222 |
+| `for-zero-records-noop` | PASS | 186 | PASS | 133 |
+| `mcp-nav-rendering` | PASS | 215 | PASS | 404 |
+| `storage-enum-backing-type` | PASS | 221 | PASS | 118 |
+| Total | 6/6 | median 218 | 5/6 | median 225 |
+
+The one `#high` failure is the 900-second cap, not a wrong fix: the check exited
+0 on that tree and no protected path was touched, but the writer was still
+working when the alarm fired. By the oracle both variants fixed all six cases.
+
+What this supports: nothing here shows `#low` writing worse than `#high` on
+these six cases. What it does not support: that `#low` is as good in general.
+Six cases, one repository, one language, one run each, and every case hands the
+writer a bug report and the exact failing check, which is easier than ordinary
+work. Repeat with `--runs 3` or more before treating either pin as gated.

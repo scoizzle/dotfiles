@@ -359,6 +359,65 @@
       ".env.staging"
     ]
   },
+  "control_plane": {
+    "doc": "Live harness configuration. install.cs links these installed paths into one checkout, so an edit through any of them is live for every session at once, before any review. bin/harness-guard asks on a resolved real path, which catches the checkout wherever it lives; bin/sync-harness renders the same paths as edit rules for opencode, which has no hook. A trailing slash is a directory.",
+    "installed": [
+      "~/.config/opencode/AGENTS.md",
+      "~/.config/opencode/opencode.json",
+      "~/.config/opencode/bin/",
+      "~/.config/opencode/policy/",
+      "~/.config/opencode/agents/",
+      "~/.config/opencode/plugins/",
+      "~/.claude/CLAUDE.md",
+      "~/.claude/settings.json",
+      "~/.grok/AGENTS.md"
+    ],
+    "checkouts": [
+      "~/dotfiles"
+    ],
+    "repo_paths": [
+      "AGENTS.md",
+      "opencode.json",
+      "bin/",
+      "policy/",
+      "agents/",
+      "plugins/"
+    ]
+  },
+  "sandbox": {
+    "doc": "Opt-in Claude Code Bash-sandbox profile, rendered by bin/sync-harness. Only shell commands run inside it; the file and web tools, MCP servers and hooks do not. Preview with --scope sandbox; apply to ~/.claude/settings.json with --scope home --apply --sandbox. A plain --apply never adds, changes or removes it. Every protected.paths entry is denied for reads: plain paths through credentials.files, wildcard entries through filesystem.denyRead. excluded_commands need the credential stores the sandbox hides, so they run outside it and still pass the permission rules and the guard. allow_write is deliberately narrow: ~/.dotnet is excluded because ~/.dotnet/tools holds global tools such as the roslynk MCP server, and MCP servers run outside the sandbox, so a sandboxed command that could write there could replace a binary that later runs unsandboxed. bin/lint-config fails on an allow_write entry that equals, contains or sits inside a location that runs or is loaded outside the sandbox. The lists are a starting profile: expect to add write paths and domains for a real build.",
+    "allow_write": [
+      "~/.nuget/packages",
+      "~/.local/share/NuGet"
+    ],
+    "allowed_domains": [
+      "github.com",
+      "*.github.com",
+      "*.githubusercontent.com",
+      "api.nuget.org",
+      "*.nuget.org",
+      "registry.npmjs.org"
+    ],
+    "env_vars": [
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "NPM_TOKEN",
+      "NUGET_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "XAI_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN"
+    ],
+    "excluded_commands": [
+      "gh *",
+      "git push *",
+      "git fetch *",
+      "git pull *"
+    ]
+  },
   "no_edit": [
     "memory/core"
   ],
