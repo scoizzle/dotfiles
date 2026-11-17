@@ -1,7 +1,7 @@
 ---
 description: Read-only change reviewer. Reviews a diff and its check output against the contract, including callers, contracts, and missing tests. Use it only for a diff review, not for repo search.
 mode: subagent
-model: claude-agent/opus#high
+model: claude-agent/opus#medium
 steps: 40
 color: "#ff6b6b"
 permissions:
