@@ -79,6 +79,15 @@ Limits specific to this layer:
   heredoc, or a here-string; any other producer (`cat file | sh`, a script
   written by an earlier command) is not, because the guard cannot know what it
   emits.
+- Heredoc and no-op-edit checks are `harness-guard` only: opencode has no hook at
+  all, shell included. A heredoc body copied into a file is denied when `cat`,
+  `tee` or `dd` is the heredoc's own command, or comes later in its pipeline;
+  `cat <<EOF | jq . > f`, `sed … <<EOF > f`, a `sh -c` string and a `{ … }`
+  redirect on a later line are not judged. A body an interpreter reads as its
+  program (`python3 - <<PY`) asks; `python3 script.py <<JSON` is data and allows.
+  An edit whose old and new text are identical is denied for Claude Code and for
+  Grok in a trusted folder; MultiEdit's `edits[]` and Grok's `hashline_edit` are
+  not inspected.
 - The guard hook is a convenience layer in a file the user owns
   (`~/.claude/settings.json`) and can edit out. Enforcement needs the root-owned
   file above, which carries rules, not the hook.

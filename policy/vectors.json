@@ -1708,6 +1708,158 @@
    "skip_agents": [
     "verifier"
    ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat > notes.md <<'EOF'\nhello\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat >> src/app.py <<'EOF'\nprint(1)\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "tee out.txt <<'EOF'\nhello\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "python3 - <<'PY'\nprint(\"hi\")\nPY",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat > /dev/null <<'EOF'\nnoise\nEOF",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -F - <<'MSG'\nguard: deny cat > notes.md <<EOF\nMSG",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -F - <<'EOF' > /tmp/commit.log\nmsg\nEOF",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -F - <<'EOF' && python3 x.py\nmsg\nEOF",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat <<'EOF' > out.txt\nhello\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "python3 script.py <<'JSON'\n{}\nJSON",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "dd of=out.bin <<'EOF'\nx\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat <<'EOF' | tee out.txt\nhello\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat <<'EOF' | python3 -\nprint(1)\nEOF",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git commit -F - <<'EOF' && echo x | python3\nmsg\nEOF",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "{ cat > made.py <<'EOF'\nprint(1)\nEOF\n}",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "if true; then cat > made.py <<'EOF'\nprint(1)\nEOF\nfi",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "python3 - arg <<'PY'\nprint(1)\nPY",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat <<'EOF' | cat > out.txt\nhello\nEOF",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "cat <<< hello > out.txt",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ]
   }
  ]
 }
