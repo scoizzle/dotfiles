@@ -24,7 +24,11 @@ If dispatch is unavailable, do the work yourself and say so. Do not block an ord
 
 ## Safety
 
-- Do not stage, commit, or push unless asked. `git push` is ask. Force, delete, mirror, and `+refspec` pushes are denied.
+- A finished change on a thread branch is committed, pushed, and opened as a pull
+  request without waiting to be asked. Stage only the paths the change touched,
+  never `git add -A`, and never on the default branch. `git push` is ask. Force,
+  delete, mirror, and `+refspec` pushes are denied, and a merge is a person's
+  click.
 - Keep diffs minimal and consistent with the surrounding code.
 - The explore agent and the review agents are read-only.
 - A one-click revert can proceed. Name cleanup before landing shared state or auth. Wait for a person when there is no undo.
@@ -32,25 +36,24 @@ If dispatch is unavailable, do the work yourself and say so. Do not block an ord
 
 ## T3 Code
 
-When the `t3-code*` tools are present, they own branch and PR state, and the shell
-is the fallback:
+When the `t3-code*` tools are present, they own the worktree and the link/watch
+state. Commits, pushes, and the PR itself stay `git` and `gh pr create`; the
+shell is the fallback for both.
 
 - `t3_worktree_status` before work that assumes a branch, or before a handoff;
   `t3_worktree_list` to see refs and checkouts. `t3_worktree_handoff` goes last
   in the turn: it ends the live session, and it fails if this thread already has
   a worktree.
-- After creating a PR, `link_pull_request` is the next call. Read state with
-  `list_thread_pull_requests`. `watch_pull_request` once when the work waits on
-  checks or reviews, then end the turn; the watch survives each wake, must not be
-  re-armed, and a wake is not a merge decision. Call `unwatch_pull_request`
-  before handing the thread back. For a diff too large to read in one pass,
-  `write_pull_request_guides`, then `read_pull_request_guide` when its run
-  finishes.
+- Opening the PR is how a finished change ends: `git push`, then `gh pr create`.
+  `link_pull_request` is the next call, then `watch_pull_request` once, then end
+  the turn. Read state with `list_thread_pull_requests`. The watch survives each
+  wake, must not be re-armed, and a wake is not a merge decision. Call
+  `unwatch_pull_request` before handing the thread back. For a diff too large to
+  read in one pass, `write_pull_request_guides`, then `read_pull_request_guide`
+  when its run finishes.
 
-They do not stage, commit, push, or open or merge PRs. Those stay `git` and
-`gh pr create`, run by hand and only when asked. A merge is a person's click:
-`gh pr merge` is denied here and T3 has no merge action, so do not route around
-either one.
+A delegated child never watches. A merge is a person's click: `gh pr merge` is
+denied here and T3 has no merge action, so do not route around either one.
 
 ## Model choice
 

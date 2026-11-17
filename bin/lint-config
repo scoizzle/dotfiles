@@ -370,10 +370,23 @@ def check_instructions() -> None:
     ):
         if stale in text:
             fail(f"AGENTS.md: the old escape hatch is back ({stale!r}); the sensitive review is skippable again")
+    for needle in ("gh pr create", "link_pull_request", "watch_pull_request"):
+        if needle not in text:
+            fail(f"AGENTS.md: missing {needle!r}; a finished change does not open and watch its PR")
+    if "Do not stage, commit, or push unless asked" in text:
+        fail("AGENTS.md: the old commit/push gate is back; a finished change must open and watch its PR")
     build_text = (ROOT / "agents" / "build.md").read_text()
     for needle in ("required for a sensitive change", "never skip the review"):
         if needle not in build_text:
             fail(f"agents/build.md: missing {needle!r}; the sensitive review is skippable again")
+    for needle in ("gh pr create", "link_pull_request", "watch_pull_request"):
+        if needle not in build_text:
+            fail(f"agents/build.md: missing {needle!r}; a finished change does not open and watch its PR")
+    for name in ("agents/build.md", "agents/implementor.md"):
+        if "after any required review" not in (ROOT / name).read_text():
+            fail(f"{name}: missing 'after any required review'; an unreviewed sensitive change may be pushed and opened")
+    if "gh pr create" not in (ROOT / "agents" / "implementor.md").read_text():
+        fail("agents/implementor.md: missing 'gh pr create'; a finished change does not open its PR")
     verify = (ROOT / "commands" / "verify.md").read_text()
     for needle in (
         "review-bundle . --show AGENTS.md --show agents/review-deep.md",
