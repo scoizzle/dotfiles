@@ -296,9 +296,24 @@ def check_instructions() -> None:
         "this review is required",
         "different family than the one that wrote the diff",
         "skipping the review is not the fallback",
+        "stops for a person",
+        "Family means vendor",
+        "dispatch the review on a different-family model",
+        "returns `unreviewed` to its parent",
     ):
         if needle not in text:
             fail(f"AGENTS.md: missing {needle!r}; the sensitive review is skippable again")
+    for stale in (
+        "or say that no second model was available",
+        "say so and continue",
+        "Do not stop to ask about fallbacks",
+    ):
+        if stale in text:
+            fail(f"AGENTS.md: the old escape hatch is back ({stale!r}); the sensitive review is skippable again")
+    build_text = (ROOT / "agents" / "build.md").read_text()
+    for needle in ("required for a sensitive change", "never skip the review"):
+        if needle not in build_text:
+            fail(f"agents/build.md: missing {needle!r}; the sensitive review is skippable again")
     verify = (ROOT / "commands" / "verify.md").read_text()
     for needle in (
         "review-bundle . --show AGENTS.md --show agents/review-deep.md",

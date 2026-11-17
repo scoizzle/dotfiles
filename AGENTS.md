@@ -20,7 +20,7 @@ Dispatch only when it earns the tokens:
 - A broad lookup (a repo map, a multi-file grep) may go to the explore agent. It is read-only and returns findings and sources. Do not paste the repo into this context.
 - One reviewer, required for a sensitive change, and otherwise only when the user asks or after the same check has failed twice. It does not edit and does not rebuild. A second reviewer is not the default.
 
-If dispatch is unavailable, do the work yourself and say so. Do not block an ordinary edit on a missing dispatcher.
+If dispatch is unavailable, do the work yourself and say so. Do not block an ordinary edit on a missing dispatcher. For a sensitive change, unavailable dispatch is not a reason to skip the review or to review your own diff: stop and ask, leave the finished edits uncommitted, and report them as unreviewed. A child writer cannot ask, so it returns `unreviewed` to its parent.
 
 ## Safety
 
@@ -53,7 +53,7 @@ either one.
 
 ## Model choice
 
-Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.
+Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Family means vendor: `claude-agent/*` is one family, `opencode-go/*` and `xai/*` are others. `agents/review-deep.md` pins a Claude reviewer, so when the writer is also Claude, dispatch the review on a different-family model, in T3 Code by `delegate_task` with that target. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.
 
 ## Memory
 
