@@ -15,7 +15,7 @@ that every later session trusts).
 
 | Control | Where | Strength |
 | --- | --- | --- |
-| Reviewers and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
+| Reviewers, the advisor and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
 | `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
 | A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.grok/AGENTS.md`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |

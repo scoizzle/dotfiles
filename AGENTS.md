@@ -59,6 +59,8 @@ denied here and T3 has no merge action, so do not route around either one.
 
 Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Family means vendor: `claude-agent/*` is one family, `opencode-go/*` and `xai/*` are others. `agents/review-deep.md` pins a Claude reviewer, so when the writer is also Claude, dispatch the review on a different-family model, in T3 Code by `delegate_task` with that target. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.
 
+An advisory consult is required when a trigger fires, and is capped at two per change. The advisor triggers are finite and named: before implementing a plan with a design choice the writer cannot settle from the code — a public contract, a data shape, a new module or entry point, or a migration; after the same check has failed twice; before deleting, rewriting, or retargeting a test or a check; and before implementing a plan that will touch more than three source files (including tests and config) or change more than 400 lines (added plus removed, per `git diff --stat`). The consult is read-only, runs on `claude-agent/opus#medium` (`agents/advisor.md`), and asks for the risks, a simpler alternative, and the cases the plan misses. Record the answer in the reply. It never replaces the sensitive review, and it is not a tier: an ordinary change that trips no trigger gets no consult.
+
 ## Memory
 
 Durable memory is `~/.config/opencode/memory/` (this repo's `memory/`, linked

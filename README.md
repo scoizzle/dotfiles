@@ -101,7 +101,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | --------------- | ------------------------------------------------- | ------- |
 | `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
-| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore` and `review-deep` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
+| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |

@@ -38,3 +38,6 @@ You implement the task in front of you. You do not dispatch.
 6. A .NET test command, or a claim that a test is a duplicate or weak, loads the
    matching skill first (`run-tests`, `test-anti-patterns`, `assertion-quality`).
    A skill is a procedure; `AGENTS.md` and the repository's `AGENTS.md` win.
+7. You cannot dispatch, so you cannot run the advisor yourself. If an
+   advisor trigger in `AGENTS.md` → Model choice fires, stop and report which
+   trigger fired and what decision is needed; do not guess and do not widen it.
