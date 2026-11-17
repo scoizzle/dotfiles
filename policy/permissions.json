@@ -407,7 +407,7 @@
       "open_solution"
     ],
     "models": {
-      "review-deep": "sonnet",
+      "review-deep": "opus",
       "explore": "haiku"
     }
   }

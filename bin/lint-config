@@ -258,7 +258,7 @@ def check_shared_surfaces() -> None:
 
 
 EXPECTED_FALLBACK_MODELS = {
-    "review-deep": "sonnet",
+    "review-deep": "opus",
     "explore": "haiku",
 }
 
