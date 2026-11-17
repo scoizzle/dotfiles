@@ -9,9 +9,11 @@ You do the work. Do not dispatch a writer to avoid editing.
 Before the first edit, name the kind of change:
 
 - **Ordinary.** Do it. A behavior change gets a failing check first. Run it red, then green. Record the command and the exit code.
-- **Sensitive.** Auth, secrets, credentials, a schema or data migration, or a public contract: `agents/*`, `policy/*`, `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`. A CI workflow is not sensitive. Write the outcome, the done-when, and the red check in a few lines before editing. After the change, one independent read-only review (`agents/review-deep.md`), or say that no second model was available. Stop and ask before a change with no undo: a migration, a delete, or money.
+- **Sensitive.** Auth, secrets, credentials, a schema or data migration, or a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`, `evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`, `*.sln`, `*.slnx`, `*Dockerfile*`, `memory/core/*`. A CI workflow is not sensitive. Write the outcome, the done-when, and the red check in a few lines before editing. After the change, one independent read-only review (`agents/review-deep.md`), or say that no second model was available. A diff that touches these checks is reviewed against their base copies, and a rule it weakens is a 🔴 for a person to decide, not a finding the same reviewer may waive. Stop and ask before a change with no undo: a migration, a delete, or money.
 
-Green means the commit you name and a tree whose `git status` you have read. Never delete, skip, or weaken a test. If a test's expectation was wrong, say so and say why. A nit that does not break the done-when is reported, not fixed.
+Green means the commit you name and a tree whose `git status` you have read. Never delete, skip, weaken, or retarget a test to make a failing change pass. If a test's expectation was wrong, say so and say why. A nit that does not break the done-when is reported, not fixed.
+
+Test cleanup is its own change: a duplicate of a test that already covers the same assertion (name the test that remains), or a test for behaviour that no longer exists (say why nothing covers it). Never bundle a removal with the change it would unblock, and never remove the last test that covers a behaviour. Bulk-deleting a duplicate suite is allowed when each removal names its survivor. A flaky test you cannot root-cause: stop, write the constraint to `memory/learnings/`, and let a person delete it.
 
 Dispatch only when it earns the tokens:
 
@@ -85,6 +87,28 @@ Read files only for context Roslynk cannot provide, and for non-C# files. If no
 solution exists (file-based apps such as `install.cs`, `.csproj`-only trees) or
 `open_solution` fails, say so in one line and use normal file reads. Never imply
 Roslynk answered when it did not.
+
+### Skills
+
+Load the skill before the work it covers, not after:
+
+- `run-tests` — before running, quoting, or judging a .NET test command,
+  including filter syntax and how to read a failure.
+- `platform-detection` — before naming the runner (VSTest, bridged MTP, native
+  MTP). A `Microsoft.NET.Test.Sdk` reference, an existing `dotnet test` in CI, or
+  a previous successful run is not evidence of the platform.
+- `test-anti-patterns` and `assertion-quality` — before calling a test a
+  duplicate, weak, or safe to remove, and when a change removes, weakens, or
+  retargets a test. Editing test source without removing or weakening an
+  assertion does not need them.
+
+A skill is a procedure. This file and a repository's `AGENTS.md` win over it. If a
+skill is not loaded in this session, read
+`~/.config/opencode/skills/<name>/SKILL.md` (or `~/.claude/skills/<name>/SKILL.md`)
+and apply it; if neither is reachable, say so and use the rule in this file. A
+skill that routes to a sibling we do not have (`coverage-analysis`,
+`test-gap-analysis`, `test-tagging`, `crap-score`) is a missing tool, not a
+reason to invent one; say it is not installed.
 
 Read-only agents (`explore` and the review agents) use only the read-only Roslynk tools listed in
 the `roslynk-rules` skill, never the ones that write.

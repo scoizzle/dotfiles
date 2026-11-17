@@ -97,41 +97,26 @@ jobs:
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
-          for p in .claude/CLAUDE.md .grok/AGENTS.md .claude/skills/roslynk-rules .claude/commands/dream.md; do
+          for p in .claude/CLAUDE.md .grok/AGENTS.md .claude/commands/dream.md; do
             test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
             test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
           done
-          test -f "$HOME/.config/opencode/skills/roslynk-rules/SKILL.md"
+          for d in skills/*/; do
+            n=$(basename "$d")
+            p=".claude/skills/$n"
+            test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
+            test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
+            test -f "$HOME/.config/opencode/skills/$n/SKILL.md" || { echo "not linked: ~/.config/opencode/skills/$n/SKILL.md"; exit 1; }
+          done
           test -f "$HOME/.config/opencode/memory/INDEX.md"
           test -f "$HOME/.config/opencode/memory/core/conventions.md"
           test -f "$HOME/.config/opencode/memory/core/safety.md"
           test -f "$HOME/.config/opencode/memory/learnings/README.md"
 
-      # A wrong skill header fails silently in opencode, so assert the contract:
-      # name matches the directory and is a valid slug, description within bounds.
-      - name: skill frontmatter valid
-        run: |
-          python3 - <<'PY'
-          import pathlib, re, sys
-          p = pathlib.Path("skills/roslynk-rules/SKILL.md")
-          fm = p.read_text().split("---\n", 2)[1]
-          f = {
-              k: v
-              for k, v in (
-                  line.split(": ", 1)
-                  for line in fm.strip().splitlines()
-                  if ": " in line and not line.startswith((" ", "\t"))
-              )
-          }
-          checks = {
-              "name matches dir": f.get("name") == p.parent.name,
-              "name is a slug": bool(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", f.get("name", ""))),
-              "description bound": 1 <= len(f.get("description", "")) <= 1024,
-          }
-          for k, v in checks.items():
-              print(f"{'ok  ' if v else 'FAIL'} {k}")
-          sys.exit(0 if all(checks.values()) else 1)
-          PY
+      # A wrong skill header fails silently in opencode, so every skill is checked,
+      # not just roslynk-rules. tests/skills.py also enforces the vendored pin.
+      - name: skills valid
+        run: python3 tests/skills.py
 
       - name: python tools still parse
         run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness evals/cost.py evals/score.py evals/scoreboard.py
@@ -142,6 +127,7 @@ jobs:
           python3 tests/policy_render.py
           python3 tests/lint_config.py
           python3 tests/guard_windows.py
+          python3 tests/skills_negative.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke

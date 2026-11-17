@@ -64,7 +64,6 @@ def main() -> int:
         policy_path.write_text(original)
 
         agents_path = tree / "AGENTS.md"
-        agents_original = agents_path.read_text()
         build_path = tree / "agents" / "build.md"
         build_original = build_path.read_text()
 
@@ -89,7 +88,35 @@ def main() -> int:
             failed |= not expect("build denies edit", lint(tree), "edit must be allow")
         finally:
             build_path.write_text(build_original)
-            agents_path.write_text(agents_original)
+
+        verify_path = tree / "commands" / "verify.md"
+        for old in ("--show AGENTS.md", "--show agents/review-deep.md", "base copies"):
+            saved = verify_path.read_text()
+            try:
+                verify_path.write_text(saved.replace(old, ""))
+                failed |= not expect(f"verify.md lost {old!r}", lint(tree), "commands/verify.md")
+            finally:
+                verify_path.write_text(saved)
+
+        for name, needle in (
+            ("AGENTS.md", "### Skills"),
+            ("AGENTS.md", "run-tests"),
+            ("AGENTS.md", "platform-detection"),
+            ("AGENTS.md", "test-anti-patterns"),
+            ("AGENTS.md", "assertion-quality"),
+            ("agents/build.md", "run-tests"),
+            ("agents/implementor.md", "run-tests"),
+            ("agents/implementor.md", "assertion-quality"),
+            ("agents/verifier.md", "run-tests"),
+            ("agents/review-deep.md", "assertion-quality"),
+        ):
+            path = tree / name
+            saved = path.read_text()
+            try:
+                path.write_text(saved.replace(needle, "no-skill"))
+                failed |= not expect(f"{name} lost skill wiring {needle!r}", lint(tree), "skill wiring")
+            finally:
+                path.write_text(saved)
 
     print("FAIL" if failed else "ok")
     return 1 if failed else 0

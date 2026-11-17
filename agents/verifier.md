@@ -203,8 +203,10 @@ the callers of anything in it, not the paths it already covered.
      `~/.config/opencode/`, and report `Not run: docs/config-only`. Any `*.cs`,
      `*.csproj`, or test path means build.
    - **Otherwise** build, then run the tests for the changed area — the commands
-     the repository's `AGENTS.md` names, else the obvious ones for the stack. Do
-     not run the repository's full suite; the parent owns it at the pre-ship
+     the repository's `AGENTS.md` names, else the obvious ones for the stack. A
+     .NET repo's obvious command may be the wrong one: load `run-tests` before
+     choosing or quoting it (`platform-detection` when the runner is unclear).
+     Do not run the repository's full suite; the parent owns it at the pre-ship
      gate, so report `Not run: full suite (parent pre-ship gate)`. If a check
      cannot run, say so and treat it as unverified, never as passed.
    - **Failures are your first leads.** Start from each failing assertion and

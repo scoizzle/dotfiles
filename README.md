@@ -100,7 +100,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore` and `review-deep` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
-| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work   | opencode; `~/.claude/skills` |
+| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |

@@ -285,6 +285,24 @@ def check_instructions() -> None:
             fail(f"AGENTS.md: missing {needle!r}")
         if needle not in (ROOT / "agents" / "build.md").read_text():
             fail(f"agents/build.md: missing {needle!r}")
+    verify = (ROOT / "commands" / "verify.md").read_text()
+    for needle in (
+        "review-bundle . --show AGENTS.md --show agents/review-deep.md",
+        "base copies",
+    ):
+        if needle not in verify:
+            fail(f"commands/verify.md: missing {needle!r}; the reviewer loses the base rules it judges by")
+    for name, needles in (
+        ("AGENTS.md", ("### Skills", "run-tests", "platform-detection", "test-anti-patterns", "assertion-quality")),
+        ("agents/build.md", ("run-tests",)),
+        ("agents/implementor.md", ("run-tests", "assertion-quality")),
+        ("agents/verifier.md", ("run-tests",)),
+        ("agents/review-deep.md", ("assertion-quality",)),
+    ):
+        body = (ROOT / name).read_text()
+        for needle in needles:
+            if needle not in body:
+                fail(f"{name}: missing skill wiring {needle!r}")
 
 
 def main() -> int:
