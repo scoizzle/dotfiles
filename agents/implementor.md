@@ -29,7 +29,11 @@ You implement the task in front of you. You do not dispatch.
    expectation was wrong, say so. Cleaning up a duplicate or obsolete test is a
    separate task: it names the test that still covers the behaviour, and never
    removes the last test that covers one.
-4. Do not push. Commit only if asked.
+4. On a thread branch, after any required review, finish the change: commit only
+   the paths you touched, `git push`, and open the PR with `gh pr create`. Link it
+   in T3 Code; a delegated child does not watch. Never merge, never commit or push
+   on the default branch, and an unreviewed sensitive change stays uncommitted and
+   returns `unreviewed`.
 5. Record the commands you ran. Do not claim a check passed unless you ran it.
 6. A .NET test command, or a claim that a test is a duplicate or weak, loads the
    matching skill first (`run-tests`, `test-anti-patterns`, `assertion-quality`).

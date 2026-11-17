@@ -181,6 +181,30 @@ def main() -> int:
             finally:
                 agents_path.write_text(saved)
 
+        for name, needle, marker in (
+            ("AGENTS.md", "gh pr create", "open and watch its PR"),
+            ("AGENTS.md", "link_pull_request", "open and watch its PR"),
+            ("agents/build.md", "watch_pull_request", "open and watch its PR"),
+            ("agents/implementor.md", "gh pr create", "does not open its PR"),
+            ("agents/build.md", "after any required review", "unreviewed sensitive change"),
+            ("agents/implementor.md", "after any required review", "unreviewed sensitive change"),
+        ):
+            path = tree / name
+            saved = path.read_text()
+            try:
+                path.write_text(saved.replace(needle, "no-pr"))
+                failed |= not expect(f"{name} lost {needle!r}", lint(tree), marker)
+            finally:
+                path.write_text(saved)
+
+        saved = agents_path.read_text()
+        try:
+            agents_path.write_text(saved.replace(
+                "## Memory", "Do not stage, commit, or push unless asked.\n\n## Memory"))
+            failed |= not expect("AGENTS.md: old commit/push gate restored", lint(tree), "open and watch its PR")
+        finally:
+            agents_path.write_text(saved)
+
         for needle in ("required for a sensitive change", "never skip the review"):
             build_saved = build_path.read_text()
             try:
