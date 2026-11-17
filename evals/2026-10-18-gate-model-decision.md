@@ -1,17 +1,19 @@
 # Reviewer model decision — 2026-10-18
 
 > **Current pins (read this first).** This file is a dated log; Phases 3 and 4
-> were reversed by Phase 5. The standing state is in `AGENTS.md` (Model routing)
-> and the agent files. At the last re-pin (Phase 8):
+> were reversed by Phase 5, and several roles it names no longer exist. These are
+> the agents that exist today, at the model each `agents/*.md` file pins. The
+> standing state is `agents/*.md` and `opencode.json`; this table is a copy, and
+> a disagreement is resolved in their favour.
 >
-> | Role | Pin |
+> | Agent | Pin |
 > | --- | --- |
-> | `explore`, `review-light` | `opencode-go/mimo-v2.6-flash` |
-> | `build`, `plan`, `general`, `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
-> | `second-opinion` | `xai/grok-4.7#high` |
-> | `implement-deep` | `claude-agent/sonnet#medium` |
-> | `review-deep`, `plan-review-deep` | `claude-agent/sonnet#high` |
-> | `verifier` | `xai/grok-4.7#high`; `xai/grok-4.5` was dropped from the routable allowlist on 2026-11-08 for having no clean-case gate, and is re-added only after one passes |
+> | `build` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `implementor` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `explore` | `opencode-go/deepseek-v4.1-flash#low` |
+> | `dream-drafter` | `opencode-go/deepseek-v4.1-flash` |
+> | `review-deep` | `claude-agent/opus#medium` |
+> | `verifier` | `claude-agent/sonnet#high` |
 >
 > **Phase 6 corrects the money in Phases 3, 4 and 5.** Those dollar figures are
 > `session_v2.cost`, which opencode computes from list price, not an invoice.
@@ -545,3 +547,19 @@ cannot render Muse.
 Revisit when a second-opinion gate run on Muse Spark 1.3 Contributor misses a
 seeded 🟠 or 🔴 finding, or when `opencode-go/grok-4.7` is advertised again
 and the pin can be re-evaluated.
+
+## Phase 10 — ungated pins (2026-11-16)
+
+The default agent now edits and the dispatch graph is gone (`ca809b5`). The pins
+that came with that change have no gate run in this log:
+
+- `build`, `implementor`, `general` and `plan` on
+  `opencode-go/deepseek-v4.1-flash#low` (`ca809b5`).
+- `review-deep` on `claude-agent/opus#medium`, the model
+  `agents/review-deep.md` names.
+
+No case was scored on any of them, in any role. The writer eval
+(`evals/run-writer.sh`, documented in `evals/README.md`) exists to measure the
+first: the same bugged cases at `#low` and `#high`, several runs each, reported
+as `k/N` per case. Until that comparison is recorded here, the writer pin is a
+default, not a gated result.

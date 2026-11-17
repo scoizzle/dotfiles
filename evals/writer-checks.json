@@ -1,0 +1,45 @@
+{
+  "array-element-access": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/CSharpScriptTests/Run_ArrayIndex_*' --no-ansi",
+    "protect": [
+      "Poly.Tests/Interpretation/CSharpScriptTests.cs"
+    ]
+  },
+  "concat-nonstring-operand": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/CSharpScriptTests/Run_StringConcat_*' --no-ansi",
+    "protect": [
+      "Poly.Tests/Interpretation/CSharpScriptTests.cs"
+    ]
+  },
+  "createin-previous-stage": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/CreateInWatchedStageTests/*' --no-ansi && dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/EmitGoldenTests/*' --no-ansi",
+    "protect": [
+      "Poly.Tests/DomainModeling/Lowering/CreateInWatchedStageTests.cs",
+      "Poly.Tests/DomainModeling/Compile/EmitGolden/**"
+    ]
+  },
+  "for-zero-records-noop": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/*/ForEachInvoke_*' --no-ansi && dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/EmitGoldenTests/*' --no-ansi",
+    "protect": [
+      "Poly.Tests/DomainModeling/DomainEntityInstanceTests.cs",
+      "Poly.Tests/DomainModeling/Lowering/DomainToCSharpExporterTests.cs",
+      "Poly.Tests/DomainModeling/UniversityDogfoodTests.cs",
+      "Poly.Tests/DomainModeling/Analysis/UnwrittenRelationshipAnalysisTests.cs",
+      "Poly.Tests/DomainModeling/Compile/EmitGolden/**"
+    ]
+  },
+  "mcp-nav-rendering": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/InstanceRenderingTests/*' --no-ansi",
+    "protect": [
+      "Poly.Tests/Mcp/InstanceRenderingTests.cs"
+    ]
+  },
+  "storage-enum-backing-type": {
+    "check": "dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/SqlServerPackTests/*' --no-ansi && dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/SqlitePackTests/*' --no-ansi && dotnet run --project Poly.Tests/Poly.Tests.csproj -- --treenode-filter '/*/*/EmitGoldenTests/*' --no-ansi",
+    "protect": [
+      "Poly.Tests/DomainModeling/Lowering/SqlServerPackTests.cs",
+      "Poly.Tests/DomainModeling/Lowering/SqlitePackTests.cs",
+      "Poly.Tests/DomainModeling/Compile/EmitGolden/**"
+    ]
+  }
+}

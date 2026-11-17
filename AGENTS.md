@@ -28,6 +28,7 @@ If dispatch is unavailable, do the work yourself and say so. Do not block an ord
 - Keep diffs minimal and consistent with the surrounding code.
 - The explore agent and the review agents are read-only.
 - A one-click revert can proceed. Name cleanup before landing shared state or auth. Wait for a person when there is no undo.
+- A denied command or a blocked edit is a boundary, not an obstacle. Do not retry it in another spelling, tool or script; take a safer path or stop and ask.
 
 ## T3 Code
 
@@ -70,10 +71,11 @@ Never edit `memory/core/**`: conventions and safety. `opencode.json` denies
 `edit` there (edit, write, patch), but a shell command is matched as text, so
 this rule is what forbids a redirection into core.
 
-Durable discoveries go to `memory/learnings/` as short constraints (`never`,
-`known`, `derived`, with a `harness`, `loop`, or `graph` tag) under the version
-header in `memory/learnings/README.md`: who, when in UTC, session or context
-id, and source.
+Durable discoveries are appended to `memory/learnings/pending/YYYY-MM-DD.md`
+(UTC date) as short constraints (`never`, `known`, `derived`, with a `harness`,
+`loop`, or `graph` tag) under the version header in
+`memory/learnings/README.md`: who, when in UTC, session or context id, and
+source.
 
 `dream` stages its output in `memory/learnings/pending/`, which agents do not
 read; a person promotes it with `~/.config/opencode/bin/dream --promote`. Read

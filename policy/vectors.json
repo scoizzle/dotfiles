@@ -1860,6 +1860,45 @@
    "engines": [
     "guard"
    ]
+  },
+  {
+   "kind": "edit",
+   "input": "~/.config/opencode/bin/harness-guard",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "live harness configuration: the installed path is a link into the one checkout"
+  },
+  {
+   "kind": "edit",
+   "input": "~/dotfiles/policy/permissions.json",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "the checkout the installed paths resolve to; verifier still denies every edit"
+  },
+  {
+   "kind": "edit",
+   "input": "some/other/checkout/bin/harness-guard",
+   "expect": "allow",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "another checkout is not live configuration; the guard's realpath check is what makes this true there too"
   }
  ]
 }

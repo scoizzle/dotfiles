@@ -16,7 +16,7 @@ Lessons are constraints, not transcripts. A line is `never:` (dead approach), `k
 
 ## Where this sits on the ladder
 
-Harness notes often stack the work in levels: memory, then loops and gates, then a learning pass that feeds the next cut. This change is Level 2 memory and Level 7 learning. Loops and gates already live in `AGENTS.md` (tiers, review, the fix cap).
+Harness notes often stack the work in levels: memory, then loops and gates, then a learning pass that feeds the next cut. This change is Level 2 memory and Level 7 learning. Loops and gates already live in `AGENTS.md` (an ordinary change, a sensitive change, the one reviewer, and the rule that a nit is reported rather than fixed).
 
 A failure paid for inside a session is written down as a constraint. The next session can load it from the bookshelf, so the same class of failure does not cost a second full pass.
 
@@ -71,7 +71,7 @@ From a machine that has run `./install.cs`:
 ~/.config/opencode/bin/dream --source t3
 ```
 
-`--since` defaults to `24h` (`Nh`, `Nd`, `Nm`, or an ISO date interpreted as UTC). `--sessions` caps how many sessions in that window are read (default 50). `--db` overrides the opencode store, `--t3-db` the T3 store, and `--source` picks the modes above. `--dry-run` prints the proposed append and does not write.
+`--since` defaults to `24h` (`Nh`, `Nd`, `Nm`, or an ISO date interpreted as UTC). `--sessions` caps how many sessions in that window are read (default 50). `--db` overrides the opencode store, `--t3-db` the T3 store, and `--source` picks the modes above. `--dry-run` prints the proposed append and does not write. `--no-user-text` keeps user message heads out of the digest that is sent to the drafting model.
 
 The session store is the one `evals/scoreboard.py` opens: `~/.local/share/opencode/opencode.db`, table `session_v2`, messages in `session_message`. The T3 store defaults to `~/.t3/userdata/statev2.sqlite`. A missing store prints that path and appends nothing. It is an empty machine, not a crash.
 
@@ -82,6 +82,20 @@ opencode run --standalone --format json --agent dream-drafter -m opencode-go/dee
 ```
 
 `dream-drafter` denies every tool and there is no `--auto`, because the digest quotes tool output and error text that a third party may have written. Before the prompt leaves the machine the digest is redacted for credential shapes and framed as untrusted data; every returned line is length-limited and checked for URLs, fetch-and-run, and injection phrasing. See `docs/security-model.md`.
+
+The digest is the only thing the drafter sees. It lists what failed, what recovered, and what the person said after the first message:
+
+| section | drawn from |
+| --- | --- |
+| repeated failures, flaky commands, missing paths, sessions that ended failed, single failures | shell and tool errors in the window |
+| recoveries | per session, the first shell command that failed and the first shell command that completed after it |
+| user follow-ups | each user message after the first in a top-level session, whichever words it opens with |
+
+Each section is bounded: eight recoveries; twenty follow-ups, newest session first and deduplicated, each cut at 200 characters. The existing "possible workarounds" section stays separate from recoveries. Every section goes through the same redaction and the same frame-closing replacement, and the whole digest is capped at 12000 characters, so a very long digest loses its tail.
+
+User message heads, redacted and cut at 200 characters, are now part of the digest sent to the drafter's provider. `--no-user-text` leaves them out, so a person can keep their own words off the machine-bound prompt.
+
+A lesson may come from either half. A preference a person stated after the session's first message is usually a `known:` line, or a `derived:` line when it changes how the next piece of work is cut. A failure followed by a command that worked can be a `never:` line for the dead approach, with the working command as its remedy.
 
 ### Staging and promotion
 
@@ -114,4 +128,4 @@ It lives in T3's userdata, not in git, so it does not travel with this repo and 
 
 Pick one scheduler per machine. Cron plus a T3 job means two appends into the same dated pending file, and dream's optimistic-concurrency check will start refusing writes. If T3's scheduler is off for a while, the daily window is `--since 24h`, so the next run only sees the last day; pass `--since` to backfill.
 
-`/dream` is the in-session reminder to use that command later. It is not a step inside T0, T1, or T2 work.
+`/dream` is the in-session reminder to use that command later. It is not a step inside an ordinary or sensitive change.

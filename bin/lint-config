@@ -277,6 +277,64 @@ def check_fallback_models() -> None:
                  "the native fallback map changed without updating bin/lint-config")
 
 
+def sandbox_reaches(entry: str, location: str) -> bool:
+    """True when a write allowed at `entry` reaches `location`: the same path, inside it, or above it."""
+    entry, location = entry.rstrip("/"), location.rstrip("/")
+    if entry == location:
+        return True
+    if location == "~":
+        # Every legitimate write path is inside the home, so only the home itself
+        # (equal to "~") defeats the boundary. Writing it is writing everything.
+        return False
+    return entry.startswith(location + "/") or location.startswith(entry + "/")
+
+
+def check_sandbox() -> None:
+    """The opt-in sandbox profile: lists are strings, domains and names are shaped, every protected path is denied."""
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    section = policy.get("sandbox")
+    if not isinstance(section, dict):
+        fail("policy sandbox: missing; bin/sync-harness --scope sandbox needs it")
+        return
+    for key in ("allow_write", "allowed_domains", "env_vars", "excluded_commands"):
+        value = section.get(key)
+        if not isinstance(value, list) or not value:
+            fail(f"policy sandbox.{key} must be a non-empty list of strings")
+            continue
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                fail(f"policy sandbox.{key} has an empty or non-string entry: {item!r}")
+    for domain in section.get("allowed_domains") or []:
+        if isinstance(domain, str) and ("://" in domain or "/" in domain or re.search(r"\s", domain)):
+            fail(f"policy sandbox.allowed_domains: {domain!r} has a scheme, path or whitespace")
+    for name in section.get("env_vars") or []:
+        if isinstance(name, str) and not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name):
+            fail(f"policy sandbox.env_vars: {name!r} is not an uppercase variable name")
+    # A sandboxed command that can write a location whose contents run or are
+    # loaded outside the sandbox can replace what runs there later, so the write
+    # allowance would hold for one command and not the next.
+    control_plane = policy.get("control_plane", {})
+    outside = ["~", "~/.dotnet", "~/.local/bin", "~/.config/opencode", "~/.claude", "~/.grok"]
+    outside += list(control_plane.get("installed", [])) + list(control_plane.get("checkouts", []))
+    outside = list(dict.fromkeys(location.rstrip("/") for location in outside))
+    for entry in section.get("allow_write") or []:
+        if not isinstance(entry, str):
+            continue
+        for location in outside:
+            if sandbox_reaches(entry, location):
+                fail(f"policy sandbox.allow_write: {entry!r} reaches {location!r}, whose contents run "
+                     f"or are loaded outside the sandbox; a sandboxed command could replace something "
+                     f"that runs unsandboxed")
+                break
+    sync = load_script("sync-harness")
+    sandbox = sync.render_sandbox(policy)["sandbox"]
+    denied = {entry["path"] for entry in sandbox["credentials"]["files"] if entry["mode"] == "deny"}
+    denied |= set(sandbox["filesystem"]["denyRead"])
+    for entry in policy["protected"]["paths"]:
+        if entry.rstrip("/") not in denied:
+            fail(f"the sandbox profile has no read deny for protected path {entry}")
+
+
 def check_instructions() -> None:
     """The AGENTS.md every harness loads states the short contract, not a dispatch graph."""
     text = (ROOT / "AGENTS.md").read_text()
@@ -292,6 +350,8 @@ def check_instructions() -> None:
         fail("agents/build.md: missing the T3 Code pointer; the default agent falls back to shell git")
     if "ends the live session" not in text:
         fail("AGENTS.md: t3_worktree_handoff must say it ends the live session")
+    if "boundary, not an obstacle" not in text:
+        fail("AGENTS.md: missing 'boundary, not an obstacle'; a denied command reads as an obstacle to route around")
     for needle in (
         "this review is required",
         "different family than the one that wrote the diff",
@@ -452,6 +512,7 @@ def main() -> int:
     check_policy(agents)
     check_shared_surfaces()
     check_fallback_models()
+    check_sandbox()
     check_instructions()
 
     for rel in ("AGENTS.md", "opencode.json", "agents", "commands", "skills", "bin/dream", "bin/review-bundle", "memory/core", "memory/INDEX.md"):

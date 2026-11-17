@@ -5,6 +5,8 @@
     sync-harness --apply              # write it
     sync-harness --scope repo|home|all
     sync-harness --scope managed      # print the root-owned rules to install; writes nothing
+    sync-harness --scope sandbox      # print the opt-in Claude Code sandbox profile; writes nothing
+    sync-harness --scope home --apply --sandbox   # opt in to that profile in ~/.claude/settings.json
     sync-harness --home DIR           # act on DIR instead of $HOME (tests)
 
 Targets:
@@ -21,10 +23,15 @@ Targets:
          root-owned /Library/Application Support/ClaudeCode/managed-settings.json,
          which both harnesses read in every folder, and the sudo command a person
          runs. It carries rules only.
+  sandbox  opt-in, never part of `all`, writes nothing: prints the Claude Code
+         Bash-sandbox profile as one settings fragment. A plain --apply never
+         touches the sandbox key; `--scope home --apply --sandbox` merges it.
 
 The home merge is additive and idempotent: it adds missing rules, replaces its own
 hook entry (found by the `harness-guard` command name), and keeps everything else.
 It backs the file up before writing. Retired rules are not removed automatically.
+The sandbox merge is additive too: scalars are set from the fragment and lists are
+unioned, so nothing the user added is removed.
 """
 from __future__ import annotations
 
@@ -75,7 +82,16 @@ def render_opencode(policy: dict) -> list[dict]:
         out += [rule("read", f"**/{allowed}", "allow"), rule("read", allowed, "allow")]
     for d in policy["no_edit"]:
         out += [rule("edit", f"{d}/*", "deny"), rule("edit", f"*/{d}/*", "deny")]
+    out += [rule("edit", path + "*" if path.endswith("/") else path, "ask") for path in control_plane_paths(policy)]
     return dedupe(out)
+
+
+def control_plane_paths(policy: dict) -> list[str]:
+    """The installed live-configuration paths, then every checkout joined with the repo paths."""
+    section = policy["control_plane"]
+    paths = list(section["installed"])
+    paths += [f"{checkout.rstrip('/')}/{rel}" for checkout in section["checkouts"] for rel in section["repo_paths"]]
+    return list(dict.fromkeys(paths))
 
 
 def shell_rules(policy: dict) -> list[dict]:
@@ -98,6 +114,12 @@ def dedupe(rules: list[dict]) -> list[dict]:
 
 def render_native(policy: dict) -> dict:
     ask = [n for r in policy["shell"]["ask"] for n in r["native"]]
+    # Edit(path) only: Claude Code reports that a Write(path) rule is not matched
+    # by its file permission checks, and Edit(path) covers every file-editing
+    # tool, so a Write(...) twin here is dead and only adds a startup warning.
+    for path in control_plane_paths(policy):
+        target = path + "**" if path.endswith("/") else path
+        ask.append(f"Edit({target})")
     deny = [n for r in policy["shell"]["deny"] for n in r["native"]]
     prot = policy["protected"]
     for entry in prot["paths"]:
@@ -117,6 +139,55 @@ def dump_opencode(config: dict) -> str:
         text,
     )
     return text + "\n"
+
+
+def render_sandbox(policy: dict) -> dict:
+    """The opt-in Claude Code Bash-sandbox profile, as one settings fragment.
+
+    Keys and shapes follow https://code.claude.com/docs/en/sandboxing and the
+    settings reference. Only shell commands run inside this sandbox; the file and
+    web tools, MCP servers and hooks do not. Every protected path is denied for
+    reads: plain paths through `credentials.files`, wildcard entries through
+    `filesystem.denyRead`. Claude Code strips a trailing slash from a directory
+    path, so directory entries are written without one.
+    """
+    section = policy["sandbox"]
+    protected = policy["protected"]["paths"]
+    files = [{"path": entry.rstrip("/"), "mode": "deny"} for entry in protected if "*" not in entry]
+    deny_read = [entry for entry in protected if "*" in entry]
+    return {"sandbox": {
+        "enabled": True,
+        "allowUnsandboxedCommands": False,
+        "excludedCommands": list(section["excluded_commands"]),
+        "filesystem": {
+            "allowWrite": list(section["allow_write"]),
+            "denyRead": deny_read,
+        },
+        "credentials": {
+            "files": files,
+            "envVars": [{"name": name, "mode": "deny"} for name in section["env_vars"]],
+        },
+        "network": {"allowedDomains": list(section["allowed_domains"])},
+    }}
+
+
+def merge_sandbox(settings: dict, fragment: dict) -> dict:
+    """`settings` with `fragment` merged in: dicts merge, list keys union, scalars replace."""
+    out = json.loads(json.dumps(settings))
+    out["sandbox"] = merge_block(out.get("sandbox"), fragment["sandbox"])
+    return out
+
+
+def merge_block(have, want):
+    """The merge rule: a list keeps the user's entries first and adds the missing ones."""
+    if isinstance(have, dict) and isinstance(want, dict):
+        out = dict(have)
+        for key, value in want.items():
+            out[key] = merge_block(have.get(key), value)
+        return out
+    if isinstance(have, list) and isinstance(want, list):
+        return have + [item for item in want if item not in have]
+    return want
 
 
 def verifier_block(policy: dict) -> str:
@@ -271,15 +342,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="write the changes (default: only report drift)")
     parser.add_argument("--check", action="store_true", help="report drift (the default)")
-    parser.add_argument("--scope", choices=("repo", "home", "all", "managed"), default="all")
+    parser.add_argument("--scope", choices=("repo", "home", "all", "managed", "sandbox"), default="all")
+    parser.add_argument("--sandbox", action="store_true",
+                        help="merge the opt-in Claude Code sandbox profile into the home settings (with --scope home or all)")
     parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
     parser.add_argument("--repo", default=str(ROOT), help="repo to act on (default this repo)")
     args = parser.parse_args()
+    if args.sandbox and args.scope not in ("home", "all"):
+        parser.error("--sandbox applies to --scope home (or all); --scope sandbox already previews the fragment")
     repo, home = Path(args.repo), Path(args.home)
     policy = json.loads((repo / "policy" / "permissions.json").read_text())
 
     if args.scope == "managed":
         print_managed(policy)
+        return 0
+
+    if args.scope == "sandbox":
+        print(json.dumps(render_sandbox(policy), indent=2, ensure_ascii=False))
         return 0
 
     drift = False
@@ -313,6 +392,17 @@ def main() -> int:
         elif state != "ok":
             print(f"note    roslynk MCP for Claude Code: {state}")
         path, want, notes = home_target(policy, home)
+        current = json.loads(want)
+        if args.sandbox:
+            merged = merge_sandbox(current, render_sandbox(policy))
+            if merged["sandbox"] != current.get("sandbox"):
+                notes.append("sandbox: profile not in sync")
+                want = json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
+            else:
+                print("ok      sandbox: profile in sync")
+        else:
+            print("note    sandbox: profile not managed; preview with --scope sandbox, "
+                  "opt in with --scope home --apply --sandbox")
         if not notes:
             print(f"ok      {path}")
         else:

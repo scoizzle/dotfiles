@@ -20,7 +20,10 @@ add to `~/.claude/settings.json`, then `--apply`. Grok Build reads that same fil
 the rules everywhere, and the `harness-guard` hook in folders it trusts.
 One `AGENTS.md` is loaded by all three: `install.cs` also links it as
 `~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
-[`docs/security-model.md`](docs/security-model.md).
+[`docs/security-model.md`](docs/security-model.md). An opt-in Claude Code sandbox
+profile for shell commands lives in the same policy: preview it with
+`bin/sync-harness --scope sandbox`, and opt in with `--scope home --apply
+--sandbox`.
 
 ## Default agent
 
