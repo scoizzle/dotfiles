@@ -49,7 +49,7 @@ def main() -> int:
 
         policy_path = tree / "policy" / "permissions.json"
         original = policy_path.read_text()
-        for name in ("explore", "review-deep"):
+        for name in ("explore", "review-deep", "advisor"):
             policy = json.loads(original)
             current = policy["readonly_agents"]["models"][name]
             policy["readonly_agents"]["models"][name] = "opus" if current != "opus" else "haiku"
@@ -136,6 +136,36 @@ def main() -> int:
                 failed |= not expect(f"{name} lost skill wiring {needle!r}", lint(tree), "skill wiring")
             finally:
                 path.write_text(saved)
+
+        for name, needle in (
+            ("AGENTS.md", "An advisory consult is required"),
+            ("AGENTS.md", "capped at two per change"),
+            ("AGENTS.md", "claude-agent/opus#medium"),
+            ("AGENTS.md", "never replaces the sensitive review"),
+            ("agents/build.md", "advisor triggers"),
+            ("agents/build.md", "at most twice"),
+            ("agents/implementor.md", "cannot dispatch"),
+            ("agents/implementor.md", "advisor trigger"),
+        ):
+            path = tree / name
+            saved = path.read_text()
+            try:
+                path.write_text(saved.replace(needle, "nothing"))
+                failed |= not expect(f"{name} lost the advisor rule ({needle!r})", lint(tree), "advisor")
+            finally:
+                path.write_text(saved)
+
+        for name in ("AGENTS.md", "agents/build.md"):
+            path = tree / name
+            for stale in ("Tier: T0", "plan-review-deep", "second-opinion", "review-light"):
+                saved = path.read_text()
+                try:
+                    path.write_text(saved.replace("## Memory", f"{stale}\n\n## Memory", 1)
+                                    if name == "AGENTS.md" else saved + f"\n{stale}\n")
+                    failed |= not expect(f"{name}: retired tier cascade restored ({stale!r})",
+                                         lint(tree), "retired tier cascade")
+                finally:
+                    path.write_text(saved)
 
         build_path = tree / "agents" / "build.md"
         saved = build_path.read_text()
