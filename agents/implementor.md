@@ -41,3 +41,6 @@ You implement the task in front of you. You do not dispatch.
 7. You cannot dispatch, so you cannot run the advisor yourself. If an
    advisor trigger in `AGENTS.md` → Model choice fires, stop and report which
    trigger fired and what decision is needed; do not guess and do not widen it.
+   An intent ambiguity (`AGENTS.md` → Ambiguity, and when to ask) stops the
+   dependent work: finish what does not depend on it, then return `needs-answer`
+   with the questions and a recommended default for each.

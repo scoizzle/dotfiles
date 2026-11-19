@@ -155,6 +155,42 @@ def main() -> int:
             finally:
                 path.write_text(saved)
 
+        for name, needle in (
+            ("AGENTS.md", "### Ambiguity, and when to ask"),
+            ("AGENTS.md", "Keep going when the choice is cheap to reverse"),
+            ("AGENTS.md", "ask the person, not a model"),
+            ("AGENTS.md", "not intent stays with the Model choice trigger"),
+            ("AGENTS.md", "An ambiguity is intent, not design"),
+            ("AGENTS.md", "Intent goes to the person every time"),
+            ("AGENTS.md", "the required consult still runs"),
+            ("AGENTS.md", "Put the questions in one ask"),
+            ("AGENTS.md", "never remove one"),
+            ("AGENTS.md", "`proceed` never answers a question"),
+            ("AGENTS.md", "no consult may authorize"),
+            ("AGENTS.md", "never changes the default, which is to ask"),
+            ("AGENTS.md", "stops before the dependent work"),
+            ("AGENTS.md", "takes it to the person"),
+            ("AGENTS.md", "`needs-answer`"),
+            ("AGENTS.md", "Reuse the existing"),
+            ("agents/build.md", "Ambiguity, and when to ask"),
+            ("agents/build.md", "An intent ambiguity"),
+            ("agents/build.md", "the required consult still runs"),
+            ("agents/build.md", "`needs-answer`"),
+            ("agents/build.md", "never answer it yourself"),
+            ("agents/implementor.md", "`needs-answer`"),
+            ("agents/implementor.md", "finish what does not depend on it"),
+            ("agents/advisor.md", "never an answer to intent"),
+            ("agents/advisor.md", "never authorize a choice"),
+        ):
+            path = tree / name
+            saved = path.read_text()
+            try:
+                path.write_text(saved.replace(needle, "nothing"))
+                failed |= not expect(f"{name} lost the ambiguity rule ({needle!r})",
+                                     lint(tree), "escalation has no route")
+            finally:
+                path.write_text(saved)
+
         for name in ("AGENTS.md", "agents/build.md"):
             path = tree / name
             for stale in ("Tier: T0", "plan-review-deep", "second-opinion", "review-light"):

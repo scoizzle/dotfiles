@@ -29,7 +29,8 @@ If dispatch is unavailable, do the work yourself and say so. Do not block an ord
   never `git add -A`, and never on the default branch. `git push` is ask. Force,
   delete, mirror, and `+refspec` pushes are denied, and a merge is a person's
   click.
-- Keep diffs minimal and consistent with the surrounding code.
+- Keep diffs minimal and consistent with the surrounding code. Reuse the existing
+  symbol, helper, or rule before adding a parallel one, and say which one you reused.
 - The explore agent and the review agents are read-only.
 - A one-click revert can proceed. Name cleanup before landing shared state or auth. Wait for a person when there is no undo.
 - A denied command or a blocked edit is a boundary, not an obstacle. Do not retry it in another spelling, tool or script; take a safer path or stop and ask.
@@ -60,6 +61,30 @@ denied here and T3 has no merge action, so do not route around either one.
 Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Family means vendor: `claude-agent/*` is one family, `opencode-go/*` and `xai/*` are others. `agents/review-deep.md` pins a Claude reviewer, so when the writer is also Claude, dispatch the review on a different-family model, in T3 Code by `delegate_task` with that target. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.
 
 An advisory consult is required when a trigger fires, and is capped at two per change. The advisor triggers are finite and named: before implementing a plan with a design choice the writer cannot settle from the code — a public contract, a data shape, a new module or entry point, or a migration; after the same check has failed twice; before deleting, rewriting, or retargeting a test or a check; and before implementing a plan that will touch more than three source files (including tests and config) or change more than 400 lines (added plus removed, per `git diff --stat`). The consult is read-only, runs on `claude-agent/opus#medium` (`agents/advisor.md`), and asks for the risks, a simpler alternative, and the cases the plan misses. Record the answer in the reply. It never replaces the sensitive review, and it is not a tier: an ordinary change that trips no trigger gets no consult.
+
+### Ambiguity, and when to ask
+
+Keep going when the choice is cheap to reverse and the repository settles it; state
+the assumption in the reply that first uses it. Ask when the ambiguity is intent and
+the repository does not settle it — and ask the person, not a model. Design that is
+not intent stays with the Model choice trigger above.
+
+An ambiguity is intent, not design, when two readings would produce different
+user-visible behaviour, or a different public contract or a public data shape.
+Intent goes to the person every time; when a design trigger is also intent, the
+person decides and the required consult still runs but may only frame it.
+
+Put the questions in one ask, each with a recommended default, and keep working on
+whatever does not depend on an answer. A question names the search that failed, when
+there was one: what was checked, and why it did not settle the point.
+
+A consult never answers the question: its verdict can add a stop, never remove one,
+`proceed` never answers a question about intent, and no consult may authorize a
+choice with no undo — a migration, a delete, a public contract, money.
+
+Running out of consults or advisors never changes the default, which is to ask. A run
+that cannot ask stops before the dependent work. A child returns `needs-answer` to its
+parent as a status beside `unreviewed`; the parent takes it to the person.
 
 ## Memory
 
