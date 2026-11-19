@@ -101,7 +101,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | --------------- | ------------------------------------------------- | ------- |
 | `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
-| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered for Claude Code and Grok | opencode; `~/.claude/agents` |
+| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
@@ -112,10 +112,14 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 
 `install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
 must be merged into files you also edit: `~/.claude/settings.json` (rules and the
-`harness-guard` hook, which Grok reads too in folders it trusts), the reviewers under `~/.claude/agents`,
+`harness-guard` hook, which Grok reads too in folders it trusts), the read-only
+reviewers and the native `implementor`/`verifier` under `~/.claude/agents`,
 and the Roslynk MCP registration for Claude Code. Grok's own `config.toml` is never
 touched. Run `./install.cs` and then `~/.config/opencode/bin/sync-harness` (report)
-and `--apply`; both are safe to repeat. Verify what Grok actually loads with
+and `--apply`; both are safe to repeat. `--scope grok` reports whether the current
+checkout is a trusted Grok folder, which is what makes Grok load the project
+`AGENTS.md` and the hook; it prints the `grok --trust` command and writes nothing,
+because trusting a folder is your decision. Verify what Grok actually loads with
 `grok inspect` in a trusted folder.
 
 How the bookshelf and the out-of-band dream pass fit together is in

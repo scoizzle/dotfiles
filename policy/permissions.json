@@ -470,5 +470,24 @@
       "advisor": "opus",
       "explore": "haiku"
     }
+  },
+  "native_agents": {
+    "doc": "Agents rendered for the native harnesses beside readonly_agents. Claude Code loads them from ~/.claude/agents; Grok Build reads that directory through its Claude compatibility layer. `build` is deliberately absent: a rendered build is a dispatchable writer, which AGENTS.md forbids, and a native main session already gets its rules from the worktree's AGENTS.md. A null model or tools means the harness default, so implementor inherits the session model; verifier keeps the opencode sonnet pin and an explicit allowlist that mirrors its opencode denies (no edit, no subagent, no web) plus the Roslynk read tools. Every native agent also gets `disallowedTools` derived from its source agent's denies, so implementor loses Task/Agent/WebFetch/WebSearch while still inheriting Bash and edit. implementor is a dispatchable writer on purpose: it is the one bounded task agent; build is not. Bash stays in verifier's list, so its git boundary is the prompt, not the allowlist: Claude Code agent frontmatter has no per-command permission rules.",
+    "agents": {
+      "implementor": {
+        "model": null,
+        "tools": null
+      },
+      "verifier": {
+        "model": "sonnet",
+        "tools": [
+          "Bash",
+          "Read",
+          "Grep",
+          "Glob",
+          "Skill"
+        ]
+      }
+    }
   }
 }
