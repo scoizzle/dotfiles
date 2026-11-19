@@ -56,6 +56,9 @@ shell is the fallback for both.
 A delegated child never watches. A merge is a person's click: `gh pr merge` is
 denied here and T3 has no merge action, so do not route around either one.
 
+When a dispatch names a bot and a thread id and that bot's webhook is configured, run
+`notify-bot <BOT> <status> "<one-line summary>" <thread-id>` at the end (`~/.local/bin/notify-bot` if it is not on PATH); a delegated child does not send it, a notify failure never fails or extends the task, and never print or debug the secret.
+
 ## Model choice
 
 Use the session model. A lookup may use a cheaper model when one is already configured. A sensitive review must use a different model family than the one that wrote the diff. Family means vendor: `claude-agent/*` is one family, `opencode-go/*` and `xai/*` are others. `agents/review-deep.md` pins a Claude reviewer, so when the writer is also Claude, dispatch the review on a different-family model, in T3 Code by `delegate_task` with that target. Do not stop to ask about model fallbacks for anything else; the one exception is this review, which stops for a person rather than borrowing the writer's family.

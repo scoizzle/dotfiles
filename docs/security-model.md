@@ -17,16 +17,25 @@ that every later session trusts).
 | --- | --- | --- |
 | Reviewers, the advisor and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
 | `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
-| A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.grok/AGENTS.md`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
+| A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.local/bin/notify-bot`, `~/.grok/AGENTS.md`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |
 | `dream` drafts with `dream-drafter` (no tools) and without `--auto` | `bin/dream`, `agents/dream-drafter.md` | Tool-level. |
 | The digest is redacted, framed as untrusted, and every returned line is validated | `bin/dream` | Heuristic. Drops, does not repair. |
 | Drafted lessons are staged in `memory/learnings/pending/` and reach agents only through `dream --promote`, which needs a person | `bin/dream` | Human gate. |
 | `dream` never writes `memory/core/`; `--promote` also rewrites only `memory/learnings/working.md`, from the dated archive, after the same confirmation | `bin/dream` | Path allowlist in `assert_working_target`. |
+| The Grok Bot webhook file (`~/.config/bot-webhooks/env`) is a credential store: the read tools and the shell globs deny it, and the sandbox denies it | `policy/permissions.json` `protected.paths`, rendered into the rules and the sandbox | Tool-level for the read tools; text globs plus `harness-guard` for shell. `notify-bot` is an `excluded_commands` entry so the sandboxed shell can still read the file it owns and POST. |
 
 `bin/lint-config` runs in CI and evaluates concrete commands and paths against each
 agent's effective rules. It exists because a rule order bug is invisible by reading:
 the `verifier`'s `shell *: allow` used to erase every global shell deny.
+
+The webhook setup writes one managed block into the shell rc files that sources the
+0600 file, so an interactive shell has `<BOT>_WEBHOOK_AUTH` exported. That is
+deliberate and it is an exposure: `printenv` shows it, and the rules match commands
+and paths, not variable expansion. `notify-bot` reads the file itself instead of the
+environment, so a stale export cannot win and a test process that inherits an export
+cannot redirect a send. It pins the default to the account home from the password
+database, so `$HOME` cannot move it.
 
 ## One policy, three harnesses
 
@@ -224,6 +233,13 @@ unattended sessions with `--auto`.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.
+- The sandbox excludes `notify-bot` (the bare name and the `~/.local/bin` forms) so
+  it can read its config and reach the bot host. The config path is the account home
+  from the password database, so `$HOME` cannot move it; `bin/setup-bot-webhooks`
+  honors `BOT_WEBHOOKS_ENV`/`--env` because a person runs it, but a non-default path
+  is a test path and `notify-bot` will not read it. `bin/` and
+  `~/.local/bin/notify-bot` are control-plane paths, so an edit to the helper is
+  `ask`. The rules and the hook still judge the command line.
 - Claude Code reports that a `Write(path)` permission rule is not matched by its
   file permission checks — only `Edit(path)` is, and `Edit` rules cover all
   file-editing tools. The committed `Write(**/memory/core/**)` deny is therefore

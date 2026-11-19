@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Post a completion callback to a Grok Bot webhook.
+
+    notify-bot <bot> <status> "<summary>" [thread-id]
+    notify-bot --test <bot>
+    notify-bot --list
+
+The values live in ~/.config/bot-webhooks/env, mode 0600. The path is the real
+user home from the password database, not $HOME, so a sandboxed caller cannot
+move it. The file is the only source: notify-bot does not read
+<BOT>_WEBHOOK_* from the environment, so a stale export cannot win.
+
+Nothing here prints a webhook URL or an Authorization value. The URL is treated
+as a secret too, because many webhook URLs carry a capability token.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import sys
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import (
+    HTTPRedirectHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
+
+try:
+    import pwd
+except ImportError:  # Windows native is unsupported; keep the module importable.
+    pwd = None
+
+# The one bot list. Adding a bot is one line here; setup and notify-bot both use it.
+BOTS = (
+    "JARVIS",
+    "ENGINEERING_LEAD",
+    "VENTURE",
+    "HERALD",
+    "EDWARD",
+    "PATRON",
+    "FORGE",
+    "SWE",
+)
+
+TIMEOUT = 10
+SCHEMES = {"bearer", "basic", "token", "digest", "apikey"}
+
+
+class ConfigError(Exception):
+    """The webhook file could not be read."""
+
+
+class DeliveryError(Exception):
+    """The POST failed. Its message never contains the URL or the auth value."""
+
+
+class NoRedirect(HTTPRedirectHandler):
+    """Refuse redirects so an Authorization header cannot travel to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def real_home() -> Path:
+    """The account home from the password database; $HOME is caller-controlled."""
+    if pwd is not None:
+        try:
+            return Path(pwd.getpwuid(os.getuid()).pw_dir)
+        except (KeyError, OSError):
+            pass
+    return Path.home()
+
+
+def default_env_path() -> Path:
+    return real_home() / ".config" / "bot-webhooks" / "env"
+
+
+def normalize_auth(value: str) -> str:
+    """A full header value is kept; a bare key gets `Bearer `. Control characters are refused."""
+    value = value.strip()
+    if value.lower().startswith("authorization:"):
+        value = value.split(":", 1)[1].strip()
+    if not value:
+        raise ValueError("empty authorization value")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("authorization value contains a control character")
+    match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*)\s+", value)
+    if match and match.group(1).lower() in SCHEMES:
+        return value
+    return "Bearer " + value
+
+
+def url_problem(url: str) -> str | None:
+    """Why this URL is not safe to POST to, or None. Plain http is loopback-only."""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        return "URL must start with http:// or https://"
+    if not parts.netloc:
+        return "URL has no host"
+    if parts.scheme == "http" and parts.hostname not in ("127.0.0.1", "::1", "localhost"):
+        return "refusing plain http to a non-loopback host; use https"
+    return None
+
+
+def load_config(path: Path | None = None) -> dict[str, str]:
+    """Parse the 0600 file without sourcing it. Values are shell-quoted by the writer."""
+    path = path or default_env_path()
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {type(exc).__name__}") from None
+
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, separator, raw = line.partition("=")
+        if not separator:
+            continue
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            continue
+        values[key.strip()] = parts[0] if len(parts) == 1 else " ".join(parts)
+    return values
+
+
+def bot_key(name: str) -> str | None:
+    key = name.strip().upper().replace("-", "_")
+    return key if key in BOTS else None
+
+
+def configured_bots(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    values = load_config(path)
+    out = {}
+    for key in BOTS:
+        url = values.get(f"{key}_WEBHOOK_URL", "")
+        auth = values.get(f"{key}_WEBHOOK_AUTH", "")
+        if url and auth:
+            out[key] = (url, auth)
+    return out
+
+
+def post(url: str, auth: str, payload: dict) -> int:
+    try:
+        problem = url_problem(url)
+    except ValueError:
+        raise DeliveryError("invalid URL") from None
+    if problem:
+        raise DeliveryError(problem)
+    data = json.dumps(payload).encode("utf-8")
+    # No proxy: a proxy would receive the Authorization header in clear text.
+    opener = build_opener(ProxyHandler({}), NoRedirect())
+    try:
+        request = Request(
+            url,
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/json", "Authorization": auth},
+        )
+        with opener.open(request, timeout=TIMEOUT) as response:
+            response.read()
+            return response.status
+    except HTTPError as exc:
+        raise DeliveryError(f"HTTP {exc.code}") from None
+    except URLError as exc:
+        raise DeliveryError(f"connection failed ({type(exc.reason).__name__})") from None
+    except Exception as exc:  # noqa: BLE001 - never let an exception echo a URL or header
+        raise DeliveryError(type(exc).__name__) from None
+
+
+def send(name: str, status: str, summary: str, thread: str, path: Path | None = None) -> int:
+    key = bot_key(name)
+    if key is None:
+        print(f"notify-bot: unknown bot {name!r}; known: {', '.join(BOTS)}", file=sys.stderr)
+        return 2
+    status = status.strip()
+    if not status:
+        print("notify-bot: status must not be empty", file=sys.stderr)
+        return 2
+    try:
+        bots = configured_bots(path)
+    except ConfigError as exc:
+        print(f"notify-bot: {exc}", file=sys.stderr)
+        return 1
+    if key not in bots:
+        print(
+            f"notify-bot: {key} is not configured; run bin/setup-bot-webhooks",
+            file=sys.stderr,
+        )
+        return 2
+    url, auth = bots[key]
+    try:
+        auth = normalize_auth(auth)
+    except ValueError:
+        print(f"notify-bot: {key} has an invalid authorization value; re-run setup", file=sys.stderr)
+        return 2
+
+    payload = {
+        "bot": key,
+        "thread": thread.strip(),
+        "status": status,
+        "summary": " ".join(summary.split()),
+    }
+    try:
+        post(url, auth, payload)
+    except DeliveryError as exc:
+        print(f"notify-bot: {key} failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"notified {key} ({status})")
+    return 0
+
+
+def list_bots(path: Path | None = None) -> int:
+    try:
+        bots = configured_bots(path)
+    except ConfigError as exc:
+        print(f"notify-bot: {exc}", file=sys.stderr)
+        return 1
+    for key in BOTS:
+        print(f"{key}  {'configured' if key in bots else 'not configured'}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    if argv[0] == "--list":
+        return list_bots()
+    if argv[0] == "--test":
+        if len(argv) != 2:
+            print("usage: notify-bot --test <bot>", file=sys.stderr)
+            return 2
+        return send(argv[1], "test", "notify-bot test", "local-test")
+    if len(argv) not in (3, 4):
+        print('usage: notify-bot <bot> <status> "<summary>" [thread-id]', file=sys.stderr)
+        print("       notify-bot --test <bot> | --list", file=sys.stderr)
+        return 2
+    return send(argv[0], argv[1], argv[2], argv[3] if len(argv) == 4 else "")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

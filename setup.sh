@@ -17,17 +17,20 @@ DOTNETUP="$DOTNETUP_DIR/dotnetup"
 
 DRY_RUN=0
 DO_INSTALL=0
+DO_BOTS=0
 
 usage() {
-    printf '%s\n' "usage: $0 [--install] [--dry-run]"
+    printf '%s\n' "usage: $0 [--install] [--dry-run] [--bots]"
     printf '%s\n' "  --install  run the package commands for missing prerequisites (sudo)"
     printf '%s\n' "  --dry-run  print what would happen, change nothing"
+    printf '%s\n' "  --bots     after install, prompt for Grok Bot webhook values"
 }
 
 for arg in "$@"; do
     case "$arg" in
         --install) DO_INSTALL=1 ;;
         --dry-run) DRY_RUN=1 ;;
+        --bots) DO_BOTS=1 ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'unknown argument: %s\n' "$arg" >&2; usage >&2; exit 2 ;;
     esac
@@ -328,6 +331,24 @@ fi
 run ./install.cs --doctor || true
 if [ "$DRY_RUN" -eq 0 ]; then
     ./install.cs
+fi
+
+# ---------------------------------------------------------------------------
+# bot webhooks
+#
+# Interactive, so opt-in: CI and a piped bootstrap have no terminal and must not
+# hang on a prompt. The helper exits nonzero for a bot that is not configured.
+# ---------------------------------------------------------------------------
+step "bot webhooks"
+
+if [ "$DO_BOTS" -eq 0 ]; then
+    say "  note    not configured; run ./bin/setup-bot-webhooks (or ./setup.sh --bots)"
+elif [ "$DRY_RUN" -eq 1 ]; then
+    say "would run: ./bin/setup-bot-webhooks"
+elif [ -t 0 ]; then
+    ./bin/setup-bot-webhooks
+else
+    say "  note    --bots needs a terminal; run ./bin/setup-bot-webhooks"
 fi
 
 step "done"

@@ -138,6 +138,8 @@ permissions:
   - { action: shell, resource: "*~/.gnupg*", effect: deny }
   - { action: shell, resource: "*/.config/gh/*", effect: deny }
   - { action: shell, resource: "*~/.config/gh*", effect: deny }
+  - { action: shell, resource: "*/.config/bot-webhooks/*", effect: deny }
+  - { action: shell, resource: "*~/.config/bot-webhooks*", effect: deny }
   - { action: shell, resource: "*/.netrc*", effect: deny }
   - { action: shell, resource: "*/.claude/.credentials.json*", effect: deny }
   - { action: shell, resource: "*/.claude.json*", effect: deny }

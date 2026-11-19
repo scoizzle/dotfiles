@@ -537,9 +537,11 @@ def main() -> int:
     )
     never_run = ("git reset --hard", "git clean -fd", "rm -rf x", "rm -fr x", "rm -r -f x", "sudo ls")
     never_shell_read = ("cat ~/.ssh/id_rsa", "cat ~/.aws/credentials", "cat ~/.claude/.credentials.json",
-                        "cat ~/.local/share/opencode/auth.json", "cat ~/.config/gh/hosts.yml")
+                        "cat ~/.local/share/opencode/auth.json", "cat ~/.config/gh/hosts.yml",
+                        "cat ~/.config/bot-webhooks/env")
     never_read = ("~/.ssh/id_rsa", "~/.aws/credentials", "~/.claude/.credentials.json",
-                  "~/.local/share/opencode/auth.json", "/work/.env", ".env", ".env.local", "/work/service.json")
+                  "~/.local/share/opencode/auth.json", "~/.config/bot-webhooks/env",
+                  "/work/.env", ".env", ".env.local", "/work/service.json")
 
     for name, rules in sorted(agents.items()):
         for command in never_push:
