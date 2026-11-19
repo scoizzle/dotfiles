@@ -426,6 +426,33 @@ def check_instructions() -> None:
         for needle in needles:
             if needle not in body:
                 fail(f"{name}: missing skill wiring {needle!r}")
+    for name, needles in (
+        ("AGENTS.md", (
+            "### Ambiguity, and when to ask",
+            "Keep going when the choice is cheap to reverse",
+            "ask the person, not a model",
+            "not intent stays with the Model choice trigger",
+            "An ambiguity is intent, not design",
+            "Intent goes to the person every time",
+            "the required consult still runs",
+            "Put the questions in one ask",
+            "never remove one",
+            "`proceed` never answers a question",
+            "no consult may authorize",
+            "never changes the default, which is to ask",
+            "stops before the dependent work",
+            "takes it to the person",
+            "`needs-answer`",
+            "Reuse the existing",
+        )),
+        ("agents/build.md", ("Ambiguity, and when to ask", "An intent ambiguity", "the required consult still runs", "`needs-answer`", "never answer it yourself")),
+        ("agents/implementor.md", ("`needs-answer`", "finish what does not depend on it")),
+        ("agents/advisor.md", ("never an answer to intent", "never authorize a choice")),
+    ):
+        body = (ROOT / name).read_text()
+        for needle in needles:
+            if needle not in body:
+                fail(f"{name}: missing {needle!r}; an assumption stays silent and an escalation has no route")
 
 
 def check_plugins() -> None:
