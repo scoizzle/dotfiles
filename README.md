@@ -196,6 +196,23 @@ Then in opencode run `/connect`, select **Claude Agent**, and choose a
 and its login as advisory checks, and `./update.sh` upgrades the CLI when it is
 installed.
 
+### Experimental Code Mode (opt-in, not managed)
+
+Claude Code has an experimental Code Mode behind
+`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`. It is **interactive-terminal only**:
+`claude -p` prints that it "isn't available ... only works in the interactive
+terminal" and falls back to ordinary tools. T3's native `claudeAgent` sessions
+are non-interactive, so treat Code Mode as unavailable there too (probe before
+relying on it). It is deliberately **not** rendered into
+`~/.claude/settings.json`: Code Mode runs tool calls through a `REPL` tool, which
+`harness-guard`'s PreToolUse matcher and the `Read(...)`/`Edit(...)` rules do not
+match, so enabling it would take those calls outside the guard and the file
+denies. Opt in per session, in a plain terminal, when you accept that:
+
+```sh
+CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude
+```
+
 ## Platforms
 
 Works on macOS and on Linux (Arch / [Omarchy](https://omarchy.org)). Same
