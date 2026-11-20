@@ -104,10 +104,11 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
+| `pstack/`       | pstack's pin, the list of its skills this repo installs (`skills.txt`, 19 of 58), its per-role model rule, and why it is fetched rather than vendored ([`pstack/README.md`](pstack/README.md)). The skills themselves arrive from `bin/sync-pstack`, not from this tree | opencode and Cursor (`~/.agents/skills`); Claude Code and Grok (`~/.claude/skills`); the rule reaches Cursor and Claude Code as a link |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
+| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `sync-pstack`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
 `install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
@@ -115,7 +116,9 @@ must be merged into files you also edit: `~/.claude/settings.json` (rules and th
 `harness-guard` hook, which Grok reads too in folders it trusts), the read-only
 reviewers and the native `implementor`/`verifier` under `~/.claude/agents`,
 and the Roslynk MCP registration for Claude Code. Grok's own `config.toml` is never
-touched. Run `./install.cs` and then `~/.config/opencode/bin/sync-harness` (report)
+touched. `bin/sync-pstack --apply` fetches pstack's skills at the commit pinned in
+`tools.json`; the two model rules it links are placed by `install.cs` like any
+other file. Run `./install.cs` and then `~/.config/opencode/bin/sync-harness` (report)
 and `--apply`; both are safe to repeat. `--scope grok` reports whether the current
 checkout is a trusted Grok folder, which is what makes Grok load the project
 `AGENTS.md` and the hook; it prints the `grok --trust` command and writes nothing,
@@ -180,16 +183,49 @@ are on disk here, and `git clone` does not carry them to another machine. A
 Outside `~/.config/opencode`, also untracked on purpose:
 
 - `~/.agents/skills/` — skill directories are owned by the tools that install them.
-  The Aspire CLI regenerates its set with `aspire agent init`, and `setup.sh`
-  restores Roslynk's from the tag pinned in `tools.json`. Tracking them here would
-  only make them drift from the tool that owns them.
+  The Aspire CLI regenerates its set with `aspire agent init`, `setup.sh`
+  restores Roslynk's from the tag pinned in `tools.json`, and `bin/sync-pstack`
+  fetches pstack's at the commit pinned there. Tracking them here would only make
+  them drift from the tool that owns them.
 - `~/.claude/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
   of it credential-bearing. `~/.claude` also holds the login the Claude Agent
   integration borrows, so it is never linked or copied. The only managed paths
-  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`
-  and `~/.grok/AGENTS.md`; the rest of `~/.claude` (login, projects) and all of
-  `~/.grok/config.toml` are never touched. Grok reads the rules and, in a trusted
-  folder, the hook from `~/.claude/settings.json` (written by `bin/sync-harness`).
+  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`,
+  `~/.claude/rules/pstack-models.md`, `~/.cursor/rules/pstack-models.mdc` and
+  `~/.grok/AGENTS.md`; the rest of `~/.claude` (login, projects), the rest of
+  `~/.cursor`, and all of `~/.grok/config.toml` are never touched. Grok reads the
+  rules and, in a trusted folder, the hook from `~/.claude/settings.json` (written
+  by `bin/sync-harness`).
+
+## pstack
+
+[poteto's pstack](https://github.com/cursor/plugins/tree/main/pstack) is pinned in
+`tools.json` → `skills.pstack` (version and `cursor/plugins` commit) and fetched by
+`bin/sync-pstack`. It installs a curated 19 of pstack's 58 skills — `arena`,
+`interrogate`, `blast-radius`, `how`, `why`, `unslop`, `correct` and a handful of
+`principle-*` lenses — because this harness has its own workflow and does not adopt
+pstack's. `poteto-mode`, `swarm`, `setup-pstack` and the rest stay in the fetched
+tree, unlinked; [`pstack/skills.txt`](pstack/skills.txt) is the list, and adding one
+back is a line there plus `--apply`.
+
+```sh
+./bin/sync-pstack              # report drift: pin, links, rendered rules; exit 1 if any
+./bin/sync-pstack --apply      # fetch the pin, link the skills, render the rules
+```
+
+`setup.sh` and `update.sh` call the same thing, so a bootstrapped machine gets
+pstack without a second step, and a re-run with the pin already installed touches
+no network. Skills land in `~/.agents/skills/` (which Cursor and opencode
+auto-discover) and are linked into `~/.claude/skills/` for Claude Code and Grok.
+
+The per-role model rule that pstack's own `/setup-pstack` would write is owned by
+`pstack/models.json` instead and rendered for Cursor, Claude Code and opencode.
+The mapping, the three deliberate deviations, and why this is a fetch rather than
+each harness's plugin installer are in [`pstack/README.md`](pstack/README.md).
+
+If Cursor still has the pstack marketplace plugin, it sees a second copy, at the
+same version or not; `bin/sync-pstack` reports that as drift. Remove the plugin in
+Cursor (Settings → Plugins).
 
 ## Adding a file to the repo
 

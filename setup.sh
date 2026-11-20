@@ -334,6 +334,24 @@ if [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# pstack
+#
+# After install.cs: it backs up and replaces a rule file left by pstack's own
+# /setup-pstack, which sync-pstack must not clobber. Fetched, not vendored: the pin
+# in tools.json is a cursor/plugins commit, and one tree under ~/.agents/skills
+# serves Cursor and opencode while ~/.claude/skills gets links. See pstack/README.md.
+# ---------------------------------------------------------------------------
+step "pstack"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    say "would sync the pinned pstack skills: ./bin/sync-pstack --apply"
+elif "$REPO/bin/sync-pstack" --apply; then
+    say "  ok      pstack skills in place"
+else
+    say "  note    pstack sync failed; re-run ./bin/sync-pstack --apply"
+fi
+
+# ---------------------------------------------------------------------------
 # bot webhooks
 #
 # Interactive, so opt-in: CI and a piped bootstrap have no terminal and must not

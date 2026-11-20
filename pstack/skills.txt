@@ -1,0 +1,35 @@
+# The pstack skills this repo installs. The whole pinned tree is fetched either way;
+# this list decides what lands in ~/.agents/skills and ~/.claude/skills, so adding a
+# skill back is a line here and `bin/sync-pstack --apply`. `--check` reports a link
+# for a name that is not listed, and fails on a name the pinned tree does not have.
+#
+# Kept: the tools this repo actually reaches for — the design and review panels, the
+# code explainers, the process lenses that already match how this repo works, and a
+# handful of one-line principles.
+#
+# Dropped, on purpose: poteto-mode and the skills it orchestrates (swarm, tdd,
+# poteto-help, reflect), because this harness did not adopt its dispatch model and a
+# half-installed mode orchestrating missing skills is worse than none; the
+# Cursor-history skills (recall, ketchup, ketchup-video, bro); the project-local
+# verification-skill generators, which target app repos rather than this config repo;
+# the wrong-stack ones (typescript-best-practices); and setup-pstack, which would
+# write the model rule this repo owns.
+arena
+interrogate
+blast-radius
+how
+why
+sharpen
+unslop
+correct
+benchmark-checklist
+in-your-own-words
+principle-boundary-discipline
+principle-encode-lessons-in-structure
+principle-explain-the-number
+principle-fix-root-causes
+principle-guard-the-context-window
+principle-make-operations-idempotent
+principle-prove-it-works
+principle-sequence-verifiable-units
+principle-subtract-before-you-add

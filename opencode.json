@@ -2,6 +2,9 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "opencode-go/deepseek-v4.1-flash",
   "default_agent": "build",
+  "instructions": [
+    "{env:HOME}/.config/opencode/pstack/opencode/pstack-models.md"
+  ],
   "permissions": [
     { "action": "skill", "resource": "antigravity2.0", "effect": "deny" },
     { "action": "skill", "resource": "pre-ship-review", "effect": "deny" },

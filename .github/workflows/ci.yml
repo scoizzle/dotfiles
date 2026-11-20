@@ -94,11 +94,12 @@ jobs:
       - name: managed paths are symlinks that resolve
         run: |
           set -eu
-          for p in AGENTS.md opencode.json agents commands skills memory bin evals; do
+          for p in AGENTS.md opencode.json agents commands skills pstack memory bin evals; do
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
-          for p in .claude/CLAUDE.md .grok/AGENTS.md .claude/commands/dream.md .local/bin/notify-bot; do
+          for p in .claude/CLAUDE.md .grok/AGENTS.md .claude/commands/dream.md .local/bin/notify-bot \
+                   .claude/rules/pstack-models.md .cursor/rules/pstack-models.mdc; do
             test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
             test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
           done
@@ -120,7 +121,7 @@ jobs:
         run: python3 tests/skills.py
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness bin/notify-bot bin/setup-bot-webhooks evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness bin/sync-pstack bin/notify-bot bin/setup-bot-webhooks evals/cost.py evals/score.py evals/scoreboard.py
 
       - name: classifier and policy render tests
         run: |
@@ -135,6 +136,7 @@ jobs:
           python3 tests/sandbox_render.py
           python3 tests/skills_negative.py
           python3 tests/bot_webhooks.py
+          python3 tests/pstack.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
       - name: review-bundle smoke
