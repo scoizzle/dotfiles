@@ -40,12 +40,26 @@ vectors through every engine in CI, so the three cannot disagree unnoticed.
 | Claude Code | `permissions.deny/ask` from `~/.claude/settings.json` | `PreToolUse` hook from `~/.claude/settings.json` | `~/.claude/settings.json` |
 | Grok Build | the same `permissions.deny/ask`, read from `~/.claude/settings.json` (verified with `grok inspect`: `permissions.loaded` counted them, even in an untrusted folder) | the same `PreToolUse` hook, **only in a trusted folder** (verified with `grok inspect`: `hooks: []` untrusted; after `trusted_folders.toml` marks the folder, the hook appears with `vendor: claude`, `compatibilityStatus: enabled`) | `~/.claude/settings.json` |
 
+Native agents come from the same policy. `implementor` inherits the T3 session's
+model and tool set but disallows `Task`, `Agent`, `WebFetch` and `WebSearch`, and
+it is a dispatchable writer on purpose: it is the one bounded-task writer.
+`verifier` pins `sonnet` and keeps an explicit read+shell allowlist. `build` is
+deliberately not rendered: every file in `~/.claude/agents` is also a `Task`
+subagent, and a rendered `build` would be the dispatchable writer `AGENTS.md`
+forbids. A native main session gets the writer role from the worktree's
+`AGENTS.md`, which Claude Code loads (probed 2026-11-19).
+
 `~/.grok/config.toml` is never touched; it holds an MCP bearer token. Grok's
 trust gate matters in practice: only folders listed in `~/.grok/trusted_folders.toml`
 run global hooks, and each T3 worktree is a separate checkout. In an untrusted
 folder Grok still enforces the rules, and `ask` still forces a prompt in
-always-approve mode, but the hook (and so its parsing) is skipped. Trusting a
-folder is a person's decision (`/hooks-trust`, or `grok --trust`).
+always-approve mode, but the hook (and so its parsing) is skipped. The project
+`Agents.md` is also trust-gated: `grok inspect` lists it only in a trusted folder,
+so an untrusted worktree runs on the global `~/.grok/AGENTS.md` alone. That second
+gap is why every Grok thread should be checked, not just the machine. Trusting a
+folder is a person's decision (`/hooks-trust`, or `grok --trust`);
+`bin/sync-harness --scope grok` reports the state of the current checkout and
+prints the command, and never writes the trust file.
 
 Optional hardening: `/Library/Application Support/ClaudeCode/managed-settings.json`
 is root-owned, read by both harnesses (`grok inspect` reports the path), applies in
@@ -168,7 +182,13 @@ says the same.
 
 Likewise the `verifier` has an unsandboxed shell. "Does not edit the repository"
 is an instruction it follows, backed by the disposable-clone procedure in its
-prompt, not a permission that holds.
+prompt, not a permission that holds. Its native render is narrower and still not
+a boundary: the Claude Code agent file lists `Bash` and the read tools, and omits
+`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Task`, `Agent`, `WebFetch` and
+`WebSearch`, so those tools cannot be selected. `Bash` remains, so `git commit`,
+`git add`, `git reset` and shell redirection are the prompt and the global rules,
+not a per-agent deny: Claude Code agent frontmatter has `disallowedTools` (whole
+tools) but no per-command permission rules.
 
 `--auto` approves every `ask`. A session started with it can push. Do not start
 unattended sessions with `--auto`.
