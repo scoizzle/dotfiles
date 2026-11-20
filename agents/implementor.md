@@ -44,3 +44,4 @@ You implement the task in front of you. You do not dispatch.
    An intent ambiguity (`AGENTS.md` → Ambiguity, and when to ask) stops the
    dependent work: finish what does not depend on it, then return `needs-answer`
    with the questions and a recommended default for each.
+8. When finished, if the dispatching bot's webhook is configured, run `notify-bot <BOT> <status> "<one-line summary>" <thread-id>` (`~/.local/bin/notify-bot` if it is not on PATH); a delegated child does not send the callback.

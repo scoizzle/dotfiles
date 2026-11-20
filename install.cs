@@ -44,6 +44,8 @@ var homeEntries = new List<(string Dest, string Src, bool IsDir)>
 {
     (Path.Combine(".claude", "CLAUDE.md"), "AGENTS.md", false),
     (Path.Combine(".grok", "AGENTS.md"), "AGENTS.md", false),
+    // notify-bot is the one helper agents run by name rather than by absolute path.
+    (Path.Combine(".local", "bin", "notify-bot"), Path.Combine("bin", "notify-bot"), false),
 };
 if (Directory.Exists(Path.Combine(repoRoot, "skills")))
     foreach (var dir in Directory.GetDirectories(Path.Combine(repoRoot, "skills")).OrderBy(d => d, StringComparer.Ordinal))

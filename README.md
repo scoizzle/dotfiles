@@ -107,7 +107,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness` | by absolute path |
+| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
 `install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
@@ -124,6 +124,42 @@ because trusting a folder is your decision. Verify what Grok actually loads with
 
 How the bookshelf and the out-of-band dream pass fit together is in
 [`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
+
+## Bot webhook callbacks
+
+T3 threads and agent jobs can POST a completion callback to a Grok Bot webhook.
+Each bot has a URL and a sender key on its routine panel.
+
+```sh
+./bin/setup-bot-webhooks          # prompt for each bot
+./setup.sh --bots                 # opt in during a normal install
+./bin/setup-bot-webhooks --check  # what is configured, no prompts
+```
+
+The URL prompt is visible; the authorization prompt is hidden. Paste either the
+panel's full `Authorization` value (`Bearer …`) or just the key. Enter keeps the
+existing value; blank on a first run skips that bot. The list is `BOTS` at the top
+of `bin/notify-bot`, so adding a bot is a one-line change.
+
+Values live outside git in `~/.config/bot-webhooks/env` (mode 0600, directory
+0700). `bin/setup-bot-webhooks` writes one managed block into the shell rc files;
+it adds `~/.local/bin` to `PATH` and sources the file (the values are exported to
+child shells), and a re-run replaces that block instead of appending another. The
+file is a `protected.paths` entry in the permission policy, so the agents' read and
+shell rules deny it. The URL is treated as a secret too.
+
+```sh
+notify-bot JARVIS done "PR #123 merged" <thread-id>
+notify-bot --test JARVIS
+notify-bot --list                 # configured / not configured; no secrets
+```
+
+`install.cs` links the helper to `~/.local/bin/notify-bot`. `notify-bot` reads the
+file itself, so it works even when the rc file was not sourced, and it never prints
+a URL or header value. It pins the path to the account home from the password
+database, not `$HOME`. A failed send exits 1; a bot that is not configured exits 2.
+The `AGENTS.md` contract (loaded by all three harnesses) tells a T3 thread to send
+the callback when a dispatch names the bot and thread id.
 
 ## What it deliberately does not manage
 

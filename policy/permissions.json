@@ -330,6 +330,7 @@
       "~/.aws/",
       "~/.gnupg/",
       "~/.config/gh/",
+      "~/.config/bot-webhooks/",
       "~/.netrc",
       "~/.claude/.credentials.json",
       "~/.claude.json",
@@ -370,6 +371,7 @@
       "~/.config/opencode/plugins/",
       "~/.claude/CLAUDE.md",
       "~/.claude/settings.json",
+      "~/.local/bin/notify-bot",
       "~/.grok/AGENTS.md"
     ],
     "checkouts": [
@@ -415,7 +417,10 @@
       "gh *",
       "git push *",
       "git fetch *",
-      "git pull *"
+      "git pull *",
+      "notify-bot *",
+      "~/.local/bin/notify-bot *",
+      "$HOME/.local/bin/notify-bot *"
     ]
   },
   "no_edit": [
