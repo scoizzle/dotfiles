@@ -207,14 +207,60 @@ def check_shared_surfaces() -> None:
         for n in missing:
             del policy["readonly_agents"]["models"][n]
     rendered = sync.render_claude_agents(policy, ROOT)
-    for name, text in rendered.items():
-        tools = re.search(r"^tools: (.+)$", text, flags=re.M).group(1).split(", ")
+    for name in spec["models"]:
+        text = rendered.get(name, "")
+        match = re.search(r"^tools: (.+)$", text, flags=re.M)
+        if not match:
+            fail(f"rendered Claude read-only agent {name} has no tool list")
+            continue
+        tools = match.group(1).split(", ")
         bad = [t for t in tools if t in writers or (t.startswith("mcp__") and not t.startswith("mcp__roslynk__"))]
         bad += [t for t in tools if t.startswith("mcp__roslynk__") and t[14:] not in spec["roslynk_read_tools"]]
         if bad:
             fail(f"rendered Claude read-only agent {name} has non-read-only tools: {bad}")
         if not text.startswith("---\nname: " + name + "\n"):
             fail(f"rendered Claude read-only agent {name} has a bad header")
+
+    # The native set beside the read-only trio. `build` is deliberately absent:
+    # every file here is also a Task subagent, and a rendered build would be the
+    # dispatchable writer AGENTS.md forbids.
+    native = policy.get("native_agents", {}).get("agents", {})
+    if set(native) != {"implementor", "verifier"}:
+        fail(f"policy native_agents {sorted(native)} != ['implementor', 'verifier']")
+    if "build" in rendered:
+        fail("sync-harness must not render build: a rendered build is a dispatchable writer")
+    for name, cfg in native.items():
+        text = rendered.get(name, "")
+        if not text:
+            fail(f"sync-harness does not render native agent {name}")
+            continue
+        if not text.startswith("---\nname: " + name + "\n"):
+            fail(f"rendered native agent {name} has a bad header")
+        denied, unknown = sync.agent_denies(name, ROOT)
+        if unknown:
+            fail(f"agents/{name}.md denies {unknown} with no native mapping; add one or list it as ignored")
+        disallowed_line = re.search(r"^disallowedTools: (.+)$", text, flags=re.M)
+        disallowed = disallowed_line.group(1).split(", ") if disallowed_line else []
+        missing = [t for t in denied if t not in disallowed]
+        if missing:
+            fail(f"native agent {name} does not disallow {missing}, which agents/{name}.md denies")
+        model = re.search(r"^model: (.+)$", text, flags=re.M)
+        got_model = model.group(1) if model else None
+        if got_model != cfg.get("model"):
+            fail(f"native agent {name} model is {got_model!r}, expected {cfg.get('model')!r}")
+        match = re.search(r"^tools: (.+)$", text, flags=re.M)
+        if (match is None) != (cfg.get("tools") is None):
+            fail(f"native agent {name} tool line does not match the policy (got {bool(match)})")
+        if match:
+            tools = match.group(1).split(", ")
+            bad = [t for t in tools if t in denied]
+            bad += [t for t in tools if t.startswith("mcp__roslynk__") and t[14:] not in spec["roslynk_read_tools"]]
+            if bad:
+                fail(f"native agent {name} allows a tool its opencode role denies: {bad}")
+            if name == "verifier" and "Skill" not in tools:
+                fail("native verifier has no Skill tool, so it cannot load run-tests")
+        if "BEGIN managed by bin/sync-harness" in text:
+            fail(f"rendered native agent {name} leaked the opencode frontmatter")
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
         mine = home / ".claude" / "agents" / "explore.md"

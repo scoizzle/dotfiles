@@ -40,6 +40,7 @@ jobs:
           shellcheck -s sh update.sh
           shellcheck -s bash evals/run.sh
           shellcheck -s bash evals/run-grok.sh
+          shellcheck -s bash evals/run-claude.sh
 
       # Ensures the cold-start path still works when the script is piped, which is the
       # only way it will ever be run on a bare machine.
@@ -126,6 +127,7 @@ jobs:
           python3 tests/classify.py
           python3 tests/review_bundle.py
           python3 tests/eval_writer.py
+          python3 tests/eval_claude.py
           python3 tests/policy_render.py
           python3 tests/lint_config.py
           python3 tests/guard_windows.py
