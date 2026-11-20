@@ -104,7 +104,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
-| `pstack/`       | pstack's pin, its per-role model rule, and why it is fetched rather than vendored ([`pstack/README.md`](pstack/README.md)). The skills themselves arrive from `bin/sync-pstack`, not from this tree | opencode and Cursor (`~/.agents/skills`); Claude Code and Grok (`~/.claude/skills`); the rule reaches Cursor and Claude Code as a link |
+| `pstack/`       | pstack's pin, the list of its skills this repo installs (`skills.txt`, 19 of 58), its per-role model rule, and why it is fetched rather than vendored ([`pstack/README.md`](pstack/README.md)). The skills themselves arrive from `bin/sync-pstack`, not from this tree | opencode and Cursor (`~/.agents/skills`); Claude Code and Grok (`~/.claude/skills`); the rule reaches Cursor and Claude Code as a link |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
@@ -199,10 +199,14 @@ Outside `~/.config/opencode`, also untracked on purpose:
 
 ## pstack
 
-[poteto's pstack](https://github.com/cursor/plugins/tree/main/pstack) —
-`poteto-mode`, `arena`, `interrogate`, `swarm`, `setup-pstack` and the
-`principle-*` skills — is pinned in `tools.json` → `skills.pstack` (version and
-`cursor/plugins` commit) and fetched by `bin/sync-pstack`.
+[poteto's pstack](https://github.com/cursor/plugins/tree/main/pstack) is pinned in
+`tools.json` → `skills.pstack` (version and `cursor/plugins` commit) and fetched by
+`bin/sync-pstack`. It installs a curated 19 of pstack's 58 skills — `arena`,
+`interrogate`, `blast-radius`, `how`, `why`, `unslop`, `correct` and a handful of
+`principle-*` lenses — because this harness has its own workflow and does not adopt
+pstack's. `poteto-mode`, `swarm`, `setup-pstack` and the rest stay in the fetched
+tree, unlinked; [`pstack/skills.txt`](pstack/skills.txt) is the list, and adding one
+back is a line there plus `--apply`.
 
 ```sh
 ./bin/sync-pstack              # report drift: pin, links, rendered rules; exit 1 if any

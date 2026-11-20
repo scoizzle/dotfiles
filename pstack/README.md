@@ -1,9 +1,10 @@
 # pstack, pinned
 
 [poteto's pstack](https://github.com/cursor/plugins/tree/main/pstack) is a skill
-pack: `poteto-mode`, `arena`, `interrogate`, `swarm`, `setup-pstack`, the
-`principle-*` set and about fifty more. This directory is the repo's half of it —
-the pin, the per-role model rule, and the reason the install is a fetch.
+pack of 58 skills. This repo installs **19 of them** — the ones it actually reaches
+for — from a pinned commit, with a per-role model rule. This directory is the
+repo's half of it: the pin, the subset, the model rule, and the reason the install
+is a fetch.
 
 ## What is pinned, and where
 
@@ -35,6 +36,35 @@ and so is that tree once nothing points at it — but only what this tool wrote:
 tree it fetches is stamped with `.dotfiles-pstack`, and a checkout you put under
 `~/.agents/pstack/`, and the links you made into it, are kept with a note.
 `--check` converges.
+
+## What is installed
+
+`pstack/skills.txt` is the list. The whole tree is fetched either way, so adding a
+skill back is a line there and `bin/sync-pstack --apply`; `--check` reports a link
+for a name that is not listed, and fails on a name the pinned tree does not have.
+
+| | |
+| --- | --- |
+| panels and review | `arena`, `interrogate`, `blast-radius` |
+| code explainers | `how`, `why` |
+| prose and precision | `sharpen`, `unslop`, `in-your-own-words` |
+| repo hygiene | `correct` (turn a repeated agent mistake into architecture, a type, or a lint whose error names the fix) |
+| measurement | `benchmark-checklist` |
+| lenses | `principle-boundary-discipline`, `-encode-lessons-in-structure`, `-explain-the-number`, `-fix-root-causes`, `-guard-the-context-window`, `-make-operations-idempotent`, `-prove-it-works`, `-sequence-verifiable-units`, `-subtract-before-you-add` |
+
+Deliberately **not** installed:
+
+- `poteto-mode` and the skills it orchestrates (`swarm`, `tdd`, `poteto-help`,
+  `reflect`). This harness has its own workflow and did not adopt pstack's dispatch
+  model; a mode whose playbooks call missing skills is worse than no mode. One
+  consequence: `arena` points at `poteto-mode`'s Subagents section for reasoning
+  levels, so that one sentence loses its target — arena's own defaults still apply.
+- `recall`, `ketchup`, `ketchup-video`, `bro` — they read Cursor's history.
+- the `create-`/`maintain-verification-skill` generators and `statechart` — they
+  build project-local verification, which targets an app repo, not this one.
+- `typescript-best-practices` — wrong stack.
+- `setup-pstack` — it would write `~/.cursor/rules/pstack-models.mdc`, the file this
+  repo owns. Not installing it means no skill can quietly replace the rule.
 
 ## Why a fetch, and not the plugin installers
 
@@ -96,6 +126,11 @@ are hand-maintained — `opencode models` prints bare routes — and
 | `swarm workers` | `claude-opus-5-5-xhigh-fast` | `opus xhigh` | `opencode-go/deepseek-v4.1-flash#high` |
 | `arena runners`, `interrogate reviewers` | `claude-fable-5-2-high`, `claude-opus-5-5-high-fast`, `gemini-4-neon-xhigh` | `fable high`, `opus high`, `inherit-parent` | `claude-agent/fable#high`, `claude-agent/opus#high`, `opencode/gemini-4-neon#xhigh` |
 | `arena cross-judge pool` | `claude-opus-5-5-high-fast`, `gemini-4-neon-xhigh` | `opus high`, `inherit-parent` | `claude-agent/opus#high`, `opencode/gemini-4-neon#xhigh` |
+
+The role table keeps upstream's full step-5 shape (nine labels). With
+`poteto-mode` not installed, only the three panel rows are read today; the code and
+judgment rows stay so a pin bump stays comparable and adding the mode back is one
+line in `skills.txt`.
 
 Three deliberate deviations from pstack's 0.15.46 defaults, all recorded in
 `models.json`:

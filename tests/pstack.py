@@ -105,10 +105,11 @@ def make_tree(root: Path, version: str, names: list[str], extra_label: str | Non
     return root
 
 
-def make_repo(tmp: Path, version: str = "0.15.46") -> Path:
+def make_repo(tmp: Path, version: str = "0.15.46", skills=("arena", "setup-pstack", "tdd")) -> Path:
     repo = tmp / "repo"
     (repo / "pstack").mkdir(parents=True, exist_ok=True)
     shutil.copytree(ROOT / "pstack", repo / "pstack", dirs_exist_ok=True)
+    (repo / "pstack" / "skills.txt").write_text("\n".join(skills) + "\n")
     (repo / "opencode.json").write_text((ROOT / "opencode.json").read_text())
     pin = json.loads((ROOT / "tools.json").read_text())
     pin["skills"]["pstack"]["version"] = version
@@ -204,7 +205,35 @@ def check_install(tmp: Path) -> None:
     if links != ["arena", "setup-pstack", "tdd"]:
         fail(f"unexpected ~/.agents/skills: {links}")
     else:
-        ok("~/.agents/skills holds one link per skill")
+        ok("~/.agents/skills holds one link per installed skill")
+
+    # A listed subset prunes what it does not name.
+    subset_home = tmp / "home-subset"
+    subset_repo = make_repo(tmp / "repo-subset", skills=("arena",))
+    subset = run("--home", str(subset_home), "--repo", str(subset_repo), "--from", str(tree), "--apply")
+    subset_links = sorted(p.name for p in (subset_home / ".agents" / "skills").iterdir())
+    if subset.returncode != 0 or subset_links != ["arena"]:
+        fail(f"the skills.txt subset was not honoured: rc={subset.returncode} links={subset_links}\n{subset.stdout}")
+    else:
+        ok("pstack/skills.txt decides which skills are linked")
+
+    # Dropping a name and applying prunes its link.
+    (subset_repo / "pstack" / "skills.txt").write_text("tdd\n")
+    swapped = run("--home", str(subset_home), "--repo", str(subset_repo), "--from", str(tree), "--apply")
+    swapped_links = sorted(p.name for p in (subset_home / ".agents" / "skills").iterdir())
+    if swapped.returncode != 0 or swapped_links != ["tdd"]:
+        fail(f"dropping a listed skill did not prune its link: rc={swapped.returncode} links={swapped_links}\n{swapped.stdout}")
+    else:
+        ok("dropping a skill from the list prunes its link")
+
+    # A name the pinned tree does not have is a failure, not a silent skip.
+    (subset_repo / "pstack" / "skills.txt").write_text("arena\nnot-in-upstream\n")
+    bogus = run("--home", str(subset_home), "--repo", str(subset_repo), "--from", str(tree), "--apply")
+    if bogus.returncode == 0 or "not-in-upstream" not in bogus.stdout:
+        fail(f"a listed skill the tree lacks was accepted: rc={bogus.returncode}\n{bogus.stdout}")
+    else:
+        ok("a listed skill the pinned tree lacks is refused")
+    (subset_repo / "pstack" / "skills.txt").write_text("arena\n")
 
     # pstack's poteto-help reads ../../docs/guide; the link must resolve physically.
     target = home / ".agents" / "skills" / "arena" / ".." / ".." / "docs" / "guide" / "01-setup.md"
@@ -222,6 +251,23 @@ def check_install(tmp: Path) -> None:
         fail(f"--check after apply: rc={checked.returncode}\n{checked.stdout}{checked.stderr}")
     else:
         ok("a second apply only repairs links, and --check is green")
+
+    # A damaged tree at the pin is described as damaged, and fetched again.
+    shutil.rmtree(home / ".agents" / "pstack" / "0.15.46" / "skills" / "arena")
+    damaged = run("--home", str(home), "--repo", str(repo))
+    if damaged.returncode != 1 or "the installed tree lacks arena" not in damaged.stdout:
+        fail(f"a damaged tree is not described as damaged: rc={damaged.returncode}\n{damaged.stdout}")
+    elif "not in pstack/skills.txt" in damaged.stdout:
+        fail(f"a listed skill whose directory is missing is blamed on skills.txt:\n{damaged.stdout}")
+    else:
+        ok("a damaged tree is reported as damaged, not as a skills.txt problem")
+    healed = run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
+    if healed.returncode != 0 or not (home / ".agents" / "pstack" / "0.15.46" / "skills" / "arena" / "SKILL.md").is_file():
+        fail(f"a damaged tree at the pin was not repaired: rc={healed.returncode}\n{healed.stdout}{healed.stderr}")
+    elif "already at the pin" in healed.stdout:
+        fail("a damaged tree took the already-at-the-pin shortcut")
+    else:
+        ok("a damaged tree at the pin is fetched again")
 
     # A skill this tool did not create is never replaced.
     other = tmp / "home-collision"
@@ -251,7 +297,7 @@ def check_install(tmp: Path) -> None:
 
     # Upgrading drops the links and the tree the old version owned.
     v2 = make_tree(tmp / "tree2", "0.15.47", ["arena"])
-    repo2 = make_repo(tmp / "repo2", "0.15.47")
+    repo2 = make_repo(tmp / "repo2", "0.15.47", skills=("arena", "setup-pstack"))
     upgraded = run("--home", str(home), "--repo", str(repo2), "--from", str(v2), "--apply")
     if upgraded.returncode != 0:
         fail(f"upgrade apply: rc={upgraded.returncode}\n{upgraded.stdout}{upgraded.stderr}")
@@ -293,7 +339,7 @@ def check_install(tmp: Path) -> None:
 def check_rules_and_links(tmp: Path) -> None:
     """The two home rule links are checked, repaired, and never swapped for a plain file."""
     home = tmp / "home-rules"
-    repo = make_repo(tmp / "repo-rules")
+    repo = make_repo(tmp / "repo-rules", skills=("arena", "setup-pstack"))
     tree = make_tree(tmp / "tree-rules", "0.15.46", ["arena"])
     applied = run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
     if applied.returncode != 0:
@@ -334,7 +380,7 @@ def check_rules_and_links(tmp: Path) -> None:
 def check_dangling_and_state(tmp: Path) -> None:
     """Stale links are reported, and a tampered state.json cannot delete outside the tree."""
     home = tmp / "home-dangling"
-    repo = make_repo(tmp / "repo-dangling")
+    repo = make_repo(tmp / "repo-dangling", skills=("arena", "setup-pstack"))
     tree = make_tree(tmp / "tree-dangling", "0.15.46", ["arena"])
     run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
 
@@ -455,10 +501,46 @@ def check_dangling_and_state(tmp: Path) -> None:
         ok("--check reports an installed Cursor marketplace copy as drift")
 
 
+def check_link_classes(tmp: Path) -> None:
+    """Unlisted and misnamed links are reported once, with the right reason, and pruned."""
+    home = tmp / "home-classes"
+    repo = make_repo(tmp / "repo-classes", skills=("arena",))
+    tree = make_tree(tmp / "tree-classes", "0.15.46", ["arena", "tdd"])
+    applied = run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
+    if applied.returncode != 0:
+        fail(f"classes: apply failed: rc={applied.returncode}\n{applied.stdout}{applied.stderr}")
+        return
+
+    target = home / ".agents" / "pstack" / "0.15.46" / "skills"
+    os.symlink(target / "tdd", home / ".agents" / "skills" / "tdd")
+    os.symlink(target / "arena", home / ".claude" / "skills" / "pm")
+    reported = run("--home", str(home), "--repo", str(repo))
+    out = reported.stdout
+    if reported.returncode != 1:
+        fail(f"classes: hand-made links are not drift: rc={reported.returncode}\n{out}")
+    elif "tdd (not in pstack/skills.txt)" not in out:
+        fail(f"classes: an unlisted skill link is not named with its reason:\n{out}")
+    elif "pm (does not point at its own skill)" not in out:
+        fail(f"classes: a misnamed link is not named with its reason:\n{out}")
+    elif "into another pstack tree" in out:
+        fail(f"classes: a link into the current tree is also reported as another tree:\n{out}")
+    else:
+        ok("unlisted and misnamed links get one reason each")
+
+    pruned = run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
+    green = run("--home", str(home), "--repo", str(repo))
+    if pruned.returncode != 0 or green.returncode != 0:
+        fail(f"classes: apply did not converge: rc={pruned.returncode}/{green.returncode}\n{pruned.stdout}{green.stdout}")
+    elif (home / ".agents" / "skills" / "tdd").is_symlink() or (home / ".claude" / "skills" / "pm").is_symlink():
+        fail("classes: a removable link survived apply")
+    else:
+        ok("apply removes unlisted and misnamed links, and --check is green")
+
+
 def check_probe(tmp: Path) -> None:
     """The live route probe: only what roles use, and a missing one is drift."""
     home = tmp / "home-probe"
-    repo = make_repo(tmp / "repo-probe")
+    repo = make_repo(tmp / "repo-probe", skills=("arena", "setup-pstack"))
     tree = make_tree(tmp / "tree-probe", "0.15.46", ["arena"])
     run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
 
@@ -491,7 +573,7 @@ def check_probe(tmp: Path) -> None:
 def check_fetch_guard(tmp: Path) -> None:
     """A wrong archive version must fail loudly instead of installing the wrong bytes."""
     home = tmp / "home-version"
-    repo = make_repo(tmp, "0.15.46")
+    repo = make_repo(tmp, "0.15.46", skills=("arena", "setup-pstack"))
     tree = make_tree(tmp / "tree-v", "0.9.9", ["arena"])
     result = run("--home", str(home), "--repo", str(repo), "--from", str(tree), "--apply")
     if result.returncode == 0 or "0.9.9" not in result.stdout + result.stderr:
@@ -510,6 +592,7 @@ def main() -> int:
         check_install(Path(tmp))
         check_rules_and_links(Path(tmp))
         check_dangling_and_state(Path(tmp))
+        check_link_classes(Path(tmp))
         check_probe(Path(tmp))
         check_fetch_guard(Path(tmp))
     if failed:

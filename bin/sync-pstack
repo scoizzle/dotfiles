@@ -115,6 +115,27 @@ def load_models(repo: Path) -> dict:
     return models
 
 
+def read_skills(repo: Path) -> list[str]:
+    """The skills pstack/skills.txt installs. The whole tree is fetched; this list
+    decides what is exposed, so adding one back is a line and an --apply."""
+    path = repo / "pstack" / "skills.txt"
+    if not path.is_file():
+        raise SystemExit("pstack/skills.txt is missing; it decides which skills are installed")
+    names: list[str] = []
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not SKILL_NAME.fullmatch(line):
+            raise SystemExit(f"pstack/skills.txt:{number}: {line!r} is not a skill name")
+        if line in names:
+            raise SystemExit(f"pstack/skills.txt:{number}: {line} is listed twice")
+        names.append(line)
+    if not names:
+        raise SystemExit("pstack/skills.txt lists no skills")
+    return names
+
+
 def render(models: dict, harness: str) -> str:
     lines = [PROLOGUE[harness], f"# defaults: {models['defaults']}\n", f"# budget: {models['budget']}\n", MANAGED]
     for label, values in models["roles"].items():
@@ -215,7 +236,9 @@ def link_target(dst: Path) -> Path | None:
     if not dst.is_symlink():
         return None
     raw = Path(os.readlink(dst))
-    return raw if raw.is_absolute() else (dst.parent / raw)
+    joined = raw if raw.is_absolute() else dst.parent / raw
+    # Lexical only: resolve() would follow the final component and change what we compare.
+    return Path(os.path.normpath(joined))
 
 
 def link_state(dst: Path, home: Path) -> str:
@@ -224,6 +247,38 @@ def link_state(dst: Path, home: Path) -> str:
     if target is not None:
         return "ours" if is_ours(target, home) else "other-link"
     return "dir" if dst.exists() else "absent"
+
+
+def stray_links(home: Path, root: Path, target: Path, listed: list[str], state: dict):
+    """Links in the skill roots that are not an installed skill.
+
+    Returns (removable, kept). removable holds (path, reason): a name that is not in
+    pstack/skills.txt, a link that does not point at its own skill, or a link into a
+    tree this tool wrote. kept holds links into a tree it did not write.
+    """
+    removable: list[tuple[Path, str]] = []
+    kept: list[Path] = []
+    skills_root = (target / "skills").resolve()
+    for base in skill_targets(home):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.iterdir()):
+            pointed = link_target(path)
+            if pointed is None or not is_ours(pointed, home):
+                continue
+            # Resolve both sides: /var and /private/var are one directory on macOS, and a
+            # link made with the other spelling is the same link.
+            real = pointed.resolve()
+            if real == skills_root / path.name:
+                if path.name not in listed:
+                    removable.append((path, "not in pstack/skills.txt"))
+            elif real.parent == skills_root:
+                removable.append((path, "does not point at its own skill"))
+            elif tree_owned(root, real, state):
+                removable.append((path, "into another pstack tree"))
+            else:
+                kept.append(path)
+    return removable, kept
 
 
 def rule_link_state(home: Path, repo: Path, rel: Path) -> str:
@@ -288,12 +343,15 @@ def install(home: Path, version: str, commit: str, source: Path | None, repo: Pa
     for leftover in root.glob(".stage-*"):
         shutil.rmtree(leftover, ignore_errors=True)
     target = root / version
+    listed = read_skills(repo)
     state = read_state(home)
     current = (
         state.get("version") == version
         and state.get("commit") == commit
         and (target / "plugin.json").is_file()
-        and state.get("skills") == skill_names(target)
+        # The tree itself, not the list: a skill directory that went missing is
+        # repaired by fetching again, and editing skills.txt must not refetch.
+        and all((target / "skills" / name / "SKILL.md").is_file() for name in listed)
     )
     if current:
         print("        already at the pin; repairing links only")
@@ -327,10 +385,15 @@ def install(home: Path, version: str, commit: str, source: Path | None, repo: Pa
             if stage.exists():
                 shutil.rmtree(stage, ignore_errors=True)
 
-    names = skill_names(target)
-    if not names:
+    available = skill_names(target)
+    if not available:
         print(f"FAILED  {target} has no skills")
         return 1
+    missing = [name for name in listed if name not in available]
+    if missing:
+        print(f"FAILED  pstack/skills.txt names {', '.join(missing)}, which the pinned tree does not have")
+        return 1
+    names = listed
 
     collisions = []
     for name in names:
@@ -368,21 +431,14 @@ def install(home: Path, version: str, commit: str, source: Path | None, repo: Pa
     # A link into an older tree is not in state.json by definition, so the state-only
     # prune misses it. It is a symlink into ~/.agents/pstack and nothing else, so
     # removing it, and then any tree nothing points at, converges the machine.
-    expected = {target / "skills" / name for name in names}
-    strays, kept = [], []
-    for base in skill_targets(home):
-        if not base.is_dir():
-            continue
-        for path in sorted(base.iterdir()):
-            pointed = link_target(path)
-            if pointed is None or not is_ours(pointed, home) or pointed in expected:
-                continue
-            (strays if tree_owned(root, pointed, state) else kept).append(path)
-    for path in strays:
+    removable, kept = stray_links(home, root, target, names, state)
+    for path, _reason in removable:
         path.unlink()
-    if strays:
-        print(f"        removed {len(strays)} stray link(s) into another pstack tree: "
-              + ", ".join(path.name for path in strays[:6]))
+    reasons: dict[str, list[str]] = {}
+    for path, reason in removable:
+        reasons.setdefault(reason, []).append(path.name)
+    for reason, gone in reasons.items():
+        print(f"        removed {len(gone)} link(s) {reason}: {', '.join(gone[:6])}")
     for path in kept:
         print(f"note    keeping {path}: it points into a tree this tool did not write")
 
@@ -534,39 +590,33 @@ def check(home: Path, repo: Path, version: str, commit: str) -> bool:
             drift = True
             print(f"drift   {label} does not resolve to {RULE_LINKS[rel]} (run --apply)")
 
-    names = skill_names(target) if installed else []
+    wanted = read_skills(repo)
+    available = skill_names(target) if installed else []
+    absent = [name for name in wanted if name not in available]
+    if installed and absent:
+        drift = True
+        print(f"drift   the installed tree lacks {', '.join(absent)}; run --apply to refetch it, "
+              "or drop the name if the pin no longer ships it")
+    names = [name for name in wanted if name in available]
+    # The declared list, not the subset the tree happens to satisfy: a listed skill whose
+    # directory went missing is a damaged tree, not a link that is "not in skills.txt".
+    removable, kept = stray_links(home, root, target, wanted, state) if installed else ([], [])
     for base in skill_targets(home) if installed else []:
         wrong = []
         for name in names:
             dst = base / name
-            if not (dst.is_symlink() and Path(os.readlink(dst)) == target / "skills" / name):
+            if not (dst.is_symlink() and dst.resolve() == (target / "skills" / name).resolve()):
                 wrong.append(name)
-        stale = [
-            name for name in state.get("skills", [])
-            if name not in names and link_state(base / name, home) == "ours"
-        ]
+        problems = [(path, reason) for path, reason in removable if path.parent == base]
         label = str(base).replace(str(home), "~", 1)
-        if not names:
-            drift = True
-            print(f"drift   {label} (no tree installed)")
-        elif wrong or stale:
+        if wrong or problems:
             drift = True
             print(f"drift   {label}: {len(names) - len(wrong)}/{len(names)} linked"
                   + (f", missing: {', '.join(wrong[:6])}" if wrong else "")
-                  + (f", stale: {', '.join(stale[:6])}" if stale else ""))
+                  + ("".join(f", {path.name} ({reason})" for path, reason in problems)
+                     if problems else ""))
         else:
             print(f"ok      {label}: {len(names)} links")
-        expected = {target / "skills" / name for name in names}
-        stray = sorted(
-            path.name for path in base.iterdir()
-            if path.is_symlink()
-            and is_ours(link_target(path) or Path(), home)
-            and link_target(path) not in expected
-            and tree_owned(root, link_target(path) or Path(), state)
-        ) if base.is_dir() else []
-        if stray:
-            drift = True
-            print(f"drift   {label}: {len(stray)} link(s) into another pstack tree: {', '.join(stray[:6])}")
 
     setup = target / "skills" / "setup-pstack" / "SKILL.md"
     labels = role_labels(setup) if installed and setup.is_file() else None
