@@ -24,6 +24,7 @@ string[] entries =
     "agents",
     "commands",
     "skills",
+    "pstack",
     "memory",
     "bin",
     "plugins",
@@ -46,6 +47,11 @@ var homeEntries = new List<(string Dest, string Src, bool IsDir)>
     (Path.Combine(".grok", "AGENTS.md"), "AGENTS.md", false),
     // notify-bot is the one helper agents run by name rather than by absolute path.
     (Path.Combine(".local", "bin", "notify-bot"), Path.Combine("bin", "notify-bot"), false),
+    // pstack's model rule, owned here instead of by its /setup-pstack skill. Cursor and
+    // Claude Code each read their own file; opencode reads pstack/opencode/ through the
+    // `instructions` entry in opencode.json. bin/sync-pstack --check reports drift.
+    (Path.Combine(".claude", "rules", "pstack-models.md"), Path.Combine("pstack", "claude", "pstack-models.md"), false),
+    (Path.Combine(".cursor", "rules", "pstack-models.mdc"), Path.Combine("pstack", "cursor", "pstack-models.mdc"), false),
 };
 if (Directory.Exists(Path.Combine(repoRoot, "skills")))
     foreach (var dir in Directory.GetDirectories(Path.Combine(repoRoot, "skills")).OrderBy(d => d, StringComparer.Ordinal))

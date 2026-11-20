@@ -1,0 +1,638 @@
+#!/usr/bin/env python3
+"""Sync the pinned pstack skill pack into every harness that reads skills.
+
+    sync-pstack                # --check: report drift, change nothing (exit 1 if any)
+    sync-pstack --apply        # fetch the pinned tree, link the skills, render the rules
+    sync-pstack --from DIR     # install from a local pstack tree instead of GitHub
+    sync-pstack --home DIR     # act on DIR instead of $HOME (tests)
+    sync-pstack --repo DIR     # read the pin and models.json from DIR (tests)
+
+The pin is `skills.pstack` in tools.json: a version and the cursor/plugins commit
+that carries it. A fetch beats each harness's plugin installer because only Grok
+Build can pin one (`grok plugin install cursor/plugins@<sha>#pstack`): Claude Code
+installs whatever its marketplace catalog held, Cursor installs from its GUI, and
+opencode's plugin registry holds JS hook packages, not skills. One tree under
+~/.agents/pstack/<version>/ is the only way every harness sees the same bytes.
+
+What it writes:
+
+  ~/.agents/pstack/<version>/     the whole upstream pstack/ tree, docs and agents
+                                  included, so pstack's `../../docs/guide` links resolve
+  ~/.agents/pstack/state.json     version, commit, and the skills this tool owns
+  ~/.agents/skills/<skill>        symlink into that tree; Cursor and opencode both
+                                  read this root
+  ~/.claude/skills/<skill>        symlink, for Claude Code and Grok through it
+  pstack/{cursor,claude,opencode}/pstack-models.*
+                                  rendered from pstack/models.json
+
+Nothing is deleted unless this tool recorded it: a skill directory it did not create
+is a collision, reported and left byte-identical; a tree it removes carries its
+`.dotfiles-pstack` stamp or is the version state.json names.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path, PurePosixPath
+
+ROOT = Path(__file__).resolve().parent.parent
+ARCHIVE = "https://github.com/cursor/plugins/archive/{commit}.tar.gz"
+SUBDIR = "pstack"
+OPENCODE_INSTRUCTIONS = "{env:HOME}/.config/opencode/pstack/opencode/pstack-models.md"
+
+CURSOR_PROLOGUE = """\
+---
+description: pstack per-role model choices (overrides skill defaults)
+alwaysApply: true
+---
+# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
+# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`).
+# Alias entries in a panel list still count toward its fan-out.
+"""
+
+CLAUDE_PROLOGUE = """\
+# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
+# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit `model`).
+# Alias entries in a panel list still count toward its fan-out.
+"""
+
+OPENCODE_PROLOGUE = """\
+# pstack model configuration for opencode. One line per role. Delete a line to fall back to the skill default.
+# This file replaces ~/.cursor/rules/pstack-models.mdc in this harness: opencode denies reads of
+# ~/.cursor/*, so a pstack skill that names that path reads these values instead.
+# Values are this repo's routes, `provider/model#variant`; `inherit-parent` runs on the parent model.
+# Code delegates and swarm workers deliberately run at #high on this repo's writer route, not on
+# pstack's Opus default: judgment, prose and the three panels keep their real routes.
+# Alias entries in a panel list still count toward its fan-out.
+"""
+
+MANAGED = "# managed by bin/sync-pstack from pstack/models.json; edit the JSON, not this file.\n"
+RENDER_TARGETS = {
+    "cursor": Path("pstack/cursor/pstack-models.mdc"),
+    "claude": Path("pstack/claude/pstack-models.md"),
+    "opencode": Path("pstack/opencode/pstack-models.md"),
+}
+# The two rules each harness reads from its own home directory, and the tracked file
+# each one links to. install.cs places them too; --apply repairs them so one command
+# converges everything pstack needs, and --check is strict about them.
+RULE_LINKS = {
+    Path(".claude/rules/pstack-models.md"): RENDER_TARGETS["claude"],
+    Path(".cursor/rules/pstack-models.mdc"): RENDER_TARGETS["cursor"],
+}
+STAMP = ".dotfiles-pstack"
+VERSION = re.compile(r"\d+(\.\d+)+")
+SKILL_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
+PROLOGUE = {"cursor": CURSOR_PROLOGUE, "claude": CLAUDE_PROLOGUE, "opencode": OPENCODE_PROLOGUE}
+
+
+def read_pin(repo: Path) -> tuple[str, str]:
+    data = json.loads((repo / "tools.json").read_text())
+    pin = data.get("skills", {}).get("pstack")
+    if not isinstance(pin, dict) or not pin.get("version") or not pin.get("commit"):
+        raise SystemExit("tools.json: skills.pstack needs both a version and a commit")
+    version = pin["version"]
+    if not VERSION.fullmatch(version):
+        raise SystemExit(f"tools.json: skills.pstack.version {version!r} is not a version like 0.15.46")
+    commit = pin["commit"]
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise SystemExit(f"tools.json: skills.pstack.commit {commit!r} is not a full 40-character sha")
+    return version, commit
+
+
+def load_models(repo: Path) -> dict:
+    models = json.loads((repo / "pstack" / "models.json").read_text())
+    if models.get("defaults") is None or not models.get("budget") or not models.get("roles"):
+        raise SystemExit("pstack/models.json needs defaults, budget and roles")
+    return models
+
+
+def render(models: dict, harness: str) -> str:
+    lines = [PROLOGUE[harness], f"# defaults: {models['defaults']}\n", f"# budget: {models['budget']}\n", MANAGED]
+    for label, values in models["roles"].items():
+        lines.append(f"{label}: {', '.join(values[harness])}\n")
+    return "".join(lines)
+
+
+def render_all(repo: Path) -> dict[Path, str]:
+    models = load_models(repo)
+    return {RENDER_TARGETS[name]: render(models, name) for name in RENDER_TARGETS}
+
+
+def role_labels(skill_md: Path) -> list[str] | None:
+    """The role labels from the pinned setup-pstack step 5 rule shape.
+
+    Read from the installed skill, not a copy: an upstream rename shows up as drift
+    before the rule silently starts missing a role.
+    """
+    text = skill_md.read_text(errors="replace")
+    block = re.search(r"### 5\. Write the rule.*?```\n(.*?)```", text, flags=re.S)
+    if not block:
+        return None
+    labels = []
+    seen_budget = False
+    for line in block.group(1).splitlines():
+        if line.startswith("# budget:"):
+            seen_budget = True
+            continue
+        if not seen_budget:
+            continue
+        match = re.match(r"^([a-z][a-z ,-]*): ", line)
+        if match:
+            labels.append(match.group(1))
+    return labels
+
+
+def skill_names(tree: Path) -> list[str]:
+    skills = tree / "skills"
+    if not skills.is_dir():
+        return []
+    return sorted(p.parent.name for p in skills.glob("*/SKILL.md"))
+
+
+def state_path(home: Path) -> Path:
+    return home / ".agents" / "pstack" / "state.json"
+
+
+def read_state(home: Path) -> dict:
+    path = state_path(home)
+    if not path.is_file():
+        return {}
+    try:
+        state = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
+    # state.json is the only authority for deleting anything, so a version that is
+    # not a version, or a skill name that is not a slug, is discarded rather than
+    # used as a path segment.
+    if not isinstance(state, dict) or not VERSION.fullmatch(str(state.get("version", ""))):
+        return {}
+    skills = state.get("skills")
+    if not isinstance(skills, list) or any(
+        not isinstance(name, str) or not SKILL_NAME.fullmatch(name) for name in skills
+    ):
+        return {}
+    return state
+
+
+def skill_targets(home: Path) -> tuple[Path, Path]:
+    return home / ".agents" / "skills", home / ".claude" / "skills"
+
+
+def is_ours(target: Path, home: Path) -> bool:
+    """True when the path lives in this home's fetched ~/.agents/pstack tree."""
+    root = (home / ".agents" / "pstack").resolve()
+    return target.resolve().is_relative_to(root)
+
+
+def tree_owned(root: Path, pointed: Path, state: dict) -> bool:
+    """True when the pstack tree a link resolves into was written by this tool.
+
+    A person's own checkout under ~/.agents/pstack/ is not ours to touch, and neither
+    are the links they made into it.
+    """
+    try:
+        first = pointed.resolve().relative_to(root.resolve()).parts[0]
+    except (ValueError, IndexError):
+        return False
+    tree = root / first
+    if not tree.exists():
+        # The tree is gone, so the dangling link protects nothing and is ours to repair.
+        # A missing path inside a tree that still exists is the person's broken link.
+        return True
+    return (tree / STAMP).is_file() or state.get("version") == first
+
+
+def link_target(dst: Path) -> Path | None:
+    if not dst.is_symlink():
+        return None
+    raw = Path(os.readlink(dst))
+    return raw if raw.is_absolute() else (dst.parent / raw)
+
+
+def link_state(dst: Path, home: Path) -> str:
+    """'ours' when it is a symlink into this home's ~/.agents/pstack, 'other-link', 'dir' or 'absent'."""
+    target = link_target(dst)
+    if target is not None:
+        return "ours" if is_ours(target, home) else "other-link"
+    return "dir" if dst.exists() else "absent"
+
+
+def rule_link_state(home: Path, repo: Path, rel: Path) -> str:
+    """'ok', 'absent', 'other-link', or 'file' for the per-harness rule link."""
+    dst = home / rel
+    src = repo / RULE_LINKS[rel]
+    if dst.is_symlink():
+        return "ok" if dst.resolve() == src.resolve() else "other-link"
+    return "file" if dst.exists() else "absent"
+
+
+def extract_archive(archive: Path, stage: Path) -> None:
+    """Extract only <root>/pstack/ from the cursor/plugins archive."""
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+        if not members:
+            raise SystemExit("archive is empty")
+        root = PurePosixPath(members[0].name).parts[0]
+        for member in members:
+            parts = PurePosixPath(member.name).parts
+            if not parts or parts[0] != root:
+                continue
+            rest = parts[1:]
+            if not rest or rest[0] != SUBDIR or ".." in rest:
+                continue
+            dest = stage / Path(*rest[1:])
+            if member.isdir():
+                dest.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                continue
+            handle = tar.extractfile(member)
+            if handle is None:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(handle.read())
+
+
+def fetch_tree(version: str, commit: str, stage: Path) -> None:
+    url = ARCHIVE.format(commit=commit)
+    print(f"        fetching {url}")
+    archive = stage.parent / f"pstack-{os.getpid()}.tar.gz"
+    request = urllib.request.Request(url, headers={"User-Agent": "dotfiles-sync-pstack"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        archive.write_bytes(response.read())
+    try:
+        extract_archive(archive, stage)
+    finally:
+        archive.unlink(missing_ok=True)
+    plugin = stage / "plugin.json"
+    if not plugin.is_file():
+        raise SystemExit(f"{url} has no {SUBDIR}/plugin.json")
+    found = json.loads(plugin.read_text()).get("version")
+    if found != version:
+        raise SystemExit(f"commit {commit[:12]} carries pstack {found}, but tools.json pins {version}")
+
+
+def install(home: Path, version: str, commit: str, source: Path | None, repo: Path) -> int:
+    root = home / ".agents" / "pstack"
+    root.mkdir(parents=True, exist_ok=True)
+    # A killed run leaves its staging directory behind; it is ours by name and prefix.
+    for leftover in root.glob(".stage-*"):
+        shutil.rmtree(leftover, ignore_errors=True)
+    target = root / version
+    state = read_state(home)
+    current = (
+        state.get("version") == version
+        and state.get("commit") == commit
+        and (target / "plugin.json").is_file()
+        and state.get("skills") == skill_names(target)
+    )
+    if current:
+        print("        already at the pin; repairing links only")
+    else:
+        stage = Path(tempfile.mkdtemp(dir=root, prefix=".stage-"))
+        try:
+            if source is not None:
+                if not (source / "skills").is_dir():
+                    raise SystemExit(f"{source}: not a pstack tree (no skills/)")
+                shutil.copytree(source, stage, dirs_exist_ok=True)
+                plugin = stage / "plugin.json"
+                found = json.loads(plugin.read_text()).get("version") if plugin.is_file() else None
+                if found != version:
+                    raise SystemExit(f"{source}: carries pstack {found}, but tools.json pins {version}")
+            else:
+                try:
+                    fetch_tree(version, commit, stage)
+                except (OSError, SystemExit, tarfile.TarError) as error:
+                    print(f"FAILED  fetch: {error}")
+                    return 1
+            if target.is_symlink():
+                raise SystemExit(f"{target} is a symlink, not a tree this tool fetched; move it aside first")
+            if target.exists():
+                owned = (target / STAMP).is_file() or state.get("version") == version
+                if not owned:
+                    raise SystemExit(f"{target} exists and was not written by this tool; move it aside first")
+                shutil.rmtree(target)
+            (stage / STAMP).write_text(f"{version} {commit}\n")
+            shutil.move(str(stage), str(target))
+        finally:
+            if stage.exists():
+                shutil.rmtree(stage, ignore_errors=True)
+
+    names = skill_names(target)
+    if not names:
+        print(f"FAILED  {target} has no skills")
+        return 1
+
+    collisions = []
+    for name in names:
+        for base in skill_targets(home):
+            dst = base / name
+            kind = link_state(dst, home)
+            if kind in ("dir", "other-link"):
+                collisions.append(f"{dst} ({kind})")
+    if collisions:
+        for line in collisions:
+            print(f"FAILED  collision: {line}")
+        print("        move it aside, or drop the skill from the pin; nothing was linked")
+        return 1
+
+    for name in names:
+        for base in skill_targets(home):
+            dst = base / name
+            wanted = target / "skills" / name
+            if dst.is_symlink():
+                if Path(os.readlink(dst)) == wanted:
+                    continue
+                dst.unlink()
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(wanted, dst)
+
+    stale = sorted(set(state.get("skills", [])) - set(names))
+    for name in stale:
+        for base in skill_targets(home):
+            dst = base / name
+            if link_state(dst, home) == "ours":
+                dst.unlink()
+    if stale:
+        print(f"        pruned {len(stale)} skill link(s) this tool owned: {', '.join(stale)}")
+
+    # A link into an older tree is not in state.json by definition, so the state-only
+    # prune misses it. It is a symlink into ~/.agents/pstack and nothing else, so
+    # removing it, and then any tree nothing points at, converges the machine.
+    expected = {target / "skills" / name for name in names}
+    strays, kept = [], []
+    for base in skill_targets(home):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.iterdir()):
+            pointed = link_target(path)
+            if pointed is None or not is_ours(pointed, home) or pointed in expected:
+                continue
+            (strays if tree_owned(root, pointed, state) else kept).append(path)
+    for path in strays:
+        path.unlink()
+    if strays:
+        print(f"        removed {len(strays)} stray link(s) into another pstack tree: "
+              + ", ".join(path.name for path in strays[:6]))
+    for path in kept:
+        print(f"note    keeping {path}: it points into a tree this tool did not write")
+
+    for old in sorted(root.iterdir()):
+        if not old.is_dir() or old.name == version or not VERSION.fullmatch(old.name):
+            continue
+        # Only a tree this tool fetched: stamped by it, or the version state.json named.
+        # A checkout a person put here is not touched, and a symlinked directory is kept
+        # rather than aborting an apply that has work left to do.
+        if not (old / STAMP).is_file() and state.get("version") != old.name:
+            print(f"note    keeping {old}: not written by this tool")
+            continue
+        if old.resolve().parent != root.resolve():
+            print(f"note    keeping {old}: it is a link to another directory")
+            continue
+        pointed_at = any(
+            (link_target(path) or Path()).resolve().is_relative_to(old.resolve())
+            for base in skill_targets(home) if base.is_dir()
+            for path in base.iterdir() if path.is_symlink()
+        )
+        if pointed_at:
+            continue
+        try:
+            shutil.rmtree(old)
+        except OSError as error:
+            print(f"FAILED  could not remove {old}: {error}")
+            return 1
+        print(f"        removed the previous tree {old}")
+
+    state_path(home).parent.mkdir(parents=True, exist_ok=True)
+    state_path(home).write_text(json.dumps({"version": version, "commit": commit, "skills": names}, indent=2) + "\n")
+    print(f"        {len(names)} skills -> {target}")
+
+    # install.cs places these too and backs up a real file it finds; repair them here so
+    # one command converges everything pstack needs, and never clobber a file.
+    for rel in RULE_LINKS:
+        dst = home / rel
+        state_name = rule_link_state(home, repo, rel)
+        if state_name == "ok":
+            continue
+        if state_name == "file":
+            print(f"FAILED  {dst} is a real file, not a link; run ./install.cs so it can back it up")
+            return 1
+        if state_name == "other-link":
+            dst.unlink()
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(repo / RULE_LINKS[rel], dst)
+        print(f"        linked {dst}")
+    return 0
+
+
+def check(home: Path, repo: Path, version: str, commit: str) -> bool:
+    drift = False
+    print(f"pin     {version} ({commit[:12]})")
+
+    renders = render_all(repo)
+    models = load_models(repo)
+    for rel, want in renders.items():
+        path = repo / rel
+        have = path.read_text() if path.is_file() else ""
+        if have == want:
+            print(f"ok      {rel}")
+            continue
+        drift = True
+        print(f"drift   {rel}")
+        sys.stdout.writelines(
+            list(difflib.unified_diff(have.splitlines(True), want.splitlines(True), "current", "models", n=0))[:40]
+        )
+
+    routes = models.get("routes", {})
+    aliases = ("inherit-parent", "auto")
+    for label, values in models["roles"].items():
+        for entry in [e for e in values["opencode"] if e not in aliases]:
+            route, _, variant = entry.partition("#")
+            allowed = routes.get(route)
+            if allowed is None:
+                drift = True
+                print(f"drift   role {label!r}: {route} is not in pstack/models.json routes")
+            elif variant and variant not in allowed:
+                drift = True
+                print(f"drift   role {label!r}: {route} has no {variant!r} effort")
+    if routes:
+        print(f"ok      routes: {len(routes)} declared")
+    used = {
+        entry.partition("#")[0]
+        for values in models["roles"].values()
+        for entry in values["opencode"]
+        if entry not in aliases
+    }
+    unused = sorted(set(routes) - used)
+    if unused:
+        print(f"note    routes: declared but unused by any role: {', '.join(unused)}")
+    live = shutil.which("opencode")
+    if live is None:
+        print("note    routes: opencode not on PATH; the routes in use are unchecked")
+    else:
+        try:
+            listing = subprocess.run([live, "models"], capture_output=True, text=True, timeout=60)
+            listed = set(listing.stdout.split())
+        except (OSError, subprocess.SubprocessError):
+            listing, listed = None, set()
+        if not listed:
+            print("note    routes: `opencode models` returned nothing; the routes in use are unchecked")
+        else:
+            missing = sorted(route for route in used if route not in listed)
+            if missing:
+                drift = True
+                print(f"drift   routes this opencode does not list: {', '.join(missing)}")
+            else:
+                print(f"ok      routes: all {len(used)} in use are listed by `opencode models`")
+
+    instructions = json.loads((repo / "opencode.json").read_text()).get("instructions", [])
+    if OPENCODE_INSTRUCTIONS in instructions:
+        print("ok      opencode.json instructions")
+    else:
+        drift = True
+        print(f"drift   opencode.json instructions (add {OPENCODE_INSTRUCTIONS})")
+
+    state = read_state(home)
+    root = home / ".agents" / "pstack"
+    target = root / version
+    installed = target.is_dir() and (target / "plugin.json").is_file()
+    if not state:
+        drift = True
+        print(f"drift   {home}/.agents/pstack (not installed; run bin/sync-pstack --apply)")
+    elif state.get("version") != version or state.get("commit") != commit:
+        drift = True
+        print(f"drift   {home}/.agents/pstack: installed {state.get('version')} ({str(state.get('commit'))[:12]}), "
+              f"pin {version} ({commit[:12]})")
+    elif not installed:
+        drift = True
+        print(f"drift   {target} is missing; run bin/sync-pstack --apply")
+    else:
+        print(f"ok      installed {version} ({commit[:12]})")
+
+    for rel in RULE_LINKS:
+        dst = home / rel
+        label = str(dst).replace(str(home), "~", 1)
+        state_name = rule_link_state(home, repo, rel)
+        if state_name == "ok":
+            print(f"ok      {label}")
+        elif state_name == "absent":
+            drift = True
+            print(f"drift   {label} (missing; run ./bin/sync-pstack --apply)")
+        elif state_name == "file":
+            drift = True
+            print(f"drift   {label} is a real file, not a link (run ./install.cs to back it up, then --apply)")
+        else:
+            drift = True
+            print(f"drift   {label} does not resolve to {RULE_LINKS[rel]} (run --apply)")
+
+    names = skill_names(target) if installed else []
+    for base in skill_targets(home) if installed else []:
+        wrong = []
+        for name in names:
+            dst = base / name
+            if not (dst.is_symlink() and Path(os.readlink(dst)) == target / "skills" / name):
+                wrong.append(name)
+        stale = [
+            name for name in state.get("skills", [])
+            if name not in names and link_state(base / name, home) == "ours"
+        ]
+        label = str(base).replace(str(home), "~", 1)
+        if not names:
+            drift = True
+            print(f"drift   {label} (no tree installed)")
+        elif wrong or stale:
+            drift = True
+            print(f"drift   {label}: {len(names) - len(wrong)}/{len(names)} linked"
+                  + (f", missing: {', '.join(wrong[:6])}" if wrong else "")
+                  + (f", stale: {', '.join(stale[:6])}" if stale else ""))
+        else:
+            print(f"ok      {label}: {len(names)} links")
+        expected = {target / "skills" / name for name in names}
+        stray = sorted(
+            path.name for path in base.iterdir()
+            if path.is_symlink()
+            and is_ours(link_target(path) or Path(), home)
+            and link_target(path) not in expected
+            and tree_owned(root, link_target(path) or Path(), state)
+        ) if base.is_dir() else []
+        if stray:
+            drift = True
+            print(f"drift   {label}: {len(stray)} link(s) into another pstack tree: {', '.join(stray[:6])}")
+
+    setup = target / "skills" / "setup-pstack" / "SKILL.md"
+    labels = role_labels(setup) if installed and setup.is_file() else None
+    if labels is None:
+        if installed:
+            print("note    role labels: the installed setup-pstack has no step 5 rule shape; skipped")
+    else:
+        missing = [label for label in labels if label not in models["roles"]]
+        extra = [label for label in models["roles"] if label not in labels]
+        if missing or extra:
+            drift = True
+            print("drift   pstack/models.json roles vs the pinned setup-pstack"
+                  + (f"; missing: {', '.join(missing)}" if missing else "")
+                  + (f"; retired: {', '.join(extra)}" if extra else ""))
+        else:
+            print(f"ok      roles: {len(labels)} labels match the pinned setup-pstack")
+
+    manifest = home / ".cursor" / "plugins" / "cache" / ".cloud-plugin-manifest.json"
+    if manifest.is_file():
+        try:
+            plugins = json.loads(manifest.read_text())
+            plugins = plugins.get("plugins", []) if isinstance(plugins, dict) else []
+        except json.JSONDecodeError:
+            plugins = []
+        for plugin in plugins:
+            if not isinstance(plugin, dict) or plugin.get("name") != "pstack":
+                continue
+            # Two copies is the problem, whatever the plugin's commit: Cursor would list
+            # the same skill names twice and pick an undefined winner.
+            plugin_commit = plugin.get("resolvedCommitSha") or plugin.get("gitRef") or "?"
+            drift = True
+            print(f"drift   Cursor plugin pstack ({plugin_commit[:12]}) is installed; remove it in Cursor "
+                  f"(Settings -> Plugins) so only the {version} copy remains")
+    return drift
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--apply", action="store_true", help="fetch, link and render (default: only report drift)")
+    parser.add_argument("--check", action="store_true", help="report drift (the default)")
+    parser.add_argument("--from", dest="source", default=None,
+                        help="install from a local pstack tree instead of downloading the pin")
+    parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
+    parser.add_argument("--repo", default=str(ROOT), help="checkout holding tools.json and pstack/ (default: this one)")
+    args = parser.parse_args()
+
+    repo = Path(args.repo).resolve()
+    home = Path(args.home).expanduser().resolve()
+    version, commit = read_pin(repo)
+
+    if not args.apply:
+        return 1 if check(home, repo, version, commit) else 0
+
+    for rel, want in render_all(repo).items():
+        path = repo / rel
+        if path.is_file() and path.read_text() == want:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(want)
+        print(f"        rendered {rel}")
+    if install(home, version, commit, Path(args.source) if args.source else None, repo):
+        return 1
+    manifest = json.loads((repo / "tools.json").read_text())["skills"]["pstack"]
+    print(f"pstack  {manifest['version']} ({manifest['commit'][:12]}) applied")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -154,6 +154,13 @@ step "rebuild"
 run "$REPO/install.cs"
 
 # ---------------------------------------------------------------------------
+# After install.cs: it backs up and replaces a rule file left by pstack's own
+# /setup-pstack, which sync-pstack must not clobber.
+step "pstack"
+
+run "$REPO/bin/sync-pstack" --apply
+
+# ---------------------------------------------------------------------------
 say ""
 if [ "$fail" -ne 0 ]; then
     printf '%s step(s) failed\n' "$fail" >&2

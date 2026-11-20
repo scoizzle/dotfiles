@@ -2,5 +2,12 @@
   "//": "Pinned versions for tools installed outside this repo's build. Dependabot cannot see global .NET tools, so .github/workflows/tools.yml checks these against NuGet weekly.",
   "tools": {
     "roslynk": "3.0.0"
+  },
+  "skills": {
+    "//": "Skill packs fetched at install time, not vendored: bin/sync-pstack installs the pin into ~/.agents/skills. The pin is the upstream commit, not a tag, because cursor/plugins releases no tags.",
+    "pstack": {
+      "version": "0.15.46",
+      "commit": "0b46ec399d55f2829e88822998f53b84944837d3"
+    }
   }
 }

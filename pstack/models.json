@@ -1,0 +1,172 @@
+{
+  "//": "pstack's per-role model choices, owned here instead of by /setup-pstack. Rendered by bin/sync-pstack into pstack/{cursor,claude,opencode}/; do not edit those by hand. The role labels are the ones in the pinned setup-pstack step 5, and bin/sync-pstack reports drift when upstream renames one.",
+  "//cursor": "Cursor's own slugs, which are pstack's defaults: nothing to translate.",
+  "//claude": "Claude Code takes `model effort` (opus/sonnet/haiku/fable). A role whose model is not a Claude model is `inherit-parent`, so the seat runs on the session model.",
+  "//opencode": "This repo's routes, `provider/model#variant`. Code delegates and swarm workers run on the repo's writer route, not pstack's Opus default: the evals gate decision keeps volume work on opencode-go/deepseek-v4.1-flash and spends Opus on review. Judgment, prose and the panels keep their real Opus/Fable/Gemini routes. The `-fast` speed suffix has no opencode equivalent; effort is the only axis.",
+  "defaults": 3,
+  "budget": "large (xhigh)",
+  "roles": {
+    "feature, refactoring": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "opencode-go/deepseek-v4.1-flash#high"
+      ]
+    },
+    "bug-fix": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "opencode-go/deepseek-v4.1-flash#high"
+      ]
+    },
+    "perf-issue": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "opencode-go/deepseek-v4.1-flash#high"
+      ]
+    },
+    "hillclimb": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "opencode-go/deepseek-v4.1-flash#high"
+      ]
+    },
+    "judgment and prose": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "claude-agent/opus#xhigh"
+      ]
+    },
+    "arena runners": {
+      "cursor": [
+        "claude-fable-5-2-high",
+        "claude-opus-5-5-high-fast",
+        "gemini-4-neon-xhigh"
+      ],
+      "claude": [
+        "fable high",
+        "opus high",
+        "inherit-parent"
+      ],
+      "opencode": [
+        "claude-agent/fable#high",
+        "claude-agent/opus#high",
+        "opencode/gemini-4-neon#xhigh"
+      ]
+    },
+    "arena cross-judge pool": {
+      "cursor": [
+        "claude-opus-5-5-high-fast",
+        "gemini-4-neon-xhigh"
+      ],
+      "claude": [
+        "opus high",
+        "inherit-parent"
+      ],
+      "opencode": [
+        "claude-agent/opus#high",
+        "opencode/gemini-4-neon#xhigh"
+      ]
+    },
+    "swarm workers": {
+      "cursor": [
+        "claude-opus-5-5-xhigh-fast"
+      ],
+      "claude": [
+        "opus xhigh"
+      ],
+      "opencode": [
+        "opencode-go/deepseek-v4.1-flash#high"
+      ]
+    },
+    "interrogate reviewers": {
+      "cursor": [
+        "claude-fable-5-2-high",
+        "claude-opus-5-5-high-fast",
+        "gemini-4-neon-xhigh"
+      ],
+      "claude": [
+        "fable high",
+        "opus high",
+        "inherit-parent"
+      ],
+      "opencode": [
+        "claude-agent/fable#high",
+        "claude-agent/opus#high",
+        "opencode/gemini-4-neon#xhigh"
+      ]
+    }
+  },
+  "//routes": "Every opencode route a role may name, with the effort variants that route accepts. Taken from `opencode models` plus each model's effort options in T3 on 2026-11-20; refresh with `./bin/sync-pstack --check`, which compares this table to `opencode models` when opencode is on PATH. tests/pstack.py validates role values against it, so a role cannot name a route this harness lacks.",
+  "routes": {
+    "claude-agent/opus": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "claude-agent/fable": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "claude-agent/sonnet": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "claude-agent/haiku": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "opencode/gemini-4-neon": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "xai/grok-4.7": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "opencode-go/deepseek-v4.1-flash": [
+      "low",
+      "high",
+      "max"
+    ]
+  }
+}
