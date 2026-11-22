@@ -7,7 +7,7 @@ hook, policy or test enforces are in the table at the end.
 
 You do the work. Do not dispatch a writer to avoid editing.
 
-**Ordinary change:** do it. A behavior change gets a failing check first. Run it
+**Ordinary change:** do it. A behavior change gets a failing check first: run it
 red, then green, and record the command and exit code.
 
 **Sensitive change:** auth, secrets, credentials, a schema or data migration, or
@@ -24,46 +24,48 @@ shares the writer's reasoning. This review is required, never optional:
 If no such reviewer is available, stop and ask. Leave the
 edits uncommitted and report them `unreviewed`. A finding blocks only with
 evidence: a failing test, a line-level counterexample, or a broken rule. There is
-one re-review, of the fix delta; another round happens only for a new 🔴. A diff
-that weakens a rule in this file is a 🔴 for the person to decide.
+one re-review, of the fix delta; another round only for a new 🔴 or 🟠. A diff
+that weakens a rule in this file or on a sensitive path is a 🔴 for the person,
+not a finding the reviewer may waive.
 
 Green means the commit you name and a tree whose `git status` you have read.
 Never delete, skip, weaken, or retarget a test to make a change pass; if an
-expectation was wrong, say why. Test cleanup is its own change, and it names the
-test that remains or why nothing covers the behavior. A nit that does not break
+expectation was wrong, say why. Test cleanup is its own change, never bundled with the
+change it unblocks; it names the test that remains or why nothing covers the
+behavior, and never removes the last test for a behavior. A flaky test you cannot
+root-cause: stop, note it in `memory/learnings/`, and let a person delete it. A nit that does not break
 the done-when is reported, not fixed. Stop and ask before a change with no undo:
-a migration, a delete of data, or money.
+a migration, a delete, or money.
 
-A broad lookup may go to `explore` (read-only). A second reviewer only when asked,
-or after the same check has failed twice.
+A broad lookup may go to `explore` (read-only); a second reviewer only when asked
+or after the same check failed twice.
 
 ## Safety
 
 - Stage only the paths you touched, never `git add -A`, never on the default
   branch. A finished change on a thread branch is committed, pushed, and opened
   as a PR without waiting to be asked.
-- Reuse the existing helper or rule before adding a parallel one, and say which.
+- Keep diffs minimal. Reuse the existing helper or rule before adding a parallel
+  one, and say which.
 - A denied command or blocked edit is a boundary, not an obstacle: do not retry
-  it in another spelling. Take a safer path or stop and ask.
-- Undo cost decides: a one-step revert proceeds; shared state and auth need the
-  cleanup named first; no undo waits for a person.
+  it in another spelling, tool or script. Take a safer path or stop and ask.
+- A one-step revert proceeds; shared state and auth name their cleanup first.
 
 ## T3 Code
 
-The `t3-code*` tools own the worktree and the link/watch state; `git` and the
-`pull_request_*` tools own the branch and the PR. Opening the PR ends a finished
-change: push, open, then `link_pull_request` and `watch_pull_request` once. A
-delegated child never watches. A merge is the person's click in v2.0.
+`t3-code*` tools own the worktree and link/watch state; `git` and `gh pr create`
+(or `pull_request_*`) own the PR. A finished change: push, open,
+`link_pull_request`, one `watch_pull_request` (never re-armed; a wake is not a
+merge), `unwatch_pull_request` before handback. `t3_worktree_handoff` goes last:
+it ends the session. Children never watch. Merging is the person's click in v2.0.
 
-When a dispatch names a bot and a thread id and that bot's webhook is configured,
-run `notify-bot <BOT> <status> "<one-line summary>" <thread-id>` at the end. A delegated
+When a dispatch names a bot, a thread id and a configured webhook, run `notify-bot <BOT> <status> "<one-line summary>" <thread-id>` at the end. A delegated
 child does not send it, a failure never fails the task, and never print the secret.
 
 ## Models and the advisor
 
 Use the session model; a lookup may use a cheaper one. Claude runs in Claude Code,
-never through opencode; `review-deep`, `advisor` and `verifier` run on Opus or
-Sonnet there.
+never through opencode: `review-deep` and `advisor` on Opus, `verifier` on Sonnet.
 
 An advisory consult (`advisor`, read-only, Opus in Claude Code) is required when
 one of these triggers fires, at most twice per change:
@@ -71,45 +73,45 @@ one of these triggers fires, at most twice per change:
   or entry point, migration);
 - the same check has failed twice;
 - you are about to delete, rewrite or retarget a test or check;
-- the plan touches more than three source files or 400 changed lines.
+- the plan touches more than three files (tests and config count) or 400 lines
+  added plus removed.
 
-It returns risks, a simpler alternative, and missed cases. Record the answer. It
-never replaces the review and can add a stop, never remove one.
+It returns risks, a simpler alternative and missed cases; record the answer. It
+never replaces the review, can add a stop but never remove one, never answers
+intent (`proceed` included), and never authorizes a choice with no undo.
 
 Record every review, consult and verifier run with `bin/review-log add`.
 
 ### Ambiguity
 
-Cheap to reverse and settled by the repo: decide, and state the assumption. Intent
-goes to the person, never to a model. Intent means two readings that differ in
-user-visible behavior, a public contract, or a data shape. Ask once, with a
+Cheap to reverse and settled by the repo: decide and state the assumption.
+Intent (two readings differing in user-visible behavior, a public contract or a
+data shape) goes to the person, never to a model. Ask once, with a
 recommended default per question, name the search that failed, and keep working
-on whatever does not depend on the answer. Running out of consults never changes
-the default, which is to ask. A child that cannot ask returns `needs-answer`.
+on whatever does not depend on the answer. A design trigger that is also intent goes to the person; the
+consult may only frame it. Running out of consults never changes the default,
+which is to ask. A run that cannot ask stops before the dependent work; a child
+returns `needs-answer`.
 
 ## Memory
 
-Durable memory is `~/.config/opencode/memory/`. Before heavy work, read
-`INDEX.md` and open a file only when its blurb matches the task. Read
-`learnings/working.md` when it exists; never write it. Never edit
-`memory/core/**`, not even through a shell redirect. Append durable discoveries to
-`learnings/pending/YYYY-MM-DD.md` (UTC) as `never`/`known`/`derived` lines, each
-tagged `harness`/`loop`/`graph`, under the header in `learnings/README.md`.
-Agents do not read `pending/`; a person promotes it with `dream --promote`.
+`~/.config/opencode/memory/`: before heavy work read `INDEX.md`, then only the
+files whose blurb matches, and `learnings/working.md` (never write it). Never edit
+`memory/core/**`, even by shell redirect. Append discoveries to
+`learnings/pending/YYYY-MM-DD.md` (UTC) in the format of `learnings/README.md`;
+agents do not read `pending/`, and a person promotes it with `dream --promote`.
 
 ## C# / .NET
 
-Before the first C# read or edit, find the `*.sln`/`*.slnx` (repo root, one level
-up, or the nearest ancestor), call Roslynk `open_solution`, and load
-`roslynk-rules`. It says which Roslynk tool replaces grep, reads and builds. If
-there is no solution, say so in one line and read files. Never imply Roslynk
-answered when it did not. `get_diagnostics` is a compile check, not a test run.
+Load `roslynk-rules` before the first C# read or edit: it finds the solution,
+opens it, and names the Roslynk tool that replaces grep, reads and builds. Never
+imply Roslynk answered when it did not.
 
 Load the skill before its work:
 - `run-tests` before any .NET test command or judgment of one;
 - `platform-detection` before naming the runner;
-- `test-anti-patterns` and `assertion-quality` before calling a test weak or
-  removing one.
+- `test-anti-patterns` and `assertion-quality` before calling a test weak, or
+  removing, weakening or retargeting one.
 
 A skill is a procedure; this file and a repository's `AGENTS.md` win over it. A
 skill that routes to a sibling we lack: say it is not installed.
@@ -124,17 +126,17 @@ A rule enters this file only with a named incident or a failing eval.
 | No force, delete, mirror or `+refspec` push | policy:git-push-destructive | #16 |
 | `git push` asks | policy:git-push | #16 |
 | No agent merge in v2.0 | policy:gh-pr-merge, policy:gh-api-merge, policy:gh-api-graphql-merge | — |
-| No `git stash pop`, `drop` or `clear`; use a WIP commit | policy:git-stash-drop | 2026-11-21: a delegate popped another worktree's WIP |
-| No `rm -rf`, `git reset --hard`, `git clean` | policy:rm-recursive-force, policy:git-reset-hard, policy:git-clean | #16 |
+| No `git stash pop`, `drop`, `clear`; use a WIP commit | policy:git-stash-drop | a delegate popped another worktree's WIP |
+| No `rm -rf`, `reset --hard`, `git clean` | policy:rm-recursive-force, policy:git-reset-hard, policy:git-clean | #16 |
 | `memory/core/**` is read-only | policy:no_edit | — |
-| Install only from the canonical checkout | test:install_root.py | 2026-11-20: 32 hours on a merged worktree |
-| `sync-harness` writes the home only from the canonical checkout | test:sync_canonical.py | same |
+| Install only from the canonical checkout | test:install_root.py | 32 hours on a merged worktree |
+| `sync-harness` writes the home only from it | test:sync_canonical.py | same |
 | `dream` writes only through the canonical memory link | test:dream_canonical.py | same |
 | `dream` stops drafting into a queue unread for 14 days | test:dream_cadence.py | 12 pending files no one read |
 | Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents stayed dispatchable |
 | No Claude model inside opencode | lint:check_no_claude_in_opencode | Phase 2b |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
-| Every gate leaves a ledger record | test:review_log.py | #41 deleted the ledger |
+| Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
 | A sensitive change gets the review above | judgment | #39 landed unreviewed |
 | Red before green | judgment | a fix with no proof it fixed anything |
 | Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests to pass |

@@ -67,6 +67,15 @@ It is **not** a substitute for tests. This repo's workflow requires the changed-
 and then the full suite; a clean `get_diagnostics` proves the code compiles, nothing more.
 Reviewers "never rebuild", but `get_diagnostics` is a read and is fine for them.
 
+## Before the first C# read or edit
+
+Find the `*.sln`/`*.slnx`: `git rev-parse --show-toplevel`, then depth ≤ 2 there,
+one level up, and the nearest ancestor that holds one. Call `open_solution` with
+the absolute path; every other tool needs its `solutionId`. No solution (a
+file-based app such as `install.cs`, a `.csproj`-only tree) or `open_solution`
+fails: say so in one line and read files. `get_diagnostics` is a compile check,
+not a test run.
+
 ## Use Roslynk instead of the mechanical alternative
 
 Moved here from `AGENTS.md` in v2, so it loads only for C# work:

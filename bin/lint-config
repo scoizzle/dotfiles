@@ -405,6 +405,7 @@ def check_sandbox() -> None:
 
 
 CONTRACT_CAP = 8000
+POLICY_RULE_KEYS = ("no_edit", "protected", "control_plane")
 ENFORCER_KINDS = ("policy", "test", "lint")
 
 
@@ -423,14 +424,18 @@ def resolve_enforcer(token: str, policy: dict, ci: str, lint_src: str) -> str | 
                 for value in node:
                     walk(value)
         walk(policy)
-        return None if name in ids or name in policy else f"no policy rule or key {name!r}"
+        # Rule ids, plus the policy sections that are rules themselves. A key such
+        # as `version` or `doc` is not (review of dba84ac).
+        return None if name in ids or name in POLICY_RULE_KEYS else f"no policy rule or key {name!r}"
     if kind == "test":
         if not (ROOT / "tests" / name).is_file():
             return f"no tests/{name}"
-        return None if f"tests/{name}" in ci else f"tests/{name} does not run in CI"
+        runs = re.search(rf"^[ \t]*(?:-[ \t]+)?(?:run:[ \t]*)?python3 tests/{re.escape(name)}[ \t]*$", ci, flags=re.M)
+        return None if runs else f"tests/{name} does not run in CI"
     if kind == "lint":
         defined = re.search(rf"^def {re.escape(name)}\(", lint_src, flags=re.M)
-        called = re.search(rf"^    {re.escape(name)}\(\)", lint_src, flags=re.M)
+        main = re.search(r"^def main\(.*?(?=^def |\Z)", lint_src, flags=re.M | re.S)
+        called = main and re.search(rf"^    {re.escape(name)}\(\)", main.group(0), flags=re.M)
         return None if defined and called else f"no lint check {name} called from main"
     return f"unknown enforcer kind {kind!r} (use {', '.join(ENFORCER_KINDS)} or judgment)"
 
@@ -455,8 +460,10 @@ def check_contract() -> None:
         policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         lint_src = Path(__file__).read_text()
-        rows = [line for line in text.split(heading, 1)[1].splitlines()
-                if line.startswith("|") and not re.fullmatch(r"\|[\s|:-]+", line)][1:]
+        table = [line for line in text.split(heading, 1)[1].splitlines() if line.startswith("|")]
+        if not table or [c.strip() for c in table[0].strip().strip("|").split("|")] != ["Rule", "Enforcer", "Failure it prevents"]:
+            fail("AGENTS.md rule table: the header row must be | Rule | Enforcer | Failure it prevents |")
+        rows = [line for line in table[1:] if not re.fullmatch(r"\|[\s|:-]+", line)]
         if not rows:
             fail("AGENTS.md: the rule table has no rows")
         for line in rows:

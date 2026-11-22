@@ -171,6 +171,11 @@ def main() -> int:
             ("an unknown enforcer kind", saved.replace("policy:git-push |", "hope:git-push |", 1), "unknown enforcer kind"),
             ("a judgment rule with no failure", saved.replace("| judgment | #39 landed unreviewed |", "| judgment | — |", 1),
              "names no failure it prevents"),
+            # review of dba84ac (Opus): a top-level policy key such as `version` is not a rule.
+            ("a policy key that is not a rule", saved.replace("policy:git-push-destructive", "policy:version", 1),
+             "no policy rule or key 'version'"),
+            ("the table loses its header row", saved.replace("| Rule | Enforcer | Failure it prevents |\n| --- | --- | --- |\n", "", 1),
+             "header row"),
         )
         for name, text, marker in contract_cases:
             try:
@@ -185,6 +190,21 @@ def main() -> int:
             failed |= not expect("contract: a test enforcer CI does not run", lint(tree), "does not run in CI")
         finally:
             ci_path.write_text(ci_saved)
+        try:
+            # Only a run line counts: a comment naming the test does not run it.
+            ci_path.write_text(ci_saved.replace("python3 tests/install_root.py", "true  # python3 tests/install_root.py"))
+            failed |= not expect("contract: a test enforcer named only in a CI comment", lint(tree), "does not run in CI")
+        finally:
+            ci_path.write_text(ci_saved)
+        lint_path = tree / "bin" / "lint-config"
+        lint_saved = lint_path.read_text()
+        try:
+            # Called from somewhere other than main() is not a running check.
+            lint_path.write_text(lint_saved.replace("    check_no_claude_in_opencode()\n", "", 1)
+                                 + "\n\ndef _unused() -> None:\n    check_no_claude_in_opencode()\n")
+            failed |= not expect("contract: a lint enforcer not called from main", lint(tree), "called from main")
+        finally:
+            lint_path.write_text(lint_saved)
 
         # v2: Claude runs in Claude Code. A claude-agent/* pin in an opencode agent
         # file or opencode.json puts it back inside opencode.

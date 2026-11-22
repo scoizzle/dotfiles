@@ -32,8 +32,8 @@ If neither is reachable, stop, leave the change uncommitted, and report it
 git repository, say so and use the changed file list instead.
 
 When the bundle has `04-show-*`, it holds the base copies of `AGENTS.md` and
-`agents/review-deep.md`. If the diff touches either, or `bin/review-bundle`,
-`commands/verify.md`, `policy/*`, `evals/cases/*`, or `skills/*`, tell the
+`agents/review-deep.md`. If the diff touches either, or `agents/*`, `bin/*`,
+`commands/*`, `policy/*`, `evals/cases/*`, or `skills/*`, tell the
 reviewer to treat the base copies as the governing rules, compare the new wording
 against them, and report a check this diff weakens or removes as 🔴 for a person
 to decide — not as a finding it may waive. For the gate paths with no `04-show-*`
