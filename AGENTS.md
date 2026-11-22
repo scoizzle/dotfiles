@@ -15,12 +15,12 @@ a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`,
 `evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`,
 `*.sln`, `*.slnx`, `*Dockerfile*`. A CI workflow is not sensitive. Before editing,
 write the outcome, the done-when, and the red check in a few lines. After it,
-one independent read-only review (`review-deep`) in a fresh context, which never
-shares the writer's reasoning. This review is required, never optional:
-- a Claude-written diff is reviewed by a fresh Opus;
-- any other writer's diff is reviewed by Claude, never by its own family.
+one independent read-only review (`review-deep`, the `reviewer` role) in a fresh
+context that never shares the writer's reasoning. It is required, never optional,
+and never the writer's family when roles span families; a Claude-written diff
+gets a fresh Opus (the person's rule, 2026-11-22). With one family it is a fresh
+same-model review, unless `models.resolved.json` says `review_mode: stop`.
 
-(The person's rule, 2026-11-22: in Phase 2b, Sonnet missed a 🔴 that Opus caught.)
 If no such reviewer is available, stop and ask. Leave the
 edits uncommitted and report them `unreviewed`. A finding blocks only with
 evidence: a failing test, a line-level counterexample, or a broken rule. There is
@@ -64,10 +64,10 @@ child does not send it, a failure never fails the task, and never print the secr
 
 ## Models and the advisor
 
-Use the session model; a lookup may use a cheaper one. `review-deep` and `advisor`
-run on Opus, `verifier` on Sonnet.
+Models come from roles (`models/roles.json`, a profile, this machine's
+`models.local.json`); `models.resolved.json` names them. Delegate by role.
 
-An advisory consult (`advisor`, read-only, on Opus) is required when
+An advisory consult (`advisor`, read-only) is required when
 one of these triggers fires, at most twice per change:
 - a design choice the code cannot settle (public contract, data shape, new module
   or entry point, migration);
@@ -136,6 +136,7 @@ A rule enters this file only with a named incident or a failing eval.
 | Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents stayed dispatchable |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
 | Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
+| A profile cannot pair reviewer and implementor | test:models.py | friends' subscriptions |
 | A sensitive change gets the review above | judgment | #39 landed unreviewed |
 | Red before green | judgment | a fix with no proof it fixed anything |
 | Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests to pass |

@@ -19,15 +19,13 @@ Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
 Send the bundle directory, the contract, and the recorded check command and output
 to the `review-deep` reviewer (`agents/review-deep.md`). It is read-only: it does
-not edit and does not rebuild. Pick the reviewer by the writer's family, never
-by which harness is running this command:
-- A non-Claude writer (opencode's default is `opencode-go/*`) is reviewed by
-  Claude. Run `claude -p --agent review-deep` with the bundle, or in T3 use
-  `delegate_task` with `providerInstanceId: claudeAgent`. opencode's own
-  `review-deep` copy runs on the writer's family and must not be used here.
-- A Claude writer is reviewed by a fresh Opus `review-deep` in Claude Code.
+not edit and does not rebuild. The reviewer is the `reviewer` role (`~/.config/opencode/models.resolved.json`).
+`bin/models` keeps it out of the implementor's family while the roles span more
+than one; when every role is one family it is a fresh same-model review, and a
+`review_mode` of `stop` means stop and ask the person. A diff the lead wrote
+itself in a Claude family gets a fresh Opus `review-deep`.
 
-If neither is reachable, stop, leave the change uncommitted, and report it
+If the reviewer is not reachable, stop, leave the change uncommitted, and report it
 `unreviewed`. If the bundle command failed because this is not a
 git repository, say so and use the changed file list instead.
 

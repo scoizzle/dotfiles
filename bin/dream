@@ -66,9 +66,23 @@ DEFAULT_T3_DB = "~/.t3/userdata/statev2.sqlite"
 DEFAULT_MEMORY = "~/.config/opencode/memory"
 DEFAULT_SINCE = "24h"
 DEFAULT_SESSIONS = 50
-# Pinned so a change to the top-level opencode model cannot move this nightly
-# pass onto scarce Claude quota. --model or DREAM_MODEL overrides it.
-DEFAULT_MODEL = "opencode-go/deepseek-v4.1-flash"
+# The drafting model is this machine's `drafter` role (bin/models writes it),
+# so a friend's subscription decides it and the top-level model cannot move this
+# nightly pass. Before the first install it falls back to the old pin.
+# --model or DREAM_MODEL overrides it.
+FALLBACK_MODEL = "opencode-go/deepseek-v4.1-flash"
+
+
+def drafter_model() -> str:
+    role = Path(os.path.expanduser("~/.config/opencode/models/drafter"))
+    try:
+        model = role.read_text().strip()
+    except OSError:
+        return FALLBACK_MODEL
+    return model or FALLBACK_MODEL
+
+
+DEFAULT_MODEL = drafter_model()
 OPENCODE_ARGV = ("run", "--standalone", "--format", "json", "--agent", "dream-drafter")
 T3_PROVIDERS = ("grok", "claudeAgent")
 T3_THREADS = "orchestration_v2_projection_provider_threads"

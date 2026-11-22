@@ -227,22 +227,37 @@ Outside `~/.config/opencode`, also untracked on purpose:
 Run it from a plain terminal, not from inside opencode or T3 — it replaces the binaries
 those processes are running.
 
-## Claude subscription
+## Models for your subscription
 
-Claude models run in Claude Code, not opencode (v2: a model runs in its own
-vendor's harness). The subscription is the local Claude Code login:
+The repo names roles, never models: `lead`, `implementor`, `reviewer`,
+`advisor`, `verifier`, `explore`, `drafter` (`models/roles.json`). A profile in
+`models/profiles/` fills every role for one subscription bundle:
 
-```sh
-claude auth login     # once per machine; tokens stay in ~/.claude
+| Profile | For | Review |
+| --- | --- | --- |
+| `claude-go` (default) | a Claude Pro/Max login plus opencode Go | cross-family: Opus reviews DeepSeek |
+| `go-only` | opencode Go only | fresh same-model DeepSeek review |
+| `claude-only` | a Claude login only | fresh same-model Opus review |
+
+Pick one, and override any role, in an untracked
+`~/.config/opencode/models.local.json`:
+
+```json
+{"profile": "go-only", "roles": {"explore": "opencode-go/deepseek-v4.1-flash#high"}}
 ```
 
-`bin/sync-harness --scope home --apply` renders `review-deep`, `advisor`,
-`explore`, `implementor` and `verifier` into `~/.claude/agents` with their Claude
-models. Their opencode copies carry no Claude pin, and `bin/lint-config` rejects
-one. In v2.0's Phase 2b, Opus native scored 24/24 and Opus through opencode's
-Claude Agent integration scored 22/24 (`docs/v2-plan.md`). `./install.cs --doctor`
-reports the CLI and its login as advisory checks, and `./update.sh` upgrades the
-CLI when it is installed.
+`./install.cs` writes one file per role under `~/.config/opencode/models/`,
+which `opencode.json` reads through `{file:}`, and `./bin/models check` tells you
+if this machine cannot reach a model. A single-family setup reviews with a fresh
+same-model reviewer; add `"review": {"single_family": "stop"}` to be asked
+instead. No setting can put the reviewer in the implementor's family while your
+roles span more than one. Claude reaches opencode through its **Claude Agent**
+integration, which borrows the local Claude Code login (`claude auth login`);
+`plugins/claude-entrypoint.js` labels that traffic so the 5-hour window is
+metered normally.
+
+If you cloned somewhere other than `~/dotfiles`, set `DOTFILES_DIR` to the clone
+before the first `./install.cs`.
 
 ### Experimental Code Mode (opt-in, not managed)
 
