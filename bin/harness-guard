@@ -326,6 +326,11 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
                 break
             if any(tok == f or tok.startswith(f + "=") for f in rule.get("flags", [])):
                 return True
+            # git takes an unambiguous abbreviation of a long option: --forc is --force.
+            name = tok.split("=", 1)[0]
+            if name.startswith("--") and len(name) >= 4 and any(
+                    f.startswith("--") and f.startswith(name) for f in rule.get("flags", [])):
+                return True
             if rule.get("short") and re.fullmatch(r"-[A-Za-z]+", tok) and any(c in rule["short"] for c in tok[1:]):
                 return True
             if rule.get("refspec") and (tok.startswith("+") or (tok.startswith(":") and len(tok) > 1)):
@@ -346,6 +351,8 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
             i += 2 if seg[i] in value_flags else 1
         if seg[i : i + len(rule["leading"])] != rule["leading"]:
             return False
+    if "matches" in rule and not any(re.search(rule["matches"], tok) for tok in seg[1:]):
+        return False
     if "after" in rule:  # the command a wrapper such as xargs runs must be this program
         inner = xargs_command(seg)
         if not inner or os.path.basename(inner[0]) != rule["after"]:
@@ -725,14 +732,49 @@ def cd_base(seg: list[str], base: str | None) -> str | None:
     return os.path.normpath(target)
 
 
+IFS_SPLIT = re.compile(r"\$\{?IFS\b")
+# sed's `e` command (`1e cmd`, `$e`, `/re/e`) and the `e` flag of `s///` run a shell.
+SED_E_COMMAND = re.compile(r"(?:^|[;{}\n]|[0-9$/,!])\s*e(?:\s|;|$)")
+SED_S_EXEC = re.compile(r"^\s*s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*\1[A-Za-z0-9]*e")
+
+
+def sed_executes(seg: list[str]) -> bool:
+    scripts, i = [], 1
+    while i < len(seg):
+        tok = seg[i]
+        if tok in ("-e", "--expression") and i + 1 < len(seg):
+            scripts.append(seg[i + 1])
+            i += 2
+            continue
+        if tok.startswith("--expression="):
+            scripts.append(tok.split("=", 1)[1])
+        elif not tok.startswith("-"):
+            scripts.append(tok)
+        i += 1
+    return any(SED_E_COMMAND.search(s) or SED_S_EXEC.search(s) for s in scripts)
+
+
 def check_shell(policy: dict, command: str, depth: int = 0, cwd: str | None = None) -> list[Decision]:
     found: list[Decision] = pipe_chains(command) + heredoc_decisions(command)
     if depth < MAX_DEPTH:
         for script in heredoc_scripts(command) + herestring_scripts(command) + literal_scripts(command):
             found += check_shell(policy, script, depth + 1, cwd) + substituted(script, depth)
     base = cwd
+    # Published bypasses (GMO Flatt 2025) build the command word at run time:
+    # rm${IFS}-rf, $(printf rm), `echo rm`, ${x@P}. A command word that is not
+    # literal text cannot be matched against a rule, so it is asked, not allowed.
+    if IFS_SPLIT.search(command):
+        found.append(Decision("ask", "opaque-command", f"opaque-command: `$IFS` splits `{command[:100]}` at run time"))
     for seg in segments(command):
         prog = os.path.basename(seg[0])
+        # segments() splits `$(cmd)` into a bare `$` segment and the inner command,
+        # which it checks on its own; that shape is fine. What is not: an expanded
+        # or backquoted command word, or arguments left with no command in front
+        # (`$(printf rm) -rf build` leaves `-rf build`).
+        if (seg[0] != "$" and ("$" in seg[0] or "`" in seg[0])) or seg[0].startswith("-"):
+            found.append(Decision("ask", "opaque-command", f"opaque-command: the command word in `{' '.join(seg)[:60]}` is built at run time"))
+        if prog == "sed" and sed_executes(seg):
+            found.append(Decision("ask", "sed-execute", f"sed-execute: `{' '.join(seg)[:100]}` runs a shell command"))
         if prog == "cd":
             moved = cd_base(seg, base)
             if moved is not None:

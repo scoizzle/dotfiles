@@ -189,6 +189,16 @@ matches nothing. The patterns in `opencode.json` raise the cost of an accident a
 of a lazy injection. They do not stop a determined one. `memory/core/safety.md`
 says the same.
 
+The vectors include the published bypass corpus (GMO Flatt 2025, the
+CVE-2025-66032 class), probed against `harness-guard` on 2026-11-21. Six of its
+forms got through and are now closed. A command word built at run time
+(`rm${IFS}-rf`, `$(printf rm)`, `` `echo rm` ``, `${x@P}`), and sed's `e` command
+or the `e` flag of `s///`, are asked. An abbreviated git long option (`--forc`)
+matches the option it abbreviates. `gh api …/pulls/N/merge` is denied like
+`gh pr merge`. Interpreter code (`python3 -c 'shutil.rmtree(...)'`) still passes
+by design: that is the sandbox's job, not a pattern's. opencode's globs cannot
+see shell expansion, so for these forms the guard is authoritative.
+
 Likewise the `verifier` has an unsandboxed shell. "Does not edit the repository"
 is an instruction it follows, backed by the disposable-clone procedure in its
 prompt, not a permission that holds. Its native render is narrower and still not

@@ -130,6 +130,7 @@ permissions:
   - { action: shell, resource: "*gh -* api*--method*DELETE*", effect: deny }
   - { action: shell, resource: "*gh pr merge*", effect: deny }
   - { action: shell, resource: "*gh -* pr merge*", effect: deny }
+  - { action: shell, resource: "*gh api*pulls/*/merge*", effect: deny }
   - { action: shell, resource: "*npm publish*", effect: deny }
   - { action: shell, resource: "*npm -* publish*", effect: deny }
   - { action: shell, resource: "*/.ssh/*", effect: deny }

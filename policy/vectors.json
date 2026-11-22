@@ -1951,6 +1951,117 @@
     "implementor"
    ],
    "note": "another checkout is not live configuration; the guard's realpath check is what makes this true there too"
+  },
+  {
+   "kind": "shell",
+   "input": "rm${IFS}-rf${IFS}build",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "x='rm -rf build'; ${x@P}",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "$(printf rm) -rf build",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "`echo rm` -rf build",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "sed -n '1e rm -rf build' /dev/null",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "sed 's/x/rm -rf build/e' notes.txt",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "GMO Flatt 2025 bypass corpus (CVE-2025-66032 class); probed against this guard 2026-11-21. opencode globs cannot see shell expansion, so the guard is authoritative"
+  },
+  {
+   "kind": "shell",
+   "input": "sed -i 's/foo/bar/g' notes.txt",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ],
+   "note": "an ordinary sed edit is not an execute command"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --forc origin main",
+   "expect": "deny",
+   "engines": [
+    "guard"
+   ],
+   "note": "git accepts an unambiguous abbreviation of a long option"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --follow-tags origin feature",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "an unrelated long option is not taken for --force"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api -X PUT repos/o/r/pulls/57/merge",
+   "expect": "deny",
+   "note": "the API route to the same merge gh pr merge is denied for"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api repos/o/r/pulls/57",
+   "expect": "allow",
+   "note": "reading a PR through the API stays allowed"
+  },
+  {
+   "kind": "shell",
+   "input": "echo $HOME",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ],
+   "note": "expansion in an argument, not the command word, stays allowed"
+  },
+  {
+   "kind": "shell",
+   "input": "bash -c '$(printf rm) -rf build'",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "the same bypass inside a shell -c body"
   }
  ]
 }

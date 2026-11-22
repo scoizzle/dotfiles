@@ -312,6 +312,19 @@
         ]
       },
       {
+        "id": "gh-api-merge",
+        "doc": "the REST route to the merge gh-pr-merge denies; reading a PR through gh api stays allowed",
+        "program": "gh",
+        "leading": [
+          "api"
+        ],
+        "matches": "(^|/)pulls/[^/]+/merge$",
+        "opencode": [
+          "*gh api*pulls/*/merge*"
+        ],
+        "native": []
+      },
+      {
         "id": "npm-publish",
         "program": "npm",
         "tokens": [
