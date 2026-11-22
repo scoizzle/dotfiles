@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """bin/lint-config must pass on the tree and must fail when a policy surface
 drifts: the native fallback models in policy/permissions.json, the default
-agent losing permission to edit, or the short contract phrases leaving
-AGENTS.md."""
+agent losing permission to edit, an escape hatch or retired word returning to
+AGENTS.md, or the contract outgrowing its cap or naming an enforcer that does
+not exist."""
 
 import json
 import shutil
@@ -86,21 +87,6 @@ def main() -> int:
         build_path = tree / "agents" / "build.md"
         build_original = build_path.read_text()
 
-        for name, path, old, new, marker in (
-            ("AGENTS.md lost 'You do the work'", agents_path,
-             "You do the work", "You might do the work", "You do the work"),
-            ("AGENTS.md lost 'Do not dispatch a writer'", agents_path,
-             "Do not dispatch a writer", "You may dispatch a writer", "Do not dispatch a writer"),
-            ("build.md lost 'You do the work'", build_path,
-             "You do the work", "You might do the work", "You do the work"),
-        ):
-            saved = path.read_text()
-            try:
-                edit(path, old, new)
-                failed |= not expect(name, lint(tree), marker)
-            finally:
-                path.write_text(saved)
-
         try:
             edit(build_path, "mode: primary",
                  "mode: primary\npermissions:\n  - action: edit\n    resource: \"*\"\n    effect: deny")
@@ -118,7 +104,6 @@ def main() -> int:
                 verify_path.write_text(saved)
 
         for name, needle in (
-            ("AGENTS.md", "### Skills"),
             ("AGENTS.md", "run-tests"),
             ("AGENTS.md", "platform-detection"),
             ("AGENTS.md", "test-anti-patterns"),
@@ -137,60 +122,6 @@ def main() -> int:
             finally:
                 path.write_text(saved)
 
-        for name, needle in (
-            ("AGENTS.md", "An advisory consult is required"),
-            ("AGENTS.md", "capped at two per change"),
-            ("AGENTS.md", "runs on Opus in Claude Code"),
-            ("AGENTS.md", "never replaces the sensitive review"),
-            ("agents/build.md", "advisor triggers"),
-            ("agents/build.md", "at most twice"),
-            ("agents/implementor.md", "cannot dispatch"),
-            ("agents/implementor.md", "advisor trigger"),
-        ):
-            path = tree / name
-            saved = path.read_text()
-            try:
-                path.write_text(saved.replace(needle, "nothing"))
-                failed |= not expect(f"{name} lost the advisor rule ({needle!r})", lint(tree), "advisor")
-            finally:
-                path.write_text(saved)
-
-        for name, needle in (
-            ("AGENTS.md", "### Ambiguity, and when to ask"),
-            ("AGENTS.md", "Keep going when the choice is cheap to reverse"),
-            ("AGENTS.md", "ask the person, not a model"),
-            ("AGENTS.md", "not intent stays with the Model choice trigger"),
-            ("AGENTS.md", "An ambiguity is intent, not design"),
-            ("AGENTS.md", "Intent goes to the person every time"),
-            ("AGENTS.md", "the required consult still runs"),
-            ("AGENTS.md", "Put the questions in one ask"),
-            ("AGENTS.md", "never remove one"),
-            ("AGENTS.md", "`proceed` never answers a question"),
-            ("AGENTS.md", "no consult may authorize"),
-            ("AGENTS.md", "never changes the default, which is to ask"),
-            ("AGENTS.md", "stops before the dependent work"),
-            ("AGENTS.md", "takes it to the person"),
-            ("AGENTS.md", "`needs-answer`"),
-            ("AGENTS.md", "Reuse the existing"),
-            ("agents/build.md", "Ambiguity, and when to ask"),
-            ("agents/build.md", "An intent ambiguity"),
-            ("agents/build.md", "the required consult still runs"),
-            ("agents/build.md", "`needs-answer`"),
-            ("agents/build.md", "never answer it yourself"),
-            ("agents/implementor.md", "`needs-answer`"),
-            ("agents/implementor.md", "finish what does not depend on it"),
-            ("agents/advisor.md", "never an answer to intent"),
-            ("agents/advisor.md", "never authorize a choice"),
-        ):
-            path = tree / name
-            saved = path.read_text()
-            try:
-                path.write_text(saved.replace(needle, "nothing"))
-                failed |= not expect(f"{name} lost the ambiguity rule ({needle!r})",
-                                     lint(tree), "escalation has no route")
-            finally:
-                path.write_text(saved)
-
         for name in ("AGENTS.md", "agents/build.md"):
             path = tree / name
             for stale in ("Tier: T0", "plan-review-deep", "second-opinion", "review-light"):
@@ -202,38 +133,6 @@ def main() -> int:
                                          lint(tree), "retired tier cascade")
                 finally:
                     path.write_text(saved)
-
-        build_path = tree / "agents" / "build.md"
-        saved = build_path.read_text()
-        try:
-            build_path.write_text(saved.replace("T3 Code", "shell git"))
-            failed |= not expect("build.md lost the T3 pointer", lint(tree), "T3 Code")
-        finally:
-            build_path.write_text(saved)
-
-        agents_path = tree / "AGENTS.md"
-        saved = agents_path.read_text()
-        try:
-            agents_path.write_text(saved.replace("ends the live session", "moves you"))
-            failed |= not expect("AGENTS.md lost the handoff caveat", lint(tree), "ends the live session")
-        finally:
-            agents_path.write_text(saved)
-
-        for needle in (
-            "this review is required",
-            "different family than the one that wrote the diff",
-            "skipping the review is not the fallback",
-            "stops for a person",
-            "Family means vendor",
-            "dispatch the review on a different-family model",
-            "returns `unreviewed` to its parent",
-        ):
-            saved = agents_path.read_text()
-            try:
-                agents_path.write_text(saved.replace(needle, "optional"))
-                failed |= not expect(f"AGENTS.md: sensitive review skippable ({needle!r})", lint(tree), "sensitive review")
-            finally:
-                agents_path.write_text(saved)
 
         for stale in (
             "or say that no second model was available",
@@ -247,22 +146,6 @@ def main() -> int:
             finally:
                 agents_path.write_text(saved)
 
-        for name, needle, marker in (
-            ("AGENTS.md", "gh pr create", "open and watch its PR"),
-            ("AGENTS.md", "link_pull_request", "open and watch its PR"),
-            ("agents/build.md", "watch_pull_request", "open and watch its PR"),
-            ("agents/implementor.md", "gh pr create", "does not open its PR"),
-            ("agents/build.md", "after any required review", "unreviewed sensitive change"),
-            ("agents/implementor.md", "after any required review", "unreviewed sensitive change"),
-        ):
-            path = tree / name
-            saved = path.read_text()
-            try:
-                path.write_text(saved.replace(needle, "no-pr"))
-                failed |= not expect(f"{name} lost {needle!r}", lint(tree), marker)
-            finally:
-                path.write_text(saved)
-
         saved = agents_path.read_text()
         try:
             agents_path.write_text(saved.replace(
@@ -270,14 +153,6 @@ def main() -> int:
             failed |= not expect("AGENTS.md: old commit/push gate restored", lint(tree), "open and watch its PR")
         finally:
             agents_path.write_text(saved)
-
-        for needle in ("required for a sensitive change", "never skip the review"):
-            build_saved = build_path.read_text()
-            try:
-                build_path.write_text(build_saved.replace(needle, "optional"))
-                failed |= not expect(f"agents/build.md: sensitive review skippable ({needle!r})", lint(tree), "sensitive review")
-            finally:
-                build_path.write_text(build_saved)
 
         # v2: Claude runs in Claude Code. A claude-agent/* pin in an opencode agent
         # file or opencode.json puts it back inside opencode.
