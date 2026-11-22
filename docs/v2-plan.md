@@ -325,6 +325,16 @@ resolved set, not the defaults: the reviewer never shares the implementor's
 family, and a local file cannot weaken a gate. Extends `pstack/models.json`'s
 routes table (#54) rather than adding a second one.
 
+Review when a profile has only one model family (the person's decision,
+2026-11-22): a fresh same-model reviewer by default (fresh context, capable
+model, noted in the PR), since the research found it about as good as a
+cross-model one. A person can set `"review": {"single_family": "stop"}` in
+their local file to require stop-and-ask instead. Multi-family profiles keep
+the cross-family rule.
+
+`main` is protected (2026-11-22): PRs only, the four CI jobs required, no force
+push or delete, admins included because agents use the person's token.
+
 Portability for friends: nothing personal in tracked defaults (bot names, the
 bootstrap slug, memory, the author's paths); the README says how to pick a
 profile.
