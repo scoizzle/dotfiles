@@ -59,12 +59,36 @@ var copyMode = args.Contains("--copy");
 
 if (args.Contains("--help") || args.Contains("-h") || args.Contains("help"))
 {
-    Console.WriteLine("usage: ./install.cs [--check] [--copy] [--doctor]");
+    Console.WriteLine("usage: ./install.cs [--check] [--copy] [--doctor] [--from <this checkout>]");
+    Console.WriteLine("exit: 0 done, 1 drift (--check), 2 failed, 3 refused: not the canonical checkout");
     return 0;
 }
 
 if (args.Contains("--doctor"))
     return RunDoctor(home, repoRoot);
+
+// The repo root is this file's compile-time path, so running another checkout's
+// copy repoints every harness at it. On 2026-11-20 that happened from a feature
+// worktree and held for 32 hours after it merged. Applying is therefore allowed
+// only from the canonical checkout, $DOTFILES_DIR (bootstrap.sh's clone target),
+// default ~/dotfiles, or with --from naming the checkout that is running.
+// --check writes nothing, so it runs anywhere and warns.
+var canonicalRoot = Environment.GetEnvironmentVariable("DOTFILES_DIR") is { Length: > 0 } dotfilesDir
+    ? dotfilesDir : Path.Combine(home, "dotfiles");
+var fromAt = Array.IndexOf(args, "--from");
+var fromRoot = fromAt >= 0 && fromAt + 1 < args.Length ? args[fromAt + 1] : null;
+var isCanonical = SamePath(repoRoot, canonicalRoot);
+if (!isCanonical && !checkOnly && (fromRoot is null || !SamePath(fromRoot, repoRoot)))
+{
+    Console.Error.WriteLine($"refusing to install: {repoRoot} is not the canonical checkout ({canonicalRoot}).");
+    Console.Error.WriteLine("every harness would load its config from this checkout until the next install.");
+    Console.Error.WriteLine(fromRoot is null
+        ? $"run {Path.Combine(canonicalRoot, "install.cs")}, or pass --from {repoRoot} to mean it."
+        : $"--from {fromRoot} does not name the checkout that is running ({repoRoot}).");
+    return 3;
+}
+if (!isCanonical)
+    Console.Error.WriteLine($"warning: {repoRoot} is not the canonical checkout ({canonicalRoot})" + (checkOnly ? "" : "; applying because of --from"));
 
 string mode = copyMode ? "copy" : "link";
 Console.WriteLine($"repo     {repoRoot}");
@@ -296,6 +320,31 @@ static string ResolveRepoRoot([System.Runtime.CompilerServices.CallerFilePath] s
     }
 
     throw new InvalidOperationException("cannot locate repo root (no install.cs next to the script)");
+}
+
+// Two paths name the same directory once every symlink along them is resolved
+// (macOS /var -> /private/var, a ~/dotfiles that is itself a link).
+static bool SamePath(string a, string b) =>
+    string.Equals(RealPath(a), RealPath(b),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+static string RealPath(string path)
+{
+    var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+    var root = Path.GetPathRoot(full) ?? "";
+    var current = root;
+    foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+    {
+        current = Path.Combine(current, part);
+        try
+        {
+            var target = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true);
+            if (target is not null) current = target.FullName.TrimEnd(Path.DirectorySeparatorChar);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+    return current;
 }
 
 static bool TryAttrs(string path, out FileAttributes attrs)

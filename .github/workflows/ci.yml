@@ -59,6 +59,10 @@ jobs:
   installer:
     name: installer / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # install.cs applies only from the canonical checkout; on a runner that is
+    # the workspace, not ~/dotfiles.
+    env:
+      DOTFILES_DIR: ${{ github.workspace }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +94,12 @@ jobs:
       # opencode/roslynk/PATH are advisory and must not fail the build.
       - name: doctor
         run: ./install.cs --doctor
+
+      # Applying from anything but the canonical checkout must be refused
+      # (2026-11-20: the live config pointed into a merged feature worktree for
+      # 32 hours).
+      - name: install refuses a non-canonical checkout
+        run: python3 tests/install_root.py
 
       - name: managed paths are symlinks that resolve
         run: |

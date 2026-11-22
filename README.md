@@ -88,6 +88,15 @@ same file, and `git status` in this repo shows the change immediately.
 Anything already sitting at a destination is **moved** to
 `~/.config/opencode.bak-<timestamp>/`, never deleted. Re-running is idempotent.
 
+The links point at the checkout whose `install.cs` ran, so applying is allowed
+only from the canonical checkout: `$DOTFILES_DIR` (the same variable
+`bootstrap.sh` clones to), default `~/dotfiles`. From any other checkout, a T3
+thread's worktree or a scratch clone, it exits 3 and writes nothing, because
+every harness would otherwise load its config from that branch until the next
+install. `--check` still runs anywhere and warns. To try a branch on purpose,
+pass `--from <that checkout>`. It must name the checkout that is running.
+`~/dotfiles/install.cs` switches back.
+
 `./install.cs --copy` copies instead of linking, for machines where symlinks are
 a problem. That mode is one-way: edits made in `~/.config/opencode` will not come
 back here.
