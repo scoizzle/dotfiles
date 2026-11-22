@@ -72,8 +72,8 @@ What this changes:
    `family: opencode-go`, `model: deepseek-v4.1-flash`). `sync-harness`
    renders each agent only into its family's harness: Claude agents into
    `~/.claude/agents/`, others into opencode. No agent is rendered twice.
-2. **opencode stops hosting Claude.** `review-deep`, `advisor` and (until it is
-   cut) `verifier` move to Claude Code native agents. `opencode.json` and the
+2. **opencode stops hosting Claude.** `review-deep`, `advisor` and `verifier` move
+   to Claude Code native agents. `opencode.json` and the
    opencode agent renders contain no `claude-agent/*` id. `plugins/claude-entrypoint.js`
    is deleted: it exists only because opencode spawns Claude processes. Lint
    rejects any `claude-agent/` string outside `evals/` history.
@@ -357,10 +357,15 @@ file under ~200 lines and to use hooks rather than emphasis
   failure where the weak model decides when to escalate. It becomes a Claude
   Code agent, keeps its two-per-change cap, and has 30 days of ledger rows to
   justify itself.
-- **The verifier is cut.** It is the largest prompt (292 lines) and has no
-  recorded run that produced a finding. The cut takes all six wiring points
-  with it: `bin/lint-config`, `bin/sync-harness`, `ci.yml`, both test files,
-  and the default agent list in the vectors.
+- **The verifier stays** (decided 2026-11-21, reversing an earlier "cut").
+  The cut rested on "no recorded run that produced a finding", which is false.
+  `evals/README.md` records a verifier finding: a candidate fixture's added
+  tests still passed with the fix reverted, so the fixture was withdrawn. The
+  verifier is also the only agent that runs plan cases (`plan-ide-storage-tab`)
+  and the verifier gate. It runs on request only, so its 292-line prompt costs
+  nothing until it is called. Cutting it would have touched about 15 files and
+  14 policy vectors, not the six wiring points the first draft counted. Like
+  the advisor, it gets ledger records (Phase 7) and a 30-day window.
 
 ## Security
 
@@ -431,7 +436,7 @@ The order is verify, then subtract, then add.
 | 0c | `--doctor` with manifest + per-harness load check; daily job runs it before dream | doctor exits 0 against today's drifted links | +120 |
 | **Subtract** | | | |
 | 1 | Stamped renders; prune the 3 retired `~/.claude/agents/*` | the 3 retired agents survive `--apply` | −3 files / +80 |
-| 2 | Cut verifier and its six wiring points | removal-only; suite green, no remaining reference | −450 |
+| 2 | ~~Cut verifier~~ Keep the verifier; correct this plan (its premise was false) | — (docs only) | 0 |
 | 2b | **Measure before deleting the Claude path.** Run `review-deep` on all 9 eval cases, 3 attempts each, in three arms: (A) Opus native, `claude -p --agent review-deep`; (B) Opus through opencode, `claude-agent/opus`, with the plugin as it is today; (C) Sonnet native. Record recall, false reds, tokens and wall time per arm, plus the rerun flip rate, and a paired CI for A vs B. A trial that reads the case's answer counts as a fail. | `evals/run-claude.sh` has no opencode arm and refuses fewer than 3 attempts | +80, no deletions |
 | 3 | Claude models out of opencode: delete the plugin and the `claude-agent/*` pins; `family`/`model` frontmatter; render Claude agents only to Claude Code. **Gated on 2b:** proceeds if A is tied with B or better. If B beats A with a CI excluding zero, stop and bring the result to the person before deleting anything. | lint rejects a `claude-agent/` id in opencode config | −150 / +120 |
 | 4 | Contract rewrite to ≤ 8,000 chars always-loaded: each rule moves to its enforcer and its sentence is deleted; procedures → skills; the PR sequence → a script | cap check fails at 11,835 | −4,000 chars |
