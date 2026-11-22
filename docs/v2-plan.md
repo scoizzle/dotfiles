@@ -62,7 +62,7 @@ One rule: **a model runs in its own vendor's harness.**
 | Model family | Harness | T3 provider | Config v2 renders |
 | --- | --- | --- | --- |
 | Claude (Opus, Sonnet, Fable, Haiku) | Claude Code | `claudeAgent` | `~/.claude/CLAUDE.md`, `settings.json` (permissions, hook, sandbox), `agents/`, `skills/`, `commands/` |
-| DeepSeek, Gemini, other `opencode-go/*` / `opencode/*` | opencode today; for the DeepSeek implementor, Claude Code on a DeepSeek endpoint if decision 5 lands that way | `opencode`, or `claudeAgent` with the endpoint set | `~/.config/opencode/opencode.json`, `agents/` |
+| DeepSeek, Gemini, other `opencode-go/*` / `opencode/*` | opencode 2 (version pinned) | `opencode` | `~/.config/opencode/opencode.json`, `agents/` |
 | Grok | Grok Build | `grok` | `~/.grok/AGENTS.md`, the hook in trusted folders (see open decision 2) |
 
 What this changes:
@@ -124,10 +124,10 @@ Anomaly.
 
 The top-level session is **Opus in Claude Code**. It plans, writes the brief,
 dispatches the implementation, reviews it and lands it. Implementation goes to
-`implementor` on DeepSeek-V4.1-Flash at **low** effort, through T3
-`delegate_task` with `isolation: worktree`. Which harness runs the implementor
-is open decision 5. The default is Claude Code pointed at a DeepSeek endpoint,
-not opencode; Harness leaderboard below gives the reasons.
+`implementor` on `opencode-go/deepseek-v4.1-flash#low` in opencode, through
+T3 `delegate_task` with `providerInstanceId: opencode` and
+`isolation: worktree`. Low effort and staying on opencode both follow from the
+Harness leaderboard section below.
 
 This reverses #39's top-level rule ("You do the work. Do not dispatch a
 writer"). That rule existed because a DeepSeek top level was dispatching to
@@ -206,62 +206,62 @@ eval before #54 merges, or a smaller first set that can be evaluated.
 ## Harness leaderboard
 
 Source: Joel Niklaus's
-[Harness Leaderboard](https://huggingface.co/spaces/joelniklaus/harness-leaderboard).
-Its numbers below come from `docs/blog/numbers.md` as of 2026-11-21. Each row
-holds the model fixed and varies only the harness, at pinned versions (OpenCode
-2.2.6): Terminal-Bench 2.1 (87 tasks) plus DeepSWE v1.1 (111 tasks), 3 attempts
-each, with 95% CIs and a paired bootstrap against the leader. About 28,800
-trials, with every trajectory public. A trial that reached the task's answer
-counts as a fail, even when the grader passed it.
+[Harness Leaderboard](https://huggingface.co/spaces/joelniklaus/harness-leaderboard),
+board release **v0.1.11** (2026-11-21), read from its public `results/cells.csv`.
+Each row holds the model fixed and varies only the harness at a pinned version:
+Terminal-Bench 2.1 plus DeepSWE v1.1, 198 tasks, 3 attempts each (594 trials per
+setup), with 95% CIs and a paired bootstrap for ties. A trial that reached the
+task's answer counts as a fail.
 
-DeepSeek-V4.1-Flash, both efforts averaged:
+DeepSeek-V4.1-Flash (✓ = tied for first):
 
-| Harness | Score [95% CI] | vs leader | $/solve |
+| Harness | Low effort | High effort | $/pass, low |
 | --- | --- | --- | --- |
-| Hermes Agent | 71.3 [66.8, 75.7] | leader | 0.144 |
-| mini-swe-agent | 70.7 | tied | 0.160 |
-| **Claude Code** | **69.8** [65.3, 74.3] | tied | **0.155** |
-| Pi | 68.9 | tied | 0.132 |
-| Codex | 68.8 | tied | 0.137 |
-| **OpenCode** | **57.6** [52.8, 62.3] | −13.7 [−18.0, −9.5] | **0.398** |
+| OpenCode 2.2.6 | 71.8 [65.6, 78.0] ✓ | 69.8 [63.5, 76.1] ✓ | 0.135 |
+| Grok Build | 70.1 ✓ | 71.8 ✓ | 0.136 |
+| Claude Code | 68.9 [62.5, 75.2] ✓ | 70.1 [63.8, 76.4] ✓ | 0.150 |
+| mini-swe-agent | 68.0 ✓ | 69.1 ✓ | 0.182 |
+| Hermes Agent | 60.7 | 63.2 | 0.141 |
 
 What it changes:
 
-1. **DeepSeek implementors should not run in opencode.** With the same model,
-   opencode scores about 12 points below Claude Code and costs 2.6× as much per
-   solved task. The pattern holds on every model on the board: opencode finishes
-   second to last on GLM-5.3-Flash, DeepSeek and Flint alike. It also reached the
-   answer most often, 7.7% of trials against Claude Code's 1.0%. That rate
-   interacts with the model, and some of it comes from opencode's longer trials.
-   For us the cost shows up as subscription headroom, not dollars, but twice the
-   tokens per solve still means hitting the limit twice as fast.
-2. **One harness for both roles becomes possible.** If the implementor runs in
-   Claude Code on a DeepSeek endpoint, the lead and the implementor share one
-   harness: one `settings.json`, one hook, one sandbox, one agent render. opencode
-   would then remain only for models that need it, or go away entirely, which is
-   the largest subtraction in this plan. The board ran Claude Code with DeepSeek
-   through a Messages-API translator; a DeepSeek endpoint that speaks the
-   Anthropic API does the same job. Phase 6 has to establish how T3's
-   `claudeAgent` provider is pointed at that endpoint for a child task.
-3. **Low effort, not high.** In Claude Code, DeepSeek scored 69.6 at low effort
-   and 70.1 at high, within each other's CI. Low is about 20% cheaper per solve.
-   The implementor runs at low unless our own eval shows otherwise. This reverses
-   the earlier `#high` choice in this plan.
-4. **One run per eval case cannot rank anything.** On this board a rerun of the
-   same harness flips 25% of DeepSeek tasks, against 32% for a harness swap. The
-   Oct 18 gate-model decision and the 2-of-9 measurement in #53 were single
-   runs, so they are anecdotes. v2 evals run 3 attempts per case, report the
-   rerun flip rate next to any comparison, and call two configurations tied
-   unless a paired CI excludes zero.
+1. **DeepSeek implementors stay in opencode.** On DeepSeek, OpenCode 2 is
+   statistically tied with Claude Code and Grok Build for first, and costs no
+   more per pass. It uses about 27% more tokens per trial than Claude Code at
+   low effort (7.8M vs 6.1M), which is worth watching against subscription
+   limits but is not a reason to move. The subscription is already paid for,
+   so moving would only add an API bill.
+2. **Low effort, not high.** OpenCode scores 71.8 at low and 69.8 at high,
+   tied, and low is about 20% cheaper per pass (0.135 vs 0.171) and uses about
+   20% fewer tokens. The implementor runs at low unless our own eval shows
+   otherwise.
+3. **Harness version matters as much as harness choice.** OpenCode 1.19.0 scored
+   57.6 on this board's 2026-11-02 snapshot. Its replacement, 2.2.6 on 2026-11-09,
+   ties for first. Most of the old gap was setup: 1.19 talked to the model through
+   a Responses-to-Chat bridge and had no context limit, so it compacted only after
+   the provider refused a request. For v2 this means two things. The opencode
+   version is pinned in `tools.json` like every other tool, and a version bump
+   reruns the writer eval.
+4. **One run per eval case cannot rank anything.** In the 2026-11-02 snapshot, a
+   rerun of the same harness flipped about 25% of DeepSeek tasks, against 32% for
+   a harness swap. The Oct 18 gate-model decision and the 2-of-9 measurement in #53
+   were single runs. v2 evals run 3 attempts per case, report the rerun flip rate
+   next to any comparison, and call two setups tied unless a paired CI excludes
+   zero.
 5. **Answer access counts as a fail in our evals too.** If a writer reads the
    hidden test or the reference patch, the attempt fails, whatever the grader
    says.
 
-Caveats: the board measures autonomous benchmark tasks, run headless with each
-harness's stock prompts. It does not measure our tasks, our `AGENTS.md`, or a
-brief from an Opus lead. It is one author's board, but the method and data are
-open and replicable. That makes it a strong prior, not a replacement for the
-Phase 6 measurement on our own work.
+Caveats: the board measures autonomous benchmark tasks, run headless with
+stock prompts. It does not measure our repos, our `AGENTS.md`, or a brief from an
+Opus lead. It is a strong prior and does not replace the Phase 6 measurement.
+
+Correction: an earlier revision of this section quoted the 2026-11-02
+`docs/blog/numbers.md`, which still showed OpenCode 1.19.0 trailing by 13.7
+points, and concluded that implementors should leave opencode. That file
+predates the OpenCode 2 swap. The live `results/` data above replaces it. This
+is poteto's "explain the number" pitfall: a number was trusted before checking
+what it measured.
 
 ## The contract
 
@@ -436,7 +436,7 @@ The order is verify, then subtract, then add.
 | 4 | Contract rewrite to ≤ 8,000 chars always-loaded: each rule moves to its enforcer and its sentence is deleted; procedures → skills; the PR sequence → a script | cap check fails at 11,835 | −4,000 chars |
 | 5 | Phrase lint → rule table + enforcer-resolving lint | lint fails on a table row whose test does not exist | −300 / +80 |
 | **Add** | | | |
-| 6 | Roles: Opus lead + DeepSeek `implementor` at low effort; prototype DeepSeek inside Claude Code (decision 5) and compare it with opencode on the writer eval, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family; `evals/run-claude.sh` on all 9 cases, Opus and Sonnet, 3 attempts each | the eval script refuses a comparison with fewer than 3 attempts per case | +180 |
+| 6 | Roles: Opus lead + DeepSeek `implementor#low` in opencode, with the opencode version pinned in `tools.json`; blind writer eval of the split, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family; `evals/run-claude.sh` on all 9 cases, Opus and Sonnet, 3 attempts each | the eval script refuses a comparison with fewer than 3 attempts per case | +180 |
 | 7 | Ledger as one file per review with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
 | 8 | Sandbox on by default; guard bypass corpus + three-way parity; per-actor write targets (dream run files, no stash) | parity test fails on a known bypass; two concurrent dream runs collide today | +240 |
 | 9 | Memory: weekly promote cadence, drafter prompt | promote of a lesson without `source:` must fail | +40 |
@@ -458,10 +458,7 @@ invents risks.
    Sonnet on the 9 eval cases, so its recall is a number rather than an
    assumption.
 4. **Self-merge.** Default: v2.1, after the four gates above.
-5. **Which harness runs the DeepSeek implementor.** Default: Claude Code on a
-   DeepSeek endpoint that speaks the Anthropic API, adopted if Phase 6 shows
-   parity or better on our writer eval (3 attempts per case). This needs DeepSeek
-   API access that Claude Code can reach. If the opencode Go subscription cannot
-   serve that, the cost question is yours. The fallback is to stay on opencode
-   and accept the measured gap. Pi is the cheapest harness tied for the lead, but
-   it would be a fourth harness to maintain, so it is not the default.
+5. **Which harness runs the DeepSeek implementor.** Settled by the evidence:
+   opencode 2, which is tied for first on DeepSeek on the current board and
+   already covered by the subscription. Not a question for the person unless
+   Phase 6's eval disagrees.
