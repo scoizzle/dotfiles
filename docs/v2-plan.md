@@ -263,6 +263,34 @@ predates the OpenCode 2 swap. The live `results/` data above replaces it. This
 is poteto's "explain the number" pitfall: a number was trusted before checking
 what it measured.
 
+## Phase 2b result (2026-11-22)
+
+`evals/compare.py` over the 8 change cases, 3 attempts each, `review-deep`'s
+prompt in every arm:
+
+| Arm | Pass | Rerun flips | Cost (list) |
+| --- | --- | --- | --- |
+| A, Opus native (`claude -p`) | 24/24 | 0/8 | $9.48 |
+| B, Opus via opencode `claude-agent/opus#medium` | 22/24 | 1/8 | not reported by opencode |
+| C, Sonnet native | 22/24 | 2/8 | $3.18 |
+
+A − B: +0.08 per case, 95% CI [+0.00, +0.25], tied. A − C: +0.08, CI
+[+0.00, +0.17], tied.
+
+What the misses were:
+- Both of B's misses were the same 🟠 on the clean case, "no evidence the red
+  tests were run". It names no defect and would not block under the evidence
+  rule in Gates.
+- C had one speculative 🟠 on the clean case. It also missed the 🔴 CI-restore
+  break in `wip-slice-c8-tc2` once in three attempts. That is the one real miss
+  in 72 reviews. It is relevant because Sonnet reviews Opus-written diffs.
+
+Phase 3's gate (A ties B or better) passes. Eight cases cannot separate the arms
+statistically. The result says that going native loses nothing measurable.
+
+Not measured: B's wall time and cost. opencode reports no cost, and the
+directory timestamps do not give a usable duration.
+
 ## The contract
 
 `AGENTS.md` keeps only what the model cannot get any other way: commands,
