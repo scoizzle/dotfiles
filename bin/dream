@@ -1058,6 +1058,40 @@ def missing_opencode_hint(model: str) -> SystemExit:
     )
 
 
+STALE_DAYS = 14
+
+
+def stale_queue(memory: Path, today: datetime.date) -> str | None:
+    """The oldest pending file's name when the queue has gone unread too long.
+
+    By 2026-11-21 dream had staged 12 pending files since the last promote on
+    2026-11-02, and agents do not read pending/, so none of it reached a
+    session. Stale means the oldest pending file is over STALE_DAYS old and no
+    dated file has been promoted within STALE_DAYS.
+    """
+    def dated(folder: Path) -> list[datetime.date]:
+        out = []
+        for path in folder.glob("*.md") if folder.is_dir() else []:
+            if DATED_NAME.fullmatch(path.name):
+                try:
+                    out.append(datetime.date.fromisoformat(path.stem))
+                except ValueError:
+                    pass
+        return out
+
+    learnings = memory / "learnings"
+    pending = dated(learnings / PENDING_DIR)
+    if not pending:
+        return None
+    oldest = min(pending)
+    promoted = dated(learnings)
+    if (today - oldest).days <= STALE_DAYS:
+        return None
+    if promoted and (today - max(promoted)).days <= STALE_DAYS:
+        return None
+    return f"{oldest.isoformat()}.md"
+
+
 def assert_canonical_memory(memory: Path) -> None:
     """The live memory link must resolve into the canonical checkout.
 
@@ -1543,6 +1577,12 @@ def main(argv: list[str] | None = None) -> int:
         assert_canonical_memory(memory)
     if args.promote:
         return promote(memory, args.dry_run, args.yes)
+    unread = stale_queue(memory, moment.date())
+    if unread:
+        print(f"promote first: pending/{unread} has waited over {STALE_DAYS} days and nothing was promoted in that time;")
+        print("agents do not read pending/, so another draft would reach no one.")
+        print(f"review with {Path(sys.argv[0]).name} --promote --dry-run, then --promote")
+        return 0
     # Drafts are staged where no agent reads them. --promote moves them.
     target = memory / "learnings" / PENDING_DIR / f"{moment.strftime('%Y-%m-%d')}.md"
 

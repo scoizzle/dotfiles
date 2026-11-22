@@ -445,7 +445,7 @@ The order is verify, then subtract, then add.
 | 6 | Roles: Opus lead + DeepSeek `implementor#low` in opencode, with the opencode version pinned in `tools.json`; blind writer eval of the split, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family (reviewer recall already measured in 2b) | the eval script refuses a comparison with fewer than 3 attempts per case | +150 |
 | 7 | Ledger as one file per review with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
 | 8 | **8a** sync-harness applies to the real home only from the canonical checkout (done). **8b** deny `git stash pop` (done). **8c** per-run dream files: *dropped*, because no concurrent-write failure was observed within one tree, dream already locks and hash-checks, and the 2026-11-20 split came from two trees, which 0c prevents. **8d** bypass corpus: six published forms closed (done). **8e** sandbox on by default: *the person decides*, because it changes every Claude Code session's network and file access. Three-way parity is already enforced (`check_policy` runs each vector through guard, opencode and native) | per item | +200 |
-| 9 | Memory: weekly promote cadence, drafter prompt | promote of a lesson without `source:` must fail | +40 |
+| 9 | Memory cadence: dream stops staging when the oldest pending file is over 14 days old and nothing was promoted in 14 days (done). Drafter prompt: *unchanged*. It has no failure-only checklist, and with no incident or eval behind a change, the admission rule keeps it out | tests/dream_cadence.py | +60 |
 | 10 | Live on v2 for one week; compare against the goals table | — | — |
 
 The required advisor consult (more than three files, more than 400 lines,

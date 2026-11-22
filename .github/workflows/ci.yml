@@ -149,6 +149,7 @@ jobs:
           python3 tests/eval_compare.py
           python3 tests/review_log.py
           python3 tests/sync_canonical.py
+          python3 tests/dream_cadence.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
