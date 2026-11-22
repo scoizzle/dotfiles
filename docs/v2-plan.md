@@ -77,13 +77,17 @@ What this changes:
    opencode agent renders contain no `claude-agent/*` id. `plugins/claude-entrypoint.js`
    is deleted: it exists only because opencode spawns Claude processes. Lint
    rejects any `claude-agent/` string outside `evals/` history.
-3. **Delegation follows the family.** The cross-family rule stays, and the
-   target follows from the writer:
+3. **Review follows whoever wrote the diff** (roles are in the next section).
+   The cross-family rule stays:
 
-   | Writer | Required review | Optional second review |
+   | Diff written by | Ordinary change | Sensitive change |
    | --- | --- | --- |
-   | opencode (DeepSeek) | Claude Code `review-deep` (Opus), via T3 `delegate_task` with `providerInstanceId: claudeAgent` | — |
-   | Claude Code (Opus or Sonnet) | a non-Claude reviewer at frontier capability (Grok 4.7 or Gemini via opencode), not a flash model | a fresh-context Claude `review-deep` |
+   | DeepSeek implementor (the default) | the Opus lead reads the diff and reruns the check at the named commit | also a fresh-context `review-deep`: a Claude Code native agent, read-only, given only the bundle, with no share of the lead's context |
+   | the Opus lead itself (small fixes, review findings) | rerun the check | a non-Claude reviewer at frontier capability (open decision 3), not a flash model |
+
+   A sensitive DeepSeek diff gets a fresh reviewer, not just the lead's own
+   read. The lead wrote the brief and is primed by its own reasoning, and the
+   research measures fresh context as an independent lever.
 
    This follows the evidence. A cross-vendor reviewer was no more accurate than
    a fresh same-model one, but its findings overlap only 41% of the time, and one
@@ -99,6 +103,60 @@ What this changes:
 5. **Metering.** T3 labels its Claude processes `CLAUDE_CODE_ENTRYPOINT=t3-code`,
    and an interactive `claude` run is metered as the CLI. With opencode no longer
    spawning Claude, nothing needs the plugin's override.
+
+## Roles: Opus leads, DeepSeek implements
+
+Decided by the person on 2026-11-21, based on what they see working at
+Anomaly.
+
+The top-level session is **Opus in Claude Code**. It plans, writes the brief,
+dispatches the implementation, reviews it and lands it. Implementation goes to
+`implementor` on `opencode-go/deepseek-v4.1-flash#high` in opencode, through
+T3 `delegate_task` with `providerInstanceId: opencode` and `isolation: worktree`.
+
+This reverses #39's top-level rule ("You do the work. Do not dispatch a
+writer"). That rule existed because a DeepSeek top level was dispatching to
+avoid editing. With a stronger lead, dispatch becomes the point, not an escape.
+
+The research supports the split, under conditions:
+- Aider's architect/editor split scored 85.0% against 79.7% solo.
+- Anthropic's advisor pattern pairs a strong model's judgement with a cheap
+  executor.
+- Cognition's "smart friend" failed because the weak model decided when to
+  escalate. Here the strong model decides.
+
+The conditions, each tied to a source or an incident:
+
+1. **One writer per task and per worktree.** Parallel implementors only on
+   disjoint files, never sharing a design decision mid-flight. Cognition: writes
+   stay single-threaded. Cursor: 20 agents gave the throughput of 2–3.
+2. **The brief carries the decisions, not pointers.** It states the done-when,
+   the red check, the files in scope as repo-relative paths, the base
+   (`git fetch origin && git checkout -b <b> origin/main`), and at most three
+   issues. From the 2026-11-21 lessons: a delegate worktree is cut from the
+   parent's commit, and DeepSeek delegates hit their step limit beyond about
+   three issues and leave work uncommitted. The brief template is a skill
+   (`skills/implementor-brief/`), not contract text.
+3. **The implementor is bounded.** It cannot dispatch, cannot run `install.cs`,
+   `sync-harness --apply` or `sync-pstack --apply`, and cannot use `git stash`.
+   It commits on its own branch and returns the head SHA, the red and green
+   commands with their exit codes, and the files it touched.
+4. **The lead verifies; it does not trust the summary.** It reruns the check at
+   the returned SHA and reads `git status` before calling anything green.
+5. **Concurrency is capped:** at most two test-running implementors at once,
+   from the 2026-11-21 RAM incident.
+6. **Usage limits.** When Opus hits a usage limit, the lead does not retry Opus
+   (2026-11-21 lesson). It switches to Sonnet. If Sonnet is limited too, it stops
+   and hands back, with the implementor results it has harvested so far.
+
+What this costs: Opus tokens for every plan and review, and a serial review
+queue. The research names review bandwidth, not generation, as the ceiling,
+which is another reason for the two-implementor cap.
+
+Phase 2 measures the split before it becomes the contract. It runs the writer
+eval (`evals/run-writer.sh`, `tests/eval_writer.py`) on DeepSeek implementors
+from Opus briefs and compares against Opus implementing alone: first-pass green
+rate, review reds per change, and Opus tokens per change.
 
 ## The contract
 
@@ -229,7 +287,7 @@ on v1 `main`; the rest build on a `v2` branch that is switched in with
 | 0b | Canonical-root guard in `install.cs` | running from a worktree exits 0 today | +60 |
 | 0c | Stamped renders + prune stale `~/.claude/agents/*` | the 3 retired agents survive `--apply` | +80 |
 | 1 | `family`/`model` frontmatter; render Claude agents only to Claude Code; delete plugin and `claude-agent/*` pins | lint: a `claude-agent/` id in opencode config is rejected | −150 / +120 |
-| 2 | Delegation table in contract + review dispatch by writer family; `evals/run-claude.sh` on all 9 cases | eval parity script fails until 9/9 recorded | +60 |
+| 2 | Roles: Opus lead + DeepSeek `implementor#high`; `skills/implementor-brief/`; review by writer family; replace the `You do the work` / `Do not dispatch a writer` pins in `bin/lint-config`; writer eval on the split; `evals/run-claude.sh` on all 9 cases | eval parity script fails until 9/9 recorded and the split's writer-eval result is recorded | +150 |
 | 3 | Contract rewrite to ≤ 8,000 chars; procedures → skills; scoped rules | cap check fails at 11,835 | −4,000 chars |
 | 4 | Phrase lint 91 → ≤ 10 pins with named incidents | each removed pin listed in the PR body with its replacement layer | −300 |
 | 5 | Ledger with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
@@ -244,11 +302,8 @@ of checks.
 
 ## Open decisions (for the person)
 
-1. **Default writer.** Default: keep DeepSeek in opencode as the default writer,
-   and move all Claude-model work (reviews, advisor, hard tasks you choose to
-   run on Opus) to Claude Code. The alternative, Claude Code as the primary
-   writer, changes the review table: every default change would need a non-Claude
-   frontier reviewer.
+1. **Default writer.** Decided 2026-11-21: Opus leads at the top level in
+   Claude Code, and DeepSeek implementors write. See Roles.
 2. **Grok Build.** Default: keep its render (it is cheap and tested), but no new
    v2 work targets it. Drop it if you do not run Grok weekly.
 3. **Frontier non-Claude reviewer for Claude-written diffs.** Default:
