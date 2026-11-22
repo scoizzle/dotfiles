@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Resolve each role's model for this person and this machine.
+
+    models resolve            # print the resolved roles; writes nothing
+    models apply              # write ~/.config/opencode/models/<role> and models.resolved.json
+    models check              # fail on a missing, stale or unreachable role model
+
+Resolution, later layers win: the repo's default profile (models/roles.json),
+then the profile the person picks, then their machine's untracked
+~/.config/opencode/models.local.json:
+
+    {"profile": "go-only", "roles": {"explore": "..."}, "review": {"single_family": "stop"}}
+
+opencode.json reads each agent's model from ~/.config/opencode/models/<role>
+through {file:}. opencode 2.3.2 drops a model whose file is missing without a
+word, so `check` fails on a missing or stale file, and on a model that
+`opencode models` does not list on this machine.
+
+The review invariant is checked on the resolved set, not on any one layer:
+while the roles span more than one model family, the reviewer's family must
+differ from the implementor's. When every role is one family, review is a
+fresh same-model review by default; a person may set single_family to "stop"
+to require a person instead. A local file can make that stricter, never looser.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+MODEL_ID = re.compile(r"[a-z0-9][\w.-]*/[\w.:-]+(#[\w-]+)?")
+LOCAL_KEYS = ("profile", "roles", "review")
+REVIEW_MODES = ("fresh-same-model", "stop")
+
+# Family means the model's vendor, not the provider that serves it: an
+# aggregator such as opencode-go may host several.
+VENDORS = (
+    (re.compile(r"(^|/)(claude|opus|sonnet|haiku|fable)", re.I), "anthropic"),
+    (re.compile(r"deepseek", re.I), "deepseek"),
+    (re.compile(r"grok", re.I), "xai"),
+    (re.compile(r"gemini", re.I), "google"),
+    (re.compile(r"(^|/)(gpt|o\d|codex)", re.I), "openai"),
+    (re.compile(r"glm", re.I), "zhipu"),
+    (re.compile(r"kimi", re.I), "moonshot"),
+    (re.compile(r"qwen", re.I), "alibaba"),
+)
+PROVIDER_VENDOR = {"claude-agent": "anthropic", "anthropic": "anthropic", "xai": "xai", "openai": "openai"}
+
+
+class Refused(Exception):
+    pass
+
+
+def family(model: str) -> str:
+    provider, _, rest = model.split("#", 1)[0].partition("/")
+    if provider in PROVIDER_VENDOR:
+        return PROVIDER_VENDOR[provider]
+    for pattern, vendor in VENDORS:
+        if pattern.search(rest):
+            return vendor
+    return provider
+
+
+def load(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise Refused(f"{path}: {error}") from None
+    if not isinstance(data, dict):
+        raise Refused(f"{path}: not a JSON object")
+    return data
+
+
+def resolve(home: Path) -> dict:
+    spec = load(ROOT / "models" / "roles.json")
+    roles = list(spec["roles"])
+    local_path = home / ".config" / "opencode" / "models.local.json"
+    local = load(local_path) if local_path.exists() else {}
+    for key in local:
+        if key not in LOCAL_KEYS:
+            raise Refused(f"{local_path}: unknown key {key!r} (use {', '.join(LOCAL_KEYS)})")
+
+    name = local.get("profile", spec["default_profile"])
+    profile_path = ROOT / "models" / "profiles" / f"{name}.json"
+    if not re.fullmatch(r"[a-z0-9-]+", str(name)) or not profile_path.exists():
+        known = ", ".join(sorted(p.stem for p in profile_path.parent.glob("*.json")))
+        raise Refused(f"no profile {name!r} (have: {known})")
+    chosen = dict(load(profile_path).get("roles", {}))
+    for role, model in (local.get("roles") or {}).items():
+        if role not in roles:
+            raise Refused(f"{local_path}: unknown role {role!r} (have: {', '.join(roles)})")
+        chosen[role] = model
+    for role in roles:
+        model = chosen.get(role)
+        if not isinstance(model, str) or not MODEL_ID.fullmatch(model):
+            raise Refused(f"role {role!r}: {model!r} is not provider/model[#variant]")
+
+    families = {family(chosen[role]) for role in roles}
+    review = local.get("review") or {}
+    if not isinstance(review, dict) or set(review) - {"single_family"}:
+        raise Refused(f"{local_path}: review takes only single_family")
+    single = review.get("single_family", "fresh-same-model")
+    if single not in REVIEW_MODES:
+        raise Refused(f"{local_path}: review.single_family must be one of {', '.join(REVIEW_MODES)}")
+    if len(families) > 1:
+        if family(chosen["reviewer"]) == family(chosen["implementor"]):
+            raise Refused(
+                f"the reviewer ({chosen['reviewer']}) is in the implementor's family "
+                f"({chosen['implementor']}) while the roles span {', '.join(sorted(families))}; "
+                "a sensitive change needs a reviewer from another family")
+        mode = "cross-family"
+    else:
+        mode = single
+    return {"profile": name, "roles": {role: chosen[role] for role in roles},
+            "families": sorted(families), "review_mode": mode}
+
+
+def target(home: Path) -> Path:
+    return home / ".config" / "opencode"
+
+
+def apply(home: Path) -> dict:
+    result = resolve(home)
+    base = target(home)
+    base.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(dir=base, prefix=".models-"))
+    try:
+        for role, model in result["roles"].items():
+            (stage / role).write_text(model)  # no newline: opencode substitutes the bytes as is
+        final = base / "models"
+        old = base / ".models-old"
+        if final.exists():
+            final.rename(old)
+        stage.rename(final)
+        if old.exists():
+            shutil.rmtree(old)
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+    (base / "models.resolved.json").write_text(json.dumps(result, indent=1) + "\n")
+    return result
+
+
+def available_models(path: str | None) -> set[str] | None:
+    if path:
+        return {line.strip() for line in Path(path).read_text().splitlines() if line.strip()}
+    binary = shutil.which("opencode")
+    if not binary:
+        return None
+    try:
+        out = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return {line.strip() for line in out.stdout.splitlines() if MODEL_ID.fullmatch(line.strip())}
+
+
+def check(home: Path, available_path: str | None) -> int:
+    problems: list[str] = []
+    try:
+        want = resolve(home)
+    except Refused as error:
+        print(f"FAIL {error}")
+        return 1
+    folder = target(home) / "models"
+    for role, model in want["roles"].items():
+        path = folder / role
+        if not path.is_file():
+            problems.append(f"{role}: {path} is missing; opencode would run this role on its default model")
+        elif path.read_text() != model:
+            problems.append(f"{role}: {path} holds {path.read_text()!r}, the resolution says {model!r}; run models apply")
+    have = available_models(available_path)
+    if have is None:
+        print("note opencode not found: model availability not checked")
+    else:
+        for role, model in want["roles"].items():
+            if model.split("#", 1)[0] not in have:
+                problems.append(f"{role}: {model} is not available on this machine (opencode models)")
+    for line in problems:
+        print(f"FAIL {line}")
+    if not problems:
+        print(f"ok   profile {want['profile']}, families {', '.join(want['families'])}, review {want['review_mode']}")
+    return 1 if problems else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("command", choices=("resolve", "apply", "check"))
+    parser.add_argument("--home", default=str(Path.home()))
+    parser.add_argument("--available", help="file of available model ids, one per line (default: opencode models)")
+    args = parser.parse_args(argv)
+    home = Path(args.home)
+    try:
+        if args.command == "resolve":
+            print(json.dumps(resolve(home), indent=1))
+            return 0
+        if args.command == "apply":
+            result = apply(home)
+            print(f"applied profile {result['profile']}: review {result['review_mode']}")
+            return 0
+    except Refused as error:
+        print(f"refused: {error}", file=sys.stderr)
+        return 2
+    return check(home, args.available)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

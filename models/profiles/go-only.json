@@ -1,0 +1,12 @@
+{
+  "doc": "opencode Go only. One family, so review is a fresh same-model DeepSeek review by default; set review.single_family to stop in models.local.json to require a person instead.",
+  "roles": {
+    "lead": "opencode-go/deepseek-v4.1-flash#high",
+    "implementor": "opencode-go/deepseek-v4.1-flash#low",
+    "reviewer": "opencode-go/deepseek-v4.1-flash#high",
+    "advisor": "opencode-go/deepseek-v4.1-flash#high",
+    "verifier": "opencode-go/deepseek-v4.1-flash#high",
+    "explore": "opencode-go/deepseek-v4.1-flash#low",
+    "drafter": "opencode-go/deepseek-v4.1-flash"
+  }
+}

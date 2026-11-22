@@ -1,0 +1,12 @@
+{
+  "doc": "A Claude subscription (Pro or Max, through opencode's Claude Agent integration) plus opencode Go. Opus leads, reviews and advises; DeepSeek implements and explores.",
+  "roles": {
+    "lead": "claude-agent/opus#medium",
+    "implementor": "opencode-go/deepseek-v4.1-flash#low",
+    "reviewer": "claude-agent/opus#medium",
+    "advisor": "claude-agent/opus#medium",
+    "verifier": "claude-agent/sonnet#high",
+    "explore": "opencode-go/deepseek-v4.1-flash#low",
+    "drafter": "opencode-go/deepseek-v4.1-flash"
+  }
+}
