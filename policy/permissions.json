@@ -329,13 +329,12 @@
         "doc": "the GraphQL route to the same merge (mergePullRequest, enablePullRequestAutoMerge); lifted with self-merge in v2.1",
         "program": "gh",
         "leading": [
-          "api",
-          "graphql"
+          "api"
         ],
         "matches": "mergePullRequest|enablePullRequestAutoMerge",
         "opencode": [
-          "*gh api graphql*mergePullRequest*",
-          "*gh api graphql*enablePullRequestAutoMerge*"
+          "*gh api*mergePullRequest*",
+          "*gh api*enablePullRequestAutoMerge*"
         ],
         "native": []
       },

@@ -19,7 +19,16 @@ Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
 Send the bundle directory, the contract, and the recorded check command and output
 to the `review-deep` reviewer (`agents/review-deep.md`). It is read-only: it does
-not edit and does not rebuild. If the bundle command failed because this is not a
+not edit and does not rebuild. Pick the reviewer by the writer's family, never
+by which harness is running this command:
+- A non-Claude writer (opencode's default is `opencode-go/*`) is reviewed by
+  Claude. Run `claude -p --agent review-deep` with the bundle, or in T3 use
+  `delegate_task` with `providerInstanceId: claudeAgent`. opencode's own
+  `review-deep` copy runs on the writer's family and must not be used here.
+- A Claude writer is reviewed by a fresh Opus `review-deep` in Claude Code.
+
+If neither is reachable, stop, leave the change uncommitted, and report it
+`unreviewed`. If the bundle command failed because this is not a
 git repository, say so and use the changed file list instead.
 
 When the bundle has `04-show-*`, it holds the base copies of `AGENTS.md` and

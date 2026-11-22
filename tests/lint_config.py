@@ -279,6 +279,17 @@ def main() -> int:
             finally:
                 build_path.write_text(build_saved)
 
+        # v2: Claude runs in Claude Code. A claude-agent/* pin in an opencode agent
+        # file or opencode.json puts it back inside opencode.
+        review_path = tree / "agents" / "review-deep.md"
+        review_saved = review_path.read_text()
+        try:
+            review_path.write_text(review_saved.replace(
+                "model: opencode-go/deepseek-v4.1-flash#high", "model: claude-agent/opus#medium", 1))
+            failed |= not expect("an opencode agent pins a Claude model again", lint(tree), "runs Claude inside opencode")
+        finally:
+            review_path.write_text(review_saved)
+
         # OpenCode 2 rejects a v1 named export at load, and the only trace is a
         # warn line in a log, so the shape drift has to fail lint instead. The
         # fixture is a plugin of its own, so the check outlives any one plugin.

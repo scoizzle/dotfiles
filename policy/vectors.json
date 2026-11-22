@@ -2137,6 +2137,30 @@
    "input": "gh api graphql -f query='query { viewer { login } }'",
    "expect": "allow",
    "note": "a GraphQL read stays allowed"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api -X POST graphql -f query='mutation{mergePullRequest(input:{}){x}}'",
+   "expect": "deny",
+   "note": "review of 91b406e (Opus): a flag before graphql, or a path form of it, reached the GraphQL merge"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api --method POST graphql -f query='mutation{mergePullRequest(input:{}){x}}'",
+   "expect": "deny",
+   "note": "review of 91b406e (Opus): a flag before graphql, or a path form of it, reached the GraphQL merge"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api /graphql -f query='mutation{enablePullRequestAutoMerge(input:{}){x}}'",
+   "expect": "deny",
+   "note": "review of 91b406e (Opus): a flag before graphql, or a path form of it, reached the GraphQL merge"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api https://api.github.com/graphql -f query='mutation{mergePullRequest(input:{}){x}}'",
+   "expect": "deny",
+   "note": "review of 91b406e (Opus): a flag before graphql, or a path form of it, reached the GraphQL merge"
   }
  ]
 }

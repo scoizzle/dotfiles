@@ -1,5 +1,5 @@
 ---
-description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not a review. Runs on Sonnet 5.5; its independence comes from the shell probes and disposable clone, not the model. Use it on request only.
+description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not a review. Runs on Sonnet in Claude Code (its opencode copy runs on DeepSeek); its independence comes from the shell probes and disposable clone, not the model. Use it on request only.
 model: opencode-go/deepseek-v4.1-flash#high
 mode: subagent
 color: "#ff6b6b"
@@ -131,8 +131,8 @@ permissions:
   - { action: shell, resource: "*gh pr merge*", effect: deny }
   - { action: shell, resource: "*gh -* pr merge*", effect: deny }
   - { action: shell, resource: "*gh api*pulls/*/merge*", effect: deny }
-  - { action: shell, resource: "*gh api graphql*mergePullRequest*", effect: deny }
-  - { action: shell, resource: "*gh api graphql*enablePullRequestAutoMerge*", effect: deny }
+  - { action: shell, resource: "*gh api*mergePullRequest*", effect: deny }
+  - { action: shell, resource: "*gh api*enablePullRequestAutoMerge*", effect: deny }
   - { action: shell, resource: "*npm publish*", effect: deny }
   - { action: shell, resource: "*npm -* publish*", effect: deny }
   - { action: shell, resource: "*/.ssh/*", effect: deny }
