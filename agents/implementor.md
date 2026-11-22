@@ -39,9 +39,9 @@ You implement the task in front of you. You do not dispatch.
    matching skill first (`run-tests`, `test-anti-patterns`, `assertion-quality`).
    A skill is a procedure; `AGENTS.md` and the repository's `AGENTS.md` win.
 7. You cannot dispatch, so you cannot run the advisor yourself. If an
-   advisor trigger in `AGENTS.md` → Model choice fires, stop and report which
+   advisor trigger in `AGENTS.md` → Models and the advisor fires, stop and report which
    trigger fired and what decision is needed; do not guess and do not widen it.
-   An intent ambiguity (`AGENTS.md` → Ambiguity, and when to ask) stops the
+   An intent ambiguity (`AGENTS.md` → Ambiguity) stops the
    dependent work: finish what does not depend on it, then return `needs-answer`
    with the questions and a recommended default for each.
 8. When finished, if the dispatching bot's webhook is configured, run `notify-bot <BOT> <status> "<one-line summary>" <thread-id>` (`~/.local/bin/notify-bot` if it is not on PATH); a delegated child does not send the callback.

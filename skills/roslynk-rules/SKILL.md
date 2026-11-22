@@ -66,3 +66,18 @@ and it is cheap enough to call once at the end of a task rather than after every
 It is **not** a substitute for tests. This repo's workflow requires the changed-area tests
 and then the full suite; a clean `get_diagnostics` proves the code compiles, nothing more.
 Reviewers "never rebuild", but `get_diagnostics` is a read and is fine for them.
+
+## Use Roslynk instead of the mechanical alternative
+
+Moved here from `AGENTS.md` in v2, so it loads only for C# work:
+
+| Instead of | Use |
+| --- | --- |
+| grep for a symbol by name | `search_symbols`, `find_definition` |
+| reading a whole file to find a member | `get_members`, `get_symbol_body` |
+| grep for callers or implementers | `find_references`, `get_callers`, `find_implementations` |
+| `dotnet build` to check compile state | `get_diagnostics` |
+| hand-editing a rename or signature change | `rename_symbol`, `change_signature` |
+
+Read files only for context Roslynk cannot provide, and for non-C# files. A
+repository's `AGENTS.md` may still name a build command that must be run.
