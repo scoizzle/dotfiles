@@ -18,7 +18,7 @@ write the outcome, the done-when, and the red check in a few lines. After it,
 one independent read-only review (`review-deep`, the `reviewer` role) in a fresh
 context that never shares the writer's reasoning. It is required, never optional,
 and never the writer's family when roles span families; a Claude-written diff
-gets a fresh Opus (the person's rule, 2026-11-22). With one family it is a fresh
+gets a fresh Opus (the person's rule, 2026-11-22: Sonnet missed a 🔴). With one family it is a fresh
 same-model review, unless `models.resolved.json` says `review_mode: stop`.
 
 If no such reviewer is available, stop and ask. Leave the
@@ -37,8 +37,7 @@ root-cause: stop, note it in `memory/learnings/`, and let a person delete it. A 
 the done-when is reported, not fixed. Stop and ask before a change with no undo:
 a migration, a delete, or money.
 
-A broad lookup may go to `explore` (read-only); a second reviewer only when asked
-or after the same check failed twice.
+A second reviewer only when asked or after the same check failed twice.
 
 ## Safety
 
@@ -65,7 +64,8 @@ child does not send it, a failure never fails the task, and never print the secr
 ## Models and the advisor
 
 Models come from roles (`models/roles.json`, a profile, this machine's
-`models.local.json`); `models.resolved.json` names them. Delegate by role.
+`models.local.json`); `models.resolved.json` names them. Use your role's model; a
+lookup may use `explore`. The advisor triggers are the only escalation.
 
 An advisory consult (`advisor`, read-only) is required when
 one of these triggers fires, at most twice per change:
@@ -133,12 +133,12 @@ A rule enters this file only with a named incident or a failing eval.
 | `sync-harness` writes the home only from it | test:sync_canonical.py | same |
 | `dream` writes only through the canonical memory link | test:dream_canonical.py | same |
 | `dream` stops drafting into a queue unread for 14 days | test:dream_cadence.py | 12 pending files no one read |
-| Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents stayed dispatchable |
+| Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents lingered |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
 | Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
-| A profile cannot pair reviewer and implementor | test:models.py | friends' subscriptions |
+| The reviewer never shares the writer's family | test:models.py | friends' profiles |
 | A sensitive change gets the review above | judgment | #39 landed unreviewed |
-| Red before green | judgment | a fix with no proof it fixed anything |
-| Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests to pass |
+| Red before green | judgment | unproven fixes |
+| Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests |
 | Intent goes to the person | judgment | 24 asks in 1,688 sessions (#51) |
 | Never `git add -A` | judgment | 2026-11-20 lesson: a pathspec did not stop it |

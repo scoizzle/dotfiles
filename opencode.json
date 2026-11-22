@@ -118,12 +118,15 @@
     { "action": "edit", "resource": "~/.claude/settings.json", "effect": "ask" },
     { "action": "edit", "resource": "~/.local/bin/notify-bot", "effect": "ask" },
     { "action": "edit", "resource": "~/.grok/AGENTS.md", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/models.local.json", "effect": "ask" },
+    { "action": "edit", "resource": "~/.config/opencode/models/*", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/AGENTS.md", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/opencode.json", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/bin/*", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/policy/*", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/agents/*", "effect": "ask" },
-    { "action": "edit", "resource": "~/dotfiles/plugins/*", "effect": "ask" }
+    { "action": "edit", "resource": "~/dotfiles/plugins/*", "effect": "ask" },
+    { "action": "edit", "resource": "~/dotfiles/models/*", "effect": "ask" }
   ],
   "agents": {
     "build": {

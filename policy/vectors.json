@@ -2161,6 +2161,45 @@
    "input": "gh api https://api.github.com/graphql -f query='mutation{mergePullRequest(input:{}){x}}'",
    "expect": "deny",
    "note": "review of 91b406e (Opus): a flag before graphql, or a path form of it, reached the GraphQL merge"
+  },
+  {
+   "kind": "edit",
+   "input": "~/.config/opencode/models.local.json",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "review of 248ffb4 (Opus): an agent could switch its own routing to a single-family profile, or rewrite a role file"
+  },
+  {
+   "kind": "edit",
+   "input": "~/.config/opencode/models/reviewer",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "review of 248ffb4 (Opus): an agent could switch its own routing to a single-family profile, or rewrite a role file"
+  },
+  {
+   "kind": "edit",
+   "input": "~/dotfiles/models/profiles/claude-go.json",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "review of 248ffb4 (Opus): an agent could switch its own routing to a single-family profile, or rewrite a role file"
   }
  ]
 }

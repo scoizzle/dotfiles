@@ -403,7 +403,9 @@
       "~/.claude/CLAUDE.md",
       "~/.claude/settings.json",
       "~/.local/bin/notify-bot",
-      "~/.grok/AGENTS.md"
+      "~/.grok/AGENTS.md",
+      "~/.config/opencode/models.local.json",
+      "~/.config/opencode/models/"
     ],
     "checkouts": [
       "~/dotfiles"
@@ -414,7 +416,8 @@
       "bin/",
       "policy/",
       "agents/",
-      "plugins/"
+      "plugins/",
+      "models/"
     ]
   },
   "sandbox": {

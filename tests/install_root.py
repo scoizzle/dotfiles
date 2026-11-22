@@ -21,6 +21,9 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAILURES = []
+EVERY_MODEL = os.path.join(tempfile.gettempdir(), f"install-root-models-{os.getpid()}.txt")
+with open(EVERY_MODEL, "w") as _handle:
+    _handle.write("claude-agent/opus\nclaude-agent/sonnet\nclaude-agent/haiku\nopencode-go/deepseek-v4.1-flash\n")
 
 
 def check(ok: bool, label: str) -> None:
@@ -37,6 +40,9 @@ def run(script: str, home: str, *args: str, canonical: str | None = None) -> sub
     if canonical is not None:
         env["DOTFILES_DIR"] = canonical
     real = os.path.expanduser("~")
+    # A throwaway HOME has no provider logins, so the real `opencode models`
+    # would list no Claude model. Each case says what its machine can reach.
+    env.setdefault("DOTFILES_MODELS_AVAILABLE", EVERY_MODEL)
     env.setdefault("DOTNET_CLI_HOME", real)
     env.setdefault("NUGET_PACKAGES", os.path.join(real, ".nuget", "packages"))
     return subprocess.run([script, *args], capture_output=True, text=True, env=env, timeout=600)
