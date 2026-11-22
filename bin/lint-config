@@ -310,28 +310,6 @@ EXPECTED_FALLBACK_MODELS = {
 }
 
 
-def check_no_claude_in_opencode() -> None:
-    """v2: a model runs in its own vendor's harness, so opencode hosts no Claude.
-
-    review-deep, advisor and verifier stay as opencode roles (a non-Claude lead,
-    commands/verify.md and evals/run.sh dispatch them); only a claude-agent/*
-    pin is rejected. Claude runs them through sync-harness's ~/.claude/agents
-    render. Phase 2b measured no loss: native Opus 24/24, opencode Opus 22/24.
-    """
-    for path in sorted((ROOT / "agents").glob("*.md")):
-        fields, _ = frontmatter(path.read_text())
-        if str(fields.get("model", "")).startswith("claude-agent/"):
-            fail(f"agents/{path.name}: model {fields['model']!r} runs Claude inside opencode; "
-                 "drop the pin (Claude Code gets it from policy readonly_agents/native_agents)")
-    config = json.loads((ROOT / "opencode.json").read_text())
-    pins = [("model", config.get("model"))] + [
-        (f"agents.{name}.model", spec.get("model")) for name, spec in (config.get("agents") or {}).items()
-        if isinstance(spec, dict)]
-    for where, model in pins:
-        if str(model or "").startswith("claude-agent/"):
-            fail(f"opencode.json {where} is {model!r}; Claude runs in Claude Code, not opencode")
-
-
 def check_fallback_models() -> None:
     """policy readonly_agents.models VALUES match the expected map.
 
@@ -682,7 +660,6 @@ def main() -> int:
     check_policy(agents)
     check_shared_surfaces()
     check_fallback_models()
-    check_no_claude_in_opencode()
     check_sandbox()
     check_contract()
     check_plugins()

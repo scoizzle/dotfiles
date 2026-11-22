@@ -64,10 +64,10 @@ child does not send it, a failure never fails the task, and never print the secr
 
 ## Models and the advisor
 
-Use the session model; a lookup may use a cheaper one. Claude runs in Claude Code,
-never through opencode: `review-deep` and `advisor` on Opus, `verifier` on Sonnet.
+Use the session model; a lookup may use a cheaper one. `review-deep` and `advisor`
+run on Opus, `verifier` on Sonnet.
 
-An advisory consult (`advisor`, read-only, Opus in Claude Code) is required when
+An advisory consult (`advisor`, read-only, on Opus) is required when
 one of these triggers fires, at most twice per change:
 - a design choice the code cannot settle (public contract, data shape, new module
   or entry point, migration);
@@ -134,7 +134,6 @@ A rule enters this file only with a named incident or a failing eval.
 | `dream` writes only through the canonical memory link | test:dream_canonical.py | same |
 | `dream` stops drafting into a queue unread for 14 days | test:dream_cadence.py | 12 pending files no one read |
 | Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents stayed dispatchable |
-| No Claude model inside opencode | lint:check_no_claude_in_opencode | Phase 2b |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
 | Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
 | A sensitive change gets the review above | judgment | #39 landed unreviewed |
