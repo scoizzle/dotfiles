@@ -216,10 +216,28 @@ def verifier_block(policy: dict) -> str:
 
 
 
+ROLE_FILE = "{file:~/.config/opencode/models/%s}"
+
+
+def render_models(config: dict, repo: Path) -> None:
+    """Point every agent's model at its role's file (bin/models writes them).
+
+    The repo names roles, never model ids, so a friend's subscription decides
+    the model, not this file (models/roles.json). opencode.json is also the
+    project config inside this repo, where it outranks the person's global one.
+    """
+    roles = json.loads((repo / "models" / "roles.json").read_text())
+    config["model"] = ROLE_FILE % roles["default_model_role"]
+    agents = config.setdefault("agents", {})
+    for name, role in sorted(roles["agents"].items()):
+        agents.setdefault(name, {})["model"] = ROLE_FILE % role
+
+
 def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
     config_path = repo / "opencode.json"
     config = json.loads(config_path.read_text())
     config["permissions"] = render_opencode(policy)
+    render_models(config, repo)
     targets = {config_path: dump_opencode(config)}
 
     agent = repo / "agents" / "verifier.md"

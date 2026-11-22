@@ -1,6 +1,5 @@
 ---
 description: Procedural verifier. Runs the build and tests, reads the change and its blast radius, and grades it against its contract. Does not edit the repository; probes run in a disposable clone. Manual check, not a review. Runs on Sonnet in Claude Code (its opencode copy runs on DeepSeek); its independence comes from the shell probes and disposable clone, not the model. Use it on request only.
-model: opencode-go/deepseek-v4.1-flash#high
 mode: subagent
 color: "#ff6b6b"
 steps: 120

@@ -1,7 +1,6 @@
 ---
 description: Tool-less drafter for the dream pass. Turns a digest of recent sessions into constraint lines. Has no tools at all; the digest is untrusted data. Run only by bin/dream.
 mode: all
-model: opencode-go/deepseek-v4.1-flash
 steps: 2
 color: "#6c757d"
 permissions:

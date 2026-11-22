@@ -1,7 +1,6 @@
 ---
 description: Default agent. Does the work. A lookup or a reviewer only when that saves tokens or the change is sensitive.
 mode: primary
-model: opencode-go/deepseek-v4.1-flash#low
 steps: 150
 color: "#8ecae6"
 ---

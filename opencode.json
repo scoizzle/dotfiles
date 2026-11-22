@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "opencode-go/deepseek-v4.1-flash",
+  "model": "{file:~/.config/opencode/models/lead}",
   "default_agent": "build",
   "permissions": [
     { "action": "skill", "resource": "antigravity2.0", "effect": "deny" },
@@ -127,17 +127,32 @@
   ],
   "agents": {
     "build": {
-      "model": "opencode-go/deepseek-v4.1-flash#low"
+      "model": "{file:~/.config/opencode/models/lead}"
     },
     "implementor": {
-      "model": "opencode-go/deepseek-v4.1-flash#low"
+      "model": "{file:~/.config/opencode/models/implementor}"
     },
     "general": {
-      "model": "opencode-go/deepseek-v4.1-flash#low"
+      "model": "{file:~/.config/opencode/models/implementor}"
     },
     "plan": {
       "mode": "all",
-      "model": "opencode-go/deepseek-v4.1-flash#low"
+      "model": "{file:~/.config/opencode/models/lead}"
+    },
+    "advisor": {
+      "model": "{file:~/.config/opencode/models/advisor}"
+    },
+    "dream-drafter": {
+      "model": "{file:~/.config/opencode/models/drafter}"
+    },
+    "explore": {
+      "model": "{file:~/.config/opencode/models/explore}"
+    },
+    "review-deep": {
+      "model": "{file:~/.config/opencode/models/reviewer}"
+    },
+    "verifier": {
+      "model": "{file:~/.config/opencode/models/verifier}"
     }
   },
   "mcp": {

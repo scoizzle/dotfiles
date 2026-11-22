@@ -1,6 +1,5 @@
 ---
 description: Read-only change reviewer. Reviews a diff and its check output against the contract, including callers, contracts, and missing tests. Use it only for a diff review, not for repo search.
-model: opencode-go/deepseek-v4.1-flash#high
 mode: subagent
 steps: 40
 color: "#ff6b6b"

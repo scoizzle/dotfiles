@@ -1,7 +1,6 @@
 ---
 description: Cheap read-only swarm for repo maps, multi-file grep and where-is-X lookups. Use for every broad read-only lookup. Never use for a diff review or sign-off.
 mode: subagent
-model: opencode-go/deepseek-v4.1-flash#low
 steps: 20
 color: "#2ec4b6"
 permissions:

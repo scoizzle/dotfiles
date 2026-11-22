@@ -209,6 +209,33 @@ def main() -> int:
             lint_path.write_text(lint_saved)
             agents_path.write_text(saved)
 
+        # v2: models come from roles (models/roles.json), never from an agent file.
+        # opencode 2.3.2 lets frontmatter `model:` win over config, so a pin there
+        # would beat every person's choice.
+        review_path = tree / "agents" / "review-deep.md"
+        review_saved = review_path.read_text()
+        try:
+            review_path.write_text(review_saved.replace("mode: subagent", "model: claude-agent/opus\nmode: subagent", 1))
+            failed |= not expect("an agent file pins a model", lint(tree), "comes from its role")
+        finally:
+            review_path.write_text(review_saved)
+        roles_path = tree / "models" / "roles.json"
+        roles_saved = roles_path.read_text()
+        try:
+            roles = json.loads(roles_saved)
+            del roles["agents"]["review-deep"]
+            roles_path.write_text(json.dumps(roles))
+            failed |= not expect("an agent with no role", lint(tree), "has no role in models/roles.json")
+        finally:
+            roles_path.write_text(roles_saved)
+        config_path = tree / "opencode.json"
+        config_saved = config_path.read_text()
+        try:
+            config_path.write_text(config_saved.replace("{file:~/.config/opencode/models/reviewer}", "claude-agent/opus", 1))
+            failed |= not expect("opencode.json pins a model instead of reading the role", lint(tree), "drifted from")
+        finally:
+            config_path.write_text(config_saved)
+
         # OpenCode 2 rejects a v1 named export at load, and the only trace is a
         # warn line in a log, so the shape drift has to fail lint instead. The
         # fixture is a plugin of its own, so the check outlives any one plugin.
