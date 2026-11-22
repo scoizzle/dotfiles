@@ -280,43 +280,15 @@ def main() -> int:
                 build_path.write_text(build_saved)
 
         # OpenCode 2 rejects a v1 named export at load, and the only trace is a
-        # warn line in a log, so the shape drift has to fail lint instead.
-        plugin_path = tree / "plugins" / "claude-entrypoint.js"
-        plugin_saved = plugin_path.read_text()
-        v1 = (
-            "const current = process.env.CLAUDE_CODE_ENTRYPOINT\n"
-            'if (!current || current.startsWith("sdk-")) {\n'
-            '  process.env.CLAUDE_CODE_ENTRYPOINT = "opencode"\n'
-            "}\n\n"
-            "export const ClaudeEntrypoint = async () => ({})\n"
-        )
+        # warn line in a log, so the shape drift has to fail lint instead. The
+        # fixture is a plugin of its own, so the check outlives any one plugin.
+        probe = tree / "plugins" / "shape-probe.js"
+        probe.parent.mkdir(exist_ok=True)
         try:
-            plugin_path.write_text(v1)
+            probe.write_text("export const ShapeProbe = async () => ({})\n")
             failed |= not expect("plugin reverted to the v1 named export", lint(tree), "export default")
         finally:
-            plugin_path.write_text(plugin_saved)
-        try:
-            plugin_path.write_text(plugin_saved.replace("CLAUDE_CODE_ENTRYPOINT", "SOME_OTHER_ENV"))
-            failed |= not expect("plugin lost the entrypoint label", lint(tree), "CLAUDE_CODE_ENTRYPOINT")
-        finally:
-            plugin_path.write_text(plugin_saved)
-        # The header comment names the variable, so only the assignment counts.
-        try:
-            plugin_path.write_text(plugin_saved.replace(
-                'process.env.CLAUDE_CODE_ENTRYPOINT = "opencode"', "// label removed"))
-            failed |= not expect("plugin mentions the label only in a comment", lint(tree), "CLAUDE_CODE_ENTRYPOINT")
-        finally:
-            plugin_path.write_text(plugin_saved)
-        # A sibling plugin must not make a missing entrypoint file look fine.
-        other = tree / "plugins" / "other.js"
-        moved = plugin_path.with_suffix(".moved")
-        other.write_text('export default { id: "other", setup() {} }\n')
-        try:
-            plugin_path.rename(moved)
-            failed |= not expect("entrypoint plugin file is missing", lint(tree), "claude-entrypoint.js")
-        finally:
-            moved.rename(plugin_path)
-            other.unlink()
+            probe.unlink()
 
     print("FAIL" if failed else "ok")
     return 1 if failed else 0

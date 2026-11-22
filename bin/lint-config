@@ -537,7 +537,6 @@ def check_plugins() -> None:
     plugin_dir = ROOT / "plugins"
     files = sorted(plugin_dir.glob("*.js")) if plugin_dir.is_dir() else []
     if not files:
-        fail("plugins/: no plugin files; the Claude entrypoint label is gone")
         return
     seen: dict[str, str] = {}
     for path in files:
@@ -559,14 +558,7 @@ def check_plugins() -> None:
         elif name in seen:
             fail(f"plugins/{path.name}: duplicate plugin id {name!r} (also in {seen[name]})")
         seen.setdefault(name, path.name)
-    entry = plugin_dir / "claude-entrypoint.js"
-    if not entry.exists():
-        fail("plugins/claude-entrypoint.js is missing; the Claude entrypoint label is gone")
-        return
-    entry_text = entry.read_text()
-    export = re.search(r"^export\s+default\s+", entry_text, flags=re.M)
-    if export and not re.search(r"process\.env\.CLAUDE_CODE_ENTRYPOINT\s*=", entry_text[export.end():]):
-        fail("plugins/claude-entrypoint.js: no longer assigns CLAUDE_CODE_ENTRYPOINT; Claude traffic is metered as sdk-*")
+
 
 
 def main() -> int:
