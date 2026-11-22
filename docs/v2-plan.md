@@ -29,14 +29,14 @@ v1 works, but it grew in the wrong places:
 
 | Measure | v1 now | v2 target |
 | --- | --- | --- |
-| `AGENTS.md` size | 11,835 chars | ≤ 8,000 chars, capped by lint |
+| Instruction text loaded every session (`AGENTS.md` + `~/.claude/rules/*.md` + opencode `instructions`) | 11,835 chars + pstack's rule file (#54) | ≤ 8,000 chars in total, capped by lint |
 | `claude-agent/*` models in opencode config or `agents/*.md` | 4 pins + plugin | 0 |
 | Claude-model work run in Claude Code (T3 `claudeAgent` or `claude`) | partial (#53) | all of it |
 | Installed state matches the repo render (`install.cs --doctor`) | 20 paths drifted, 3 stale agents | exit 0, no extras |
 | `deny` vectors pass through every render | 152/152 (guard + opencode) | 152/152 through guard, opencode and Claude settings |
 | `evals/cases` reviewer recall on native Claude Code | 2 of 9 measured (#53) | 9/9, equal to or better than opencode |
 | Gates that write a ledger row | none since 2026-11-14 | review, consult: 100% |
-| Lint checks that assert a phrase exists | 91 | ≤ 10, each tied to a named incident |
+| Lint checks that assert a phrase exists | 91 | 0. Replaced by a rule table whose enforcers the lint resolves (see The contract) |
 | Mandatory steps from edit to PR | ~7 | ≤ 3 |
 
 If v2 misses any row, we keep v1 and fix the gap there.
@@ -111,9 +111,8 @@ What this changes:
    than same-model review, so capability matters more than vendor. That is why
    DeepSeek flash never reviews an Opus diff.
 4. **Off T3, the commands are equivalent:**
-   `claude -p --agent review-deep "<bundle>"` for a Claude review, and
-   `opencode run --agent <non-Claude reviewer> "<bundle>"` for the other
-   direction. `evals/run-claude.sh` (#53) already drives the first.
+   `claude -p --agent review-deep "<bundle>"`, and add `--model sonnet` when
+   the writer was Opus. `evals/run-claude.sh` (#53) already drives this.
 5. **Metering.** T3 labels its Claude processes `CLAUDE_CODE_ENTRYPOINT=t3-code`,
    and an interactive `claude` run is metered as the CLI. With opencode no longer
    spawning Claude, nothing needs the plugin's override.
@@ -167,10 +166,40 @@ What this costs: Opus tokens for every plan and review, and a serial review
 queue. The research names review bandwidth, not generation, as the ceiling,
 which is another reason for the two-implementor cap.
 
-Phase 2 measures the split before it becomes the contract. It runs the writer
+Phase 6 measures the split before it becomes the contract. It runs the writer
 eval (`evals/run-writer.sh`, `tests/eval_writer.py`) on DeepSeek implementors
 from Opus briefs and compares against Opus implementing alone: first-pass green
 rate, review reds per change, and Opus tokens per change.
+
+## Learnings from poteto (Lauren Tan, Cursor)
+
+Sources: the pstack guide and principle skills at the commit #54 pins
+(`cursor/plugins@0b46ec3`, `pstack/docs/guide/`, `pstack/skills/principle-*`),
+and her post "The Complete Guide to pstack, Part 1: Verification is all you
+need". Her claim of 10,000 internal runs a week is her own report, not a
+measurement we can check.
+
+How each lesson changes this plan:
+
+| Her lesson | What v2 does with it |
+| --- | --- |
+| **Verification is critical infrastructure.** An agent that can check its own work closes the loop without you. Keep the verification skill current with a daily maintenance pass. | Here the product being verified is the harness. `install.cs --doctor` plus the per-harness load check is that verification, and the daily job runs it before anything else. It moves to Phase 0 and is the first thing built. |
+| **Prove it works:** check the real artifact, never a proxy. "It compiles" does not count. | A green lint is a proxy. The real artifact is what each harness actually loads. That is why both audits in this thread missed the 32-hour relink: they read the repo, not `~/.config`. |
+| **Encode lessons in structure / `correct`.** Architecture, then types, then a lint whose error names the fix, then a test, then docs. A rule table pairs each rule with its enforcer. | Adopted as the shape of the contract (next section). It replaces the 91 phrase checks outright, rather than trimming them to 10. |
+| **Subtract before you add.** Remove first; design for observed usage; no speculative guards; simplify prompts. | The phases are reordered so cuts land before additions (Phases). The advisor's four triggers and the ambiguity section each get a 30-day ledger window, and the remaining "preventive" rules from #45 and #48 face the admission rule. |
+| **Separate before serializing shared state.** Give each actor its own file, key or branch, and merge where the state is read. "Instructions are not concurrency control." | Every write target that parallel agents share becomes per actor. Dream writes `pending/<date>-<run>.md` instead of appending to one dated file (the 2026-11-20 file split in two). The ledger writes one file per review, aggregated on read. Delegates commit WIP instead of stashing. Global config has one writer: `install.cs` from the canonical root. |
+| **Guard the context window.** Send bulk reading to subagents, keep findings in the main chat, cap the scope of each phase. | The Opus lead sends repo-wide reads to `explore` on DeepSeek and keeps only findings. This is the same split as Roles, applied to reading. |
+| **Never block on the human:** proceed on reversible work and present it; confirm only irreversible actions; product direction comes from the person. | v2's stops are audited against this. A stop stays only if it guards an irreversible action or a question of intent. v1's "stop and ask" points that guard neither become "proceed and say so". |
+| **Pitfall: polishing an abstract plan.** "Adversarial review of a plan with no code behind it invents risks that will never happen." Prototype, then review what got built. | This thread is the example: four rounds on plans before any code. The required advisor consult (it trips three triggers) runs on the Phase 0 diff together with this plan, not on the plan alone. Phase 0 is small enough to serve as the prototype. |
+| **Pitfall: accepting every review comment.** Keep only the findings a rerun proves, and list what was dropped. | This becomes the evidence rule in Gates. A finding the reviewer cannot reproduce is reported but does not block. |
+| **Say the goal, not the ceremony.** A prompt has five parts: the goal, a done check that can pass or fail, the proof you want, what you already know, and the real constraints. Leave out the how. | These five are `skills/implementor-brief/`, plus the files in scope. The brief carries design decisions already made, never a how the implementor could choose better. |
+| **Earn the trust before the loop.** You have done the task by hand; the agent has your tools; every stage proves its work and can stop the line; repeated failures from transcripts are already checks. | These are the v2.1 preconditions for agents merging their own PRs, alongside the four gates. |
+| **Prefer cloud agents to local worktrees** past a handful in parallel. | Not in v2.0. When the two-implementor cap binds, the next step is implementors on a linked T3 environment (another machine), not more local worktrees. |
+| **Build the lever:** if a script can do a step the same way every time, use the script, and save agents for judgment. | The PR sequence (push → create → link → watch) and the review bundle become one script each. They come out of the contract text. |
+
+One implication for open work: by her own "test a skill change blind" rule,
+#54 adopts 19 pstack skills without an eval on this harness. v2 requires that
+eval before #54 merges, or a smaller first set that can be evaluated.
 
 ## The contract
 
@@ -186,11 +215,37 @@ layer that can enforce it:
 | Applies to some paths only | a scoped rule (`paths:` frontmatter) | `.cs` → Roslynk; `memory/core/**` → frozen |
 | Obvious from the code | deleted | — |
 
-A rule is admitted only with a named incident or a failing eval, stated in the
-PR. Lint caps `AGENTS.md` at 8,000 characters; raising the cap is its own
-change. The phrase lint shrinks to at most 10 anti-deletion pins. Each pin names
-the incident it protects, and the pins cover only text that has no enforcing
-layer.
+This is poteto's `correct` order, adopted as is: architecture first, then
+types, then a lint whose error names the fix, then a test, and docs last, only
+for judgment calls. Her corollary decides what happens to the prose: "If the
+fix is structural, only use the structural fix. The instruction is the
+symptom." Once a rule has an enforcer, its sentence is deleted, not pinned.
+
+**The rule table replaces the phrase lint.** `AGENTS.md` ends with one table
+that pairs each rule with what enforces it: a policy id, a test name, a hook or
+a CI job. `bin/lint-config` resolves every enforcer: the policy id exists, the
+test exists and runs in CI. It fails on a row whose enforcer is missing. A row
+whose enforcer is `judgment` must carry a one-line example of the failure it
+prevents. When a correction repeats a rule that is already in the table with no
+enforcer, that is a repeat, and the fix moves up a level in the same change. A
+row is dropped once its mistake can no longer happen.
+
+**Admission.** A mistake class counts once it has happened twice, or once if
+the damage cannot be undone. The new check must be proven to fail on the real
+past mistake. For example, the 0b red check runs `install.cs` from an actual
+feature worktree. An exception goes on the offending line with a reason, an
+expiry date and the person's approval. This covers the vectors' `skip_agents`
+and `native_overblock_ok`, which today carry neither a reason nor an expiry.
+
+**An edit to a rule or skill is an experiment.** Before it is kept, a change to
+`AGENTS.md`, an agent prompt, or a skill, including adopting someone else's
+skills, runs blind against the writer eval: same task, candidates unaware of
+the eval and of each other, one judge. poteto's reason applies directly: "A fix
+written from one bad session tends to overfit that session, and over many
+edits the skill drifts."
+
+Lint caps the always-loaded instruction text at 8,000 characters in total.
+Raising the cap is its own change.
 
 The research behind this split:
 [IFScale](https://arxiv.org/abs/2507.11538) found instruction-following falls
@@ -222,11 +277,13 @@ file under ~200 lines and to use hooks rather than emphasis
 
 ## Gates
 
-- **The review records what it catches.** Each review and each consult appends
-  `kind, date, artifact, head, reds, ambers, acted, dismissed, model, harness`
-  to `~/.config/opencode/reviews.jsonl`. This revives the format that `bin/review-log`
-  wrote until #41, and adds a `kind` field. A gate with no rows for 30 days is
-  proposed for removal.
+- **The review records what it catches.** Each review and each consult writes
+  one record (`kind, date, artifact, head, reds, ambers, acted, dismissed,
+  model, harness`) as its own file under `~/.config/opencode/reviews/`, and the
+  records are aggregated on read. One file per review means parallel reviewers
+  never append to a shared file. The fields revive the format `bin/review-log`
+  wrote until #41, plus `kind`. The existing 89 rows in `reviews.jsonl` are
+  imported once. A gate with no records for 30 days is proposed for removal.
 - **Findings carry evidence.** A red or amber names a failing test, a
   line-level counterexample, or a broken rule. Findings without evidence are
   reported but do not block. Style is out of scope.
@@ -284,6 +341,12 @@ run once:
 3. required status checks on `main`;
 4. a revert that has been rehearsed.
 
+poteto's four conditions for trusting a loop must also hold:
+- the person has merged this kind of change by hand;
+- the agent has the same signals the person would use;
+- every stage proves its work and can stop the line;
+- repeated failures from transcripts are already checks.
+
 No published team reports outcomes for autonomous agent merges. Required checks
 prove only that today's tests pass, and agents are documented weakening tests to
 get there: [ImpossibleBench](https://arxiv.org/html/2510.20270v1) found 54–76%
@@ -296,24 +359,31 @@ Harness topology assigns to the writer. Phase 0 lands
 on v1 `main`; the rest build on a `v2` branch that is switched in with
 `install.cs --from`.
 
+The order is verify, then subtract, then add.
+
 | Phase | Change | Red check | Rough size |
 | --- | --- | --- | --- |
+| **Verify the harness** | | | |
 | 0a | Relink live config to `~/dotfiles`; merge the split `pending/2026-11-20.md` (person runs it) | `install.cs --check` reports 20 drifted paths | none |
-| 0b | Canonical-root guard in `install.cs` | running from a worktree exits 0 today | +60 |
-| 0c | Stamped renders + prune stale `~/.claude/agents/*` | the 3 retired agents survive `--apply` | +80 |
-| 1 | `family`/`model` frontmatter; render Claude agents only to Claude Code; delete plugin and `claude-agent/*` pins | lint: a `claude-agent/` id in opencode config is rejected | −150 / +120 |
-| 2 | Roles: Opus lead + DeepSeek `implementor#high`; `skills/implementor-brief/`; review by writer family; replace the `You do the work` / `Do not dispatch a writer` pins in `bin/lint-config`; writer eval on the split; `evals/run-claude.sh` on all 9 cases | eval parity script fails until 9/9 recorded and the split's writer-eval result is recorded | +150 |
-| 3 | Contract rewrite to ≤ 8,000 chars; procedures → skills; scoped rules | cap check fails at 11,835 | −4,000 chars |
-| 4 | Phrase lint 91 → ≤ 10 pins with named incidents | each removed pin listed in the PR body with its replacement layer | −300 |
-| 5 | Ledger with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
-| 6 | Cut verifier and its six wiring points | removal-only; suite green, no remaining reference | −450 |
-| 7 | Sandbox on by default; guard bypass corpus + three-way parity | parity test fails on a known bypass | +200 |
-| 8 | Memory: weekly promote cadence, drafter prompt, doctor-before-dream | dream run with drifted links must refuse | +40 |
-| 9 | Live on v2 for one week; compare against the goals table | — | — |
+| 0b | Canonical-root guard in `install.cs` | run from a real feature worktree: exits 0 today | +60 |
+| 0c | `--doctor` with manifest + per-harness load check; daily job runs it before dream | doctor exits 0 against today's drifted links | +120 |
+| **Subtract** | | | |
+| 1 | Stamped renders; prune the 3 retired `~/.claude/agents/*` | the 3 retired agents survive `--apply` | −3 files / +80 |
+| 2 | Cut verifier and its six wiring points | removal-only; suite green, no remaining reference | −450 |
+| 3 | Claude models out of opencode: delete the plugin and the `claude-agent/*` pins; `family`/`model` frontmatter; render Claude agents only to Claude Code | lint rejects a `claude-agent/` id in opencode config | −150 / +120 |
+| 4 | Contract rewrite to ≤ 8,000 chars always-loaded: each rule moves to its enforcer and its sentence is deleted; procedures → skills; the PR sequence → a script | cap check fails at 11,835 | −4,000 chars |
+| 5 | Phrase lint → rule table + enforcer-resolving lint | lint fails on a table row whose test does not exist | −300 / +80 |
+| **Add** | | | |
+| 6 | Roles: Opus lead + DeepSeek `implementor#high`; `skills/implementor-brief/` (the five parts); review by writer family; blind writer eval of the split; `evals/run-claude.sh` on all 9 cases, Opus and Sonnet | eval parity script fails until 9/9 are recorded and the split's writer-eval result is recorded | +150 |
+| 7 | Ledger as one file per review with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
+| 8 | Sandbox on by default; guard bypass corpus + three-way parity; per-actor write targets (dream run files, no stash) | parity test fails on a known bypass; two concurrent dream runs collide today | +240 |
+| 9 | Memory: weekly promote cadence, drafter prompt | promote of a lesson without `source:` must fail | +40 |
+| 10 | Live on v2 for one week; compare against the goals table | — | — |
 
-Before Phase 1 starts, the plan gets one advisor consult. It trips three
-triggers at once: more than three files, more than 400 lines, and the removal
-of checks.
+The required advisor consult (more than three files, more than 400 lines,
+removal of checks) runs once, on the Phase 0 diff together with this plan.
+That follows poteto's pitfall: a review of a plan with nothing built behind it
+invents risks.
 
 ## Open decisions (for the person)
 
@@ -322,7 +392,7 @@ of checks.
 2. **Grok Build.** Default: keep its render (it is cheap and tested), but no new
    v2 work targets it. Drop it if you do not run Grok weekly.
 3. **Reviewer for Claude-written diffs.** Decided 2026-11-21: a fresh-context
-   Sonnet `review-deep`, not Grok. Phase 2 runs `evals/run-claude.sh` with
+   Sonnet `review-deep`, not Grok. Phase 6 runs `evals/run-claude.sh` with
    Sonnet on the 9 eval cases, so its recall is a number rather than an
    assumption.
 4. **Self-merge.** Default: v2.1, after the four gates above.
