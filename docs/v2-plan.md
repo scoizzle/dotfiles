@@ -444,7 +444,7 @@ The order is verify, then subtract, then add.
 | **Add** | | | |
 | 6 | Roles: Opus lead + DeepSeek `implementor#low` in opencode, with the opencode version pinned in `tools.json`; blind writer eval of the split, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family (reviewer recall already measured in 2b) | the eval script refuses a comparison with fewer than 3 attempts per case | +150 |
 | 7 | Ledger as one file per review with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
-| 8 | Sandbox on by default; guard bypass corpus + three-way parity; per-actor write targets (dream run files, no stash) | parity test fails on a known bypass; two concurrent dream runs collide today | +240 |
+| 8 | **8a** sync-harness applies to the real home only from the canonical checkout (done). **8b** deny `git stash pop` (done). **8c** per-run dream files: *dropped*, because no concurrent-write failure was observed within one tree, dream already locks and hash-checks, and the 2026-11-20 split came from two trees, which 0c prevents. **8d** bypass corpus: six published forms closed (done). **8e** sandbox on by default: *the person decides*, because it changes every Claude Code session's network and file access. Three-way parity is already enforced (`check_policy` runs each vector through guard, opencode and native) | per item | +200 |
 | 9 | Memory: weekly promote cadence, drafter prompt | promote of a lesson without `source:` must fail | +40 |
 | 10 | Live on v2 for one week; compare against the goals table | — | — |
 
