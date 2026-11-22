@@ -104,8 +104,10 @@ permissions:
   - { action: shell, resource: "*git -* clean*", effect: deny }
   - { action: shell, resource: "*git stash drop*", effect: deny }
   - { action: shell, resource: "*git stash clear*", effect: deny }
+  - { action: shell, resource: "*git stash pop*", effect: deny }
   - { action: shell, resource: "*git -* stash drop*", effect: deny }
   - { action: shell, resource: "*git -* stash clear*", effect: deny }
+  - { action: shell, resource: "*git -* stash pop*", effect: deny }
   - { action: shell, resource: "*rm -rf*", effect: deny }
   - { action: shell, resource: "*rm -fr*", effect: deny }
   - { action: shell, resource: "*rm -r -f*", effect: deny }

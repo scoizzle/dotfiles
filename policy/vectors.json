@@ -1659,6 +1659,44 @@
   },
   {
    "kind": "shell",
+   "input": "git stash pop",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ],
+   "note": "2026-11-21: a delegate popped and dropped another worktree's WIP; the stash stack is shared by every worktree"
+  },
+  {
+   "kind": "shell",
+   "input": "git stash pop stash@{0}",
+   "expect": "deny",
+   "engines": [
+    "guard",
+    "opencode"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git stash list",
+   "expect": "allow",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
+  },
+  {
+   "kind": "shell",
+   "input": "git stash apply 3f2a1b4",
+   "expect": "allow",
+   "note": "applying a named entry leaves the stack intact",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
+  },
+  {
+   "kind": "shell",
    "input": "git stash push -m t",
    "expect": "allow",
    "skip_agents": [
@@ -1671,6 +1709,10 @@
    "expect": "allow",
    "skip_agents": [
     "verifier"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
    ]
   },
   {

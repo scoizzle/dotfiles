@@ -105,17 +105,21 @@
         "git": "stash",
         "subargs": [
           "drop",
-          "clear"
+          "clear",
+          "pop"
         ],
         "opencode": [
           "*git stash drop*",
           "*git stash clear*",
+          "*git stash pop*",
           "*git -* stash drop*",
-          "*git -* stash clear*"
+          "*git -* stash clear*",
+          "*git -* stash pop*"
         ],
         "native": [
           "Bash(git stash drop:*)",
-          "Bash(git stash clear:*)"
+          "Bash(git stash clear:*)",
+          "Bash(git stash pop:*)"
         ]
       },
       {
