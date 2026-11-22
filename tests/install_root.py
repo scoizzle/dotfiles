@@ -54,7 +54,11 @@ def links_into(home: str, tree: str) -> bool:
 
 def fresh_home(tmp: str, name: str) -> str:
     home = os.path.join(tmp, name)
-    os.makedirs(home)
+    # On Linux a file-based app keeps its build cache in the local app-data
+    # folder (~/.local/share); in an empty HOME that folder is missing and
+    # `dotnet` dies with "Unable to determine a temporary directory path"
+    # before install.cs runs. macOS uses $TMPDIR, so it never showed there.
+    os.makedirs(os.path.join(home, ".local", "share"))
     return home
 
 
