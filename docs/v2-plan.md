@@ -78,24 +78,38 @@ What this changes:
    is deleted: it exists only because opencode spawns Claude processes. Lint
    rejects any `claude-agent/` string outside `evals/` history.
 3. **Review follows whoever wrote the diff** (roles are in the next section).
-   The cross-family rule stays:
+   The rule becomes *independent, fresh-context and read-only*. It is
+   cross-family whenever the writer is DeepSeek, which is the default:
 
    | Diff written by | Ordinary change | Sensitive change |
    | --- | --- | --- |
-   | DeepSeek implementor (the default) | the Opus lead reads the diff and reruns the check at the named commit | also a fresh-context `review-deep`: a Claude Code native agent, read-only, given only the bundle, with no share of the lead's context |
-   | the Opus lead itself (small fixes, review findings) | rerun the check | a non-Claude reviewer at frontier capability (open decision 3), not a flash model |
+   | DeepSeek implementor (the default) | the Opus lead reads the diff and reruns the check at the named commit | also a fresh-context `review-deep` (Opus): a Claude Code native agent, read-only, given only the bundle, with no share of the lead's context. Cross-family. |
+   | the Opus lead itself (small fixes, review findings) | rerun the check | a fresh-context `review-deep` on **Sonnet**. Same family; decided by the person on 2026-11-21, because Grok usage is not paid for at volume. |
+
+   This is a deliberate relaxation of v1's "must come from a different family"
+   for one case. The evidence makes it a modest loss, not a large one. A fresh
+   same-model reviewer was statistically indistinguishable from a top-tier
+   cross-model one (F1 28.6% vs 32.3%, p = 1.00), and on code it was ahead. What
+   is lost is decorrelation: about 59% of unique findings came from only one of
+   the two approaches, and same-family self-preference becomes possible.
+
+   Two mitigations keep that case rare:
+   - **Opus routes sensitive edits to an implementor,** even small ones. The
+     writer is then DeepSeek, and the Opus review is cross-family at no extra
+     cost. Opus writing a sensitive diff itself is the exception and is stated
+     in the PR.
+   - **Sonnet reviews Opus, not Opus reviewing Opus.** A different model with no
+     shared context limits correlation within the family.
 
    A sensitive DeepSeek diff gets a fresh reviewer, not just the lead's own
    read. The lead wrote the brief and is primed by its own reasoning, and the
    research measures fresh context as an independent lever.
 
-   This follows the evidence. A cross-vendor reviewer was no more accurate than
-   a fresh same-model one, but its findings overlap only 41% of the time, and one
-   fresh same-model plus one cross-model reviewer found 56.7% of planted errors
-   against 42.7% for two same-model reviewers. A lightweight cross-vendor
-   reviewer did worse than same-model, so capability matters more than vendor
-   ([arXiv 2610.01471v2](https://arxiv.org/html/2610.01471v2), a single-author
-   preprint). DeepSeek flash is not an acceptable reviewer of an Opus diff.
+   Source for the review numbers:
+   [arXiv 2610.01471v2](https://arxiv.org/html/2610.01471v2), a single-author
+   preprint. The same study found a lightweight cross-vendor reviewer did worse
+   than same-model review, so capability matters more than vendor. That is why
+   DeepSeek flash never reviews an Opus diff.
 4. **Off T3, the commands are equivalent:**
    `claude -p --agent review-deep "<bundle>"` for a Claude review, and
    `opencode run --agent <non-Claude reviewer> "<bundle>"` for the other
@@ -277,7 +291,8 @@ on impossible tasks.
 
 ## Phases
 
-Each phase is one PR, red check first, with a cross-family review. Phase 0 lands
+Each phase is one PR, red check first, with the review that the table under
+Harness topology assigns to the writer. Phase 0 lands
 on v1 `main`; the rest build on a `v2` branch that is switched in with
 `install.cs --from`.
 
@@ -306,7 +321,8 @@ of checks.
    Claude Code, and DeepSeek implementors write. See Roles.
 2. **Grok Build.** Default: keep its render (it is cheap and tested), but no new
    v2 work targets it. Drop it if you do not run Grok weekly.
-3. **Frontier non-Claude reviewer for Claude-written diffs.** Default:
-   `xai/grok-4.7` through opencode, with Gemini as the fallback. Phase 2
-   measures it on the 9 eval cases before it becomes required.
+3. **Reviewer for Claude-written diffs.** Decided 2026-11-21: a fresh-context
+   Sonnet `review-deep`, not Grok. Phase 2 runs `evals/run-claude.sh` with
+   Sonnet on the 9 eval cases, so its recall is a number rather than an
+   assumption.
 4. **Self-merge.** Default: v2.1, after the four gates above.
