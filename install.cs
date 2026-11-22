@@ -282,6 +282,15 @@ if (File.Exists(modelsTool))
         if (checkOnly) drift.Add("models");
         else failures++;
     }
+    else if (!checkOnly)
+    {
+        // A role this machine cannot reach would only fail at use (a friend
+        // without a Claude login on the default profile), so say it now.
+        var (reachCode, reachOut) = RunCapture("python3", $"\"{modelsTool}\" --home \"{home}\" check");
+        foreach (var line in reachOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            Console.WriteLine($"  models  {line.Trim()}");
+        if (reachCode != 0) failures++;
+    }
 }
 
 // ---------------------------------------------------------------------------
