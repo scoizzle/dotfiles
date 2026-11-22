@@ -80,5 +80,37 @@ with tempfile.TemporaryDirectory() as raw:
     r = add(base, "bogus")
     check(r.returncode != 0, "an unknown kind is refused")
 
+    # Review of d512ffe (Sonnet): a gate measure must survive bad input.
+    check(add(base, "review", date="garbage").returncode != 0, "an unparseable --date is refused")
+    check(run(base, "add", "--kind", "review", "--artifact", "change", "--model", "m", "--harness", "claude",
+              "--red", "-5").returncode != 0, "a negative count is refused")
+    one = Path(raw) / "one"
+    add(one, "review")
+    check(run(one, "resolve", "*", "--acted", "1").returncode != 0, "resolve does not treat the id as a glob")
+    (base / "reviews" / "zz-array.json").write_text("[]")
+    (base / "reviews" / "zz-badcount.json").write_text('{"kind": "consult", "red": "z", "date": "2026-11-20T00:00:00+00:00"}')
+    with legacy.open("a") as handle:
+        handle.write('{"id": "old3", "ts": "2026-11-03T00:00:00", "red": "x"}\n')
+    r = run(base, "summary", "--now", "2026-11-21T00:00:00+00:00")
+    check(r.returncode == 0, f"summary survives malformed rows (got {r.returncode}: {r.stderr.strip()[-160:]})")
+    check("consult  records 9" in r.stdout, "a record with a bad count still counts, as zero")
+
+    # A kind whose last record is older than the window is flagged too.
+    stale = Path(raw) / "stale"
+    add(stale, "verify", date="2026-10-01T00:00:00+00:00")
+    r = run(stale, "summary", "--now", "2026-11-21T00:00:00+00:00")
+    check("verify   records 1" in r.stdout and "no record in 30 days" in r.stdout.split("verify", 1)[1],
+          "a kind last recorded 51 days ago is flagged")
+
+    # evals/scoreboard.py reads the same ledger, including the new records.
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.SourceFileLoader("scoreboard", str(ROOT / "evals" / "scoreboard.py"))
+    spec = importlib.util.spec_from_loader("scoreboard", loader)
+    scoreboard = importlib.util.module_from_spec(spec)
+    loader.exec_module(scoreboard)
+    ids = {e.get("id") for e in scoreboard.read_ledger(str(legacy), 0)}
+    check(rec["id"] in ids and "old1" in ids, "scoreboard sees both the legacy rows and the new records")
+
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)

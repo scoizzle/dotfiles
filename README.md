@@ -177,7 +177,9 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `service.json` — holds a generated password. Never commit this.
 - `cli.json` — TUI state (theme, layout, verbosity). Written by opencode itself;
   add it to `entries` in `install.cs` with `--copy` if you want it to travel.
-- `reviews.jsonl` — append-only log of review runs.
+- `reviews/` — one JSON record per review, consult or verifier run, written by
+  `bin/review-log`; `review-log summary` flags a gate with no record in 30 days.
+- `reviews.jsonl` — the legacy single-file log (to 2026-11-14), read, never rewritten.
 - `evals/canary-*/` — recorded model output from past eval runs.
 
 `memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored; that

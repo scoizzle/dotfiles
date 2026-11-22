@@ -40,17 +40,27 @@ DEFAULT_DB = "~/.local/share/opencode/opencode.db"
 DEFAULT_LEDGER = "~/.config/opencode/reviews.jsonl"
 
 
+def ledger_rows(resolved: str):
+    """Legacy JSONL rows, then bin/review-log's one-file records in reviews/ beside it."""
+    if os.path.exists(resolved):
+        with open(resolved) as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    yield line
+    records = os.path.join(os.path.dirname(resolved), "reviews")
+    if os.path.isdir(records):
+        for name in sorted(os.listdir(records)):
+            if name.endswith(".json") and not name.startswith("."):
+                with open(os.path.join(records, name), errors="replace") as fh:
+                    yield fh.read()
+
+
 def read_ledger(path: str, since_ms: int) -> list[dict]:
-    """Read the yield ledger. One JSON object per line. Returns entries in window."""
+    """Read the yield ledger: legacy JSONL plus per-record files. Returns entries in window."""
     resolved = os.path.expanduser(path)
-    if not os.path.exists(resolved):
-        return []
     entries = []
-    with open(resolved) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
+    for line in ledger_rows(resolved):
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:

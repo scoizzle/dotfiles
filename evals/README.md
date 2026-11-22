@@ -278,10 +278,13 @@ proxy.
 The two metrics that matter most — **yield** (did the review say anything worth
 acting on) and **dismissal** (how often you waved a finding off) — are not in the
 session store. Reviewer transcripts are not persisted for `opencode run`
-sessions, so they are logged at the source. The review gate appends one line per
-review to `~/.config/opencode/reviews.jsonl`, and `scoreboard.py` reads it as its
-own section. The line is written once the user has answered the findings, because
-`acted` and `dismissed` are known only then:
+sessions, so they are logged at the source. Each review, consult or verifier run
+writes one record with `bin/review-log add` (one file under
+`~/.config/opencode/reviews/`, so parallel reviewers never share a file), and
+`scoreboard.py` reads those plus the legacy `reviews.jsonl` as its own section.
+A record written before the user answers carries `--pending`, and
+`review-log resolve <id>` fills in `acted` and `dismissed` once they are known.
+The legacy line format was:
 
 ```json
 {"ts":"...","artifact":"change","model":"...","red":1,"amber":2,"yellow":3,"green":0,"acted":2,"dismissed":0}

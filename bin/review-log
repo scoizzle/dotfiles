@@ -22,6 +22,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 import tempfile
 import uuid
@@ -31,6 +32,23 @@ KINDS = ("review", "consult", "verify")
 DEFAULT_DIR = "~/.config/opencode/reviews"
 DEFAULT_LEGACY = "~/.config/opencode/reviews.jsonl"
 COUNTS = ("red", "amber", "yellow", "green", "acted", "dismissed")
+RECORD_ID = re.compile(r"[0-9a-f]{12}")
+
+
+def count(value) -> int:
+    """A count from a record; anything that is not a non-negative int is 0."""
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(number, 0)
+
+
+def non_negative(text: str) -> int:
+    number = int(text)
+    if number < 0:
+        raise argparse.ArgumentTypeError("counts are not negative")
+    return number
 
 
 def now_iso() -> str:
@@ -66,8 +84,12 @@ def records(base: Path, legacy: Path) -> list[dict]:
     if base.is_dir():
         for path in sorted(base.glob("*.json")):
             try:
-                out.append(json.loads(path.read_text()))
+                record = json.loads(path.read_text())
             except (json.JSONDecodeError, OSError):
+                record = None
+            if isinstance(record, dict):
+                out.append(record)
+            else:
                 print(f"skipping unreadable record {path}", file=sys.stderr)
     return out
 
@@ -76,8 +98,12 @@ def cmd_add(args, base: Path) -> int:
     base.mkdir(parents=True, exist_ok=True)
     rid = uuid.uuid4().hex[:12]
     date = args.date or now_iso()
+    if parse_ts(date) is None:
+        print(f"--date {date!r} is not an ISO time", file=sys.stderr)
+        return 2
     record = {
-        "id": rid, "kind": args.kind, "date": date, "artifact": args.artifact,
+        # `ts` too: evals/scoreboard.py and the legacy rows key the time on it.
+        "id": rid, "kind": args.kind, "date": date, "ts": date, "artifact": args.artifact,
         "model": args.model, "harness": args.harness, "head": args.head,
         "pending": args.pending,
         **{name: getattr(args, name) for name in COUNTS},
@@ -89,7 +115,10 @@ def cmd_add(args, base: Path) -> int:
 
 
 def cmd_resolve(args, base: Path) -> int:
-    matches = list(base.glob(f"*-{args.id}.json")) if base.is_dir() else []
+    if not RECORD_ID.fullmatch(args.id):
+        print(f"{args.id!r} is not a record id (12 hex digits)", file=sys.stderr)
+        return 1
+    matches = [p for p in base.iterdir() if p.name.endswith(f"-{args.id}.json")] if base.is_dir() else []
     if len(matches) != 1:
         print(f"no record {args.id} under {base}", file=sys.stderr)
         return 1
@@ -112,7 +141,7 @@ def cmd_summary(args, base: Path, legacy: Path) -> int:
         mine = [r for r in rows if r.get("kind") == kind]
         dates = [d for d in (parse_ts(str(r.get("date", ""))) for r in mine) if d]
         last = max(dates) if dates else None
-        totals = {name: sum(int(r.get(name) or 0) for r in mine) for name in ("red", "amber", "acted", "dismissed")}
+        totals = {name: sum(count(r.get(name)) for r in mine) for name in ("red", "amber", "acted", "dismissed")}
         line = (f"{kind:<8} records {len(mine)}  reds {totals['red']}  ambers {totals['amber']}  "
                 f"acted {totals['acted']}  dismissed {totals['dismissed']}  "
                 f"last {last.date().isoformat() if last else '-'}")
@@ -137,12 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     add.add_argument("--date", help="ISO time of the review (default now)")
     add.add_argument("--pending", action="store_true", help="the person has not answered the findings yet")
     for name in COUNTS:
-        add.add_argument(f"--{name}", type=int, default=0)
+        add.add_argument(f"--{name}", type=non_negative, default=0)
 
     resolve = sub.add_parser("resolve")
     resolve.add_argument("id")
-    resolve.add_argument("--acted", type=int)
-    resolve.add_argument("--dismissed", type=int)
+    resolve.add_argument("--acted", type=non_negative)
+    resolve.add_argument("--dismissed", type=non_negative)
 
     summary = sub.add_parser("summary")
     summary.add_argument("--days", type=int, default=30)
