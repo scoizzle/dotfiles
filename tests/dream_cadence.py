@@ -65,6 +65,13 @@ with tempfile.TemporaryDirectory() as raw:
     recent = memory(tmp, "recent", promoted=[2], pending=[18])
     check("promote first" not in dream(recent).stdout, "a promote in the last 14 days keeps drafting")
 
+    edge = memory(tmp, "edge14", promoted=[], pending=[14])
+    check("promote first" not in dream(edge).stdout, "exactly 14 days is not yet stale")
+    edge = memory(tmp, "edge15", promoted=[], pending=[15])
+    check("promote first" in dream(edge).stdout, "15 days is stale")
+    edge = memory(tmp, "promoted14", promoted=[14], pending=[30])
+    check("promote first" not in dream(edge).stdout, "a promote exactly 14 days ago still counts")
+
     empty = memory(tmp, "empty", promoted=[40], pending=[])
     check("promote first" not in dream(empty).stdout, "no pending files is not stale")
 
