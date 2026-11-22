@@ -3,7 +3,7 @@
 
     models resolve            # print the resolved roles; writes nothing
     models apply              # write ~/.config/opencode/models/<role> and models.resolved.json
-    models check              # fail on a missing, stale or unreachable role model
+    models check [--offline]  # fail on a missing, stale or (unless --offline) unreachable role model
 
 Resolution, later layers win: the repo's default profile (models/roles.json),
 then the profile the person picks, then their machine's untracked
@@ -161,7 +161,7 @@ def available_models(path: str | None) -> set[str] | None:
     return {line.strip() for line in out.stdout.splitlines() if MODEL_ID.fullmatch(line.strip())}
 
 
-def check(home: Path, available_path: str | None) -> int:
+def check(home: Path, available_path: str | None, offline: bool = False) -> int:
     problems: list[str] = []
     try:
         want = resolve(home)
@@ -175,8 +175,10 @@ def check(home: Path, available_path: str | None) -> int:
             problems.append(f"{role}: {path} is missing; opencode would run this role on its default model")
         elif path.read_text() != model:
             problems.append(f"{role}: {path} holds {path.read_text()!r}, the resolution says {model!r}; run models apply")
-    have = available_models(available_path)
-    if have is None:
+    have = None if offline else available_models(available_path)
+    if offline:
+        pass
+    elif have is None:
         print("note opencode not found: model availability not checked")
     else:
         for role, model in want["roles"].items():
@@ -194,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("resolve", "apply", "check"))
     parser.add_argument("--home", default=str(Path.home()))
     parser.add_argument("--available", help="file of available model ids, one per line (default: opencode models)")
+    parser.add_argument("--offline", action="store_true", help="with check: skip the availability probe (install --check)")
     args = parser.parse_args(argv)
     home = Path(args.home)
     try:
@@ -207,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     except Refused as error:
         print(f"refused: {error}", file=sys.stderr)
         return 2
-    return check(home, args.available)
+    return check(home, args.available, args.offline)
 
 
 if __name__ == "__main__":

@@ -111,6 +111,16 @@ def main() -> int:
         r = run(os.path.join(canonical, "install.cs"), home, canonical=canonical)
         check(r.returncode == 0, f"apply from DOTFILES_DIR succeeds (got {r.returncode}: {r.stderr.strip()[-200:]})")
         check(links_into(home, canonical), "the canonical apply links into the canonical checkout")
+        # opencode.json reads each model from a role file; without them opencode
+        # silently runs every agent on its default model.
+        role_dir = os.path.join(home, ".config", "opencode", "models")
+        check(os.path.isfile(os.path.join(role_dir, "reviewer")) and os.path.isfile(os.path.join(role_dir, "lead")),
+              "the canonical apply writes the role model files")
+        r = run(os.path.join(canonical, "install.cs"), home, "--check", canonical=canonical)
+        check(r.returncode == 0, f"--check after apply finds no drift, role files included (got {r.returncode}: {r.stdout.strip()[-200:]})")
+        os.unlink(os.path.join(role_dir, "reviewer"))
+        r = run(os.path.join(canonical, "install.cs"), home, "--check", canonical=canonical)
+        check(r.returncode == 1 and "reviewer" in r.stdout, f"--check reports a missing role file as drift (got {r.returncode})")
 
         # 7. With DOTFILES_DIR unset, the default is ~/dotfiles under the HOME in use.
         home = fresh_home(tmp, "home-default")

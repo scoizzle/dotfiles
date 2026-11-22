@@ -267,6 +267,24 @@ if (!checkOnly)
 }
 
 // ---------------------------------------------------------------------------
+// role models: opencode.json reads each agent's model from
+// ~/.config/opencode/models/<role>, and opencode 2.3.2 silently drops a model
+// whose file is missing, so the files are part of the install.
+var modelsTool = Path.Combine(repoRoot, "bin", "models");
+if (File.Exists(modelsTool))
+{
+    var (modelsCode, modelsOut) = RunCapture("python3",
+        $"\"{modelsTool}\" --home \"{home}\" {(checkOnly ? "check --offline" : "apply")}");
+    foreach (var line in modelsOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        Console.WriteLine($"  models  {line.Trim()}");
+    if (modelsCode != 0)
+    {
+        if (checkOnly) drift.Add("models");
+        else failures++;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // environment checks that would otherwise fail silently on a new machine
 // ---------------------------------------------------------------------------
 Console.WriteLine();
