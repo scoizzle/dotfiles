@@ -378,6 +378,30 @@ def write_agent(path: Path, text: str) -> Path | None:
     return backup
 
 
+def stale_agents(policy: dict, repo: Path, home: Path) -> list[Path]:
+    """Agent files this script rendered once and no longer renders.
+
+    #41 retired three agents but their rendered copies stayed loadable in
+    ~/.claude/agents. Only a file carrying the GENERATED stamp is ours to retire.
+    """
+    base = home / ".claude" / "agents"
+    if not base.is_dir():
+        return []
+    rendered = set(render_claude_agents(policy, repo))
+    return sorted(
+        p for p in base.glob("*.md")
+        if p.stem not in rendered and p.is_file() and GENERATED in p.read_text(errors="replace")
+    )
+
+
+def retire_agent(path: Path) -> Path:
+    """Move a stale rendered agent to a name Claude Code does not load. Nothing is deleted."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    kept = path.with_name(f"{path.name}.retired-{stamp}")
+    path.rename(kept)
+    return kept
+
+
 def roslynk_registration(home: Path) -> tuple[str, list[str]]:
     """('ok'|'missing'|'skip: why', command to register). Claude Code has no Roslynk unless it is registered."""
     binary = home / ".dotnet" / "tools" / "roslynk"
@@ -517,6 +541,11 @@ def main() -> int:
                 backup = write_agent(path, text)
                 if backup:
                     print(f"        backup {backup}")
+        for path in stale_agents(policy, repo, home):
+            drift = True
+            print(f"stale   {path}  (rendered once, no longer in the policy)")
+            if args.apply:
+                print(f"        retired {retire_agent(path)}")
         state, command = roslynk_registration(home)
         if state == "missing":
             drift = True
