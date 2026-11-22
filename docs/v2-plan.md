@@ -291,6 +291,44 @@ statistically. The result says that going native loses nothing measurable.
 Not measured: B's wall time and cost. opencode reports no cost, and the
 directory timestamps do not give a usable duration.
 
+## v2 reimagined: one harness, roles, profiles (2026-11-22)
+
+Decided by the person, superseding Harness topology and Roles where they differ:
+
+- **opencode only.** Claude runs through opencode again (Phase 2b: 22/24, tied
+  with native 24/24). Phase 3 is reverted and the metering plugin comes back.
+  The Claude Code native render, its sandbox profile, `run-claude.sh` and the
+  Grok links are deleted.
+- **No container.** The person accepts weaker isolation. What is kept costs
+  nothing and needs no isolation: branch protection on `main` (server-side, so
+  it covers every harness), no secrets exported into every shell, backups. The
+  guard stays as an accident-catcher, not a boundary.
+- **Models are chosen by person and machine,** because friends use this repo
+  with other subscriptions.
+
+### Model roles
+
+The repo names roles, never model ids: `lead`, `implementor`, `reviewer`,
+`advisor`, `verifier`, `explore`, `drafter`. Agent files say `role:`.
+
+Resolution, later layers win:
+1. **Repo defaults** (`models/roles.json`): a profile that works for anyone.
+2. **A profile** (`models/profiles/<name>.json`), one per subscription bundle,
+   e.g. `claude-max`, `opencode-go`, `api-keys`. A person picks one, or
+   `install.cs` suggests one from the providers `opencode models` reports.
+3. **The machine** (`~/.config/opencode/models.local.json`, untracked): only
+   what differs here.
+
+`install.cs` writes the resolved config opencode reads, and `--doctor` checks
+every resolved model exists on this machine. Invariants are checked on the
+resolved set, not the defaults: the reviewer never shares the implementor's
+family, and a local file cannot weaken a gate. Extends `pstack/models.json`'s
+routes table (#54) rather than adding a second one.
+
+Portability for friends: nothing personal in tracked defaults (bot names, the
+bootstrap slug, memory, the author's paths); the README says how to pick a
+profile.
+
 ## The contract
 
 `AGENTS.md` keeps only what the model cannot get any other way: commands,
