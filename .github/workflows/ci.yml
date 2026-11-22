@@ -144,6 +144,7 @@ jobs:
           python3 tests/guard_control_plane.py
           python3 tests/sandbox_render.py
           python3 tests/skills_negative.py
+          python3 tests/dream_canonical.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.

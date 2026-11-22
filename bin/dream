@@ -1058,6 +1058,23 @@ def missing_opencode_hint(model: str) -> SystemExit:
     )
 
 
+def assert_canonical_memory(memory: Path) -> None:
+    """The live memory link must resolve into the canonical checkout.
+
+    From 2026-11-20 it pointed into a merged feature worktree and dream kept
+    staging there. The canonical checkout is install.cs's: $DOTFILES_DIR,
+    default ~/dotfiles. Only the default --memory is checked.
+    """
+    canonical = Path(os.environ.get("DOTFILES_DIR") or os.path.expanduser("~/dotfiles"))
+    want = (canonical / "memory").resolve()
+    got = memory.resolve()
+    if got != want:
+        raise SystemExit(
+            f"refusing to write memory: {memory} resolves to {got}, not the canonical checkout's {want}\n"
+            f"run {canonical / 'install.cs'} to relink it, or set DOTFILES_DIR to the checkout you mean"
+        )
+
+
 def assert_learnings_target(memory: Path, target: Path) -> Path:
     """Refuse anything that is not a dated file inside learnings. Never touch core."""
     if not memory.is_dir():
@@ -1522,6 +1539,8 @@ def main(argv: list[str] | None = None) -> int:
     db_path = os.path.expanduser(args.db)
     t3_path = os.path.expanduser(args.t3_db)
     memory = Path(os.path.expanduser(args.memory))
+    if args.memory == DEFAULT_MEMORY:
+        assert_canonical_memory(memory)
     if args.promote:
         return promote(memory, args.dry_run, args.yes)
     # Drafts are staged where no agent reads them. --promote moves them.
