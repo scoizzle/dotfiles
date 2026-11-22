@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Record what each gate catches, one file per record.
+
+    review-log add --kind review --artifact change --model claude-agent/sonnet \\
+        --harness claude --head <sha> --red 0 --amber 1 --yellow 2 \\
+        --acted 1 --dismissed 0 [--pending]
+    review-log resolve <id> --acted 1 --dismissed 1
+    review-log summary [--days 30]
+
+kind is review, consult (advisor) or verify (verifier). Each record is its own
+file under ~/.config/opencode/reviews/, so parallel reviewers never append to
+one shared file; summary aggregates on read. The legacy ledger,
+~/.config/opencode/reviews.jsonl (written by the review-log #41 deleted), is
+read as `review` records and never rewritten.
+
+summary flags a kind with no record in the window: a gate that records nothing
+for 30 days is proposed for removal (docs/v2-plan.md, Gates).
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import sys
+import tempfile
+import uuid
+from pathlib import Path
+
+KINDS = ("review", "consult", "verify")
+DEFAULT_DIR = "~/.config/opencode/reviews"
+DEFAULT_LEGACY = "~/.config/opencode/reviews.jsonl"
+COUNTS = ("red", "amber", "yellow", "green", "acted", "dismissed")
+
+
+def now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def parse_ts(value: str) -> datetime.datetime | None:
+    try:
+        ts = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=datetime.timezone.utc)
+
+
+def write_atomic(path: Path, record: dict) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    with os.fdopen(fd, "w") as handle:
+        json.dump(record, handle, indent=1, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp, path)
+
+
+def records(base: Path, legacy: Path) -> list[dict]:
+    out = []
+    if legacy.exists():
+        for line in legacy.read_text(errors="replace").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                out.append({**row, "kind": row.get("kind", "review"), "date": row.get("date") or row.get("ts", "")})
+    if base.is_dir():
+        for path in sorted(base.glob("*.json")):
+            try:
+                out.append(json.loads(path.read_text()))
+            except (json.JSONDecodeError, OSError):
+                print(f"skipping unreadable record {path}", file=sys.stderr)
+    return out
+
+
+def cmd_add(args, base: Path) -> int:
+    base.mkdir(parents=True, exist_ok=True)
+    rid = uuid.uuid4().hex[:12]
+    date = args.date or now_iso()
+    record = {
+        "id": rid, "kind": args.kind, "date": date, "artifact": args.artifact,
+        "model": args.model, "harness": args.harness, "head": args.head,
+        "pending": args.pending,
+        **{name: getattr(args, name) for name in COUNTS},
+    }
+    stamp = (parse_ts(date) or datetime.datetime.now(datetime.timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    write_atomic(base / f"{stamp}-{rid}.json", record)
+    print(rid)
+    return 0
+
+
+def cmd_resolve(args, base: Path) -> int:
+    matches = list(base.glob(f"*-{args.id}.json")) if base.is_dir() else []
+    if len(matches) != 1:
+        print(f"no record {args.id} under {base}", file=sys.stderr)
+        return 1
+    record = json.loads(matches[0].read_text())
+    for name in ("acted", "dismissed"):
+        value = getattr(args, name)
+        if value is not None:
+            record[name] = value
+    record["pending"] = False
+    record["resolved_at"] = now_iso()
+    write_atomic(matches[0], record)
+    return 0
+
+
+def cmd_summary(args, base: Path, legacy: Path) -> int:
+    now = parse_ts(args.now) if args.now else datetime.datetime.now(datetime.timezone.utc)
+    window = datetime.timedelta(days=args.days)
+    rows = records(base, legacy)
+    for kind in KINDS:
+        mine = [r for r in rows if r.get("kind") == kind]
+        dates = [d for d in (parse_ts(str(r.get("date", ""))) for r in mine) if d]
+        last = max(dates) if dates else None
+        totals = {name: sum(int(r.get(name) or 0) for r in mine) for name in ("red", "amber", "acted", "dismissed")}
+        line = (f"{kind:<8} records {len(mine)}  reds {totals['red']}  ambers {totals['amber']}  "
+                f"acted {totals['acted']}  dismissed {totals['dismissed']}  "
+                f"last {last.date().isoformat() if last else '-'}")
+        if last is None or now - last > window:
+            line += f"  no record in {args.days} days: propose removing this gate"
+        print(line)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--dir", default=DEFAULT_DIR)
+    parser.add_argument("--legacy", default=DEFAULT_LEGACY)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    add = sub.add_parser("add")
+    add.add_argument("--kind", required=True, choices=KINDS)
+    add.add_argument("--artifact", required=True, choices=("change", "plan"))
+    add.add_argument("--model", required=True)
+    add.add_argument("--harness", required=True, choices=("claude", "opencode", "grok"))
+    add.add_argument("--head", default="")
+    add.add_argument("--date", help="ISO time of the review (default now)")
+    add.add_argument("--pending", action="store_true", help="the person has not answered the findings yet")
+    for name in COUNTS:
+        add.add_argument(f"--{name}", type=int, default=0)
+
+    resolve = sub.add_parser("resolve")
+    resolve.add_argument("id")
+    resolve.add_argument("--acted", type=int)
+    resolve.add_argument("--dismissed", type=int)
+
+    summary = sub.add_parser("summary")
+    summary.add_argument("--days", type=int, default=30)
+    summary.add_argument("--now", help="ISO time to measure the window from (tests)")
+
+    args = parser.parse_args(argv)
+    base = Path(os.path.expanduser(args.dir))
+    legacy = Path(os.path.expanduser(args.legacy))
+    if args.command == "add":
+        return cmd_add(args, base)
+    if args.command == "resolve":
+        return cmd_resolve(args, base)
+    return cmd_summary(args, base, legacy)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
