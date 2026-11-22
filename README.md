@@ -113,7 +113,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
-| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
+| `plugins/`      | OpenCode plugins loaded at startup; none are installed since v2 removed Claude from opencode (see `plugins/README.md`) | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
@@ -229,19 +229,20 @@ those processes are running.
 
 ## Claude subscription
 
-opencode reaches Claude through its **Claude Agent** integration, which borrows
-the local Claude Code login instead of storing an API key. That is the path for
-a Claude Pro/Max subscription; the `anthropic` provider is still key-only
-(`ANTHROPIC_API_KEY`, or `/connect` → **Anthropic**).
+Claude models run in Claude Code, not opencode (v2: a model runs in its own
+vendor's harness). The subscription is the local Claude Code login:
 
 ```sh
 claude auth login     # once per machine; tokens stay in ~/.claude
 ```
 
-Then in opencode run `/connect`, select **Claude Agent**, and choose a
-`claude-agent/...` model with `/models`. `./install.cs --doctor` reports the CLI
-and its login as advisory checks, and `./update.sh` upgrades the CLI when it is
-installed.
+`bin/sync-harness --scope home --apply` renders `review-deep`, `advisor`,
+`explore`, `implementor` and `verifier` into `~/.claude/agents` with their Claude
+models. Their opencode copies carry no Claude pin, and `bin/lint-config` rejects
+one. In v2.0's Phase 2b, Opus native scored 24/24 and Opus through opencode's
+Claude Agent integration scored 22/24 (`docs/v2-plan.md`). `./install.cs --doctor`
+reports the CLI and its login as advisory checks, and `./update.sh` upgrades the
+CLI when it is installed.
 
 ### Experimental Code Mode (opt-in, not managed)
 

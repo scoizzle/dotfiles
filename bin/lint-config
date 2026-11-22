@@ -459,7 +459,7 @@ def check_instructions() -> None:
     for needle in (
         "An advisory consult is required",
         "capped at two per change",
-        "claude-agent/opus#medium",
+        "runs on Opus in Claude Code",
         "never replaces the sensitive review",
     ):
         if needle not in text:

@@ -1,7 +1,7 @@
 ---
 description: Read-only advisor for hard work. Given a plan, a design choice, or a repeated failure, returns the risks, a simpler alternative, and the cases the plan misses. Never edits, never reviews a finished diff, never replaces the sensitive review.
+model: opencode-go/deepseek-v4.1-flash#high
 mode: subagent
-model: claude-agent/opus#medium
 steps: 24
 color: "#c77dff"
 permissions:

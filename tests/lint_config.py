@@ -140,7 +140,7 @@ def main() -> int:
         for name, needle in (
             ("AGENTS.md", "An advisory consult is required"),
             ("AGENTS.md", "capped at two per change"),
-            ("AGENTS.md", "claude-agent/opus#medium"),
+            ("AGENTS.md", "runs on Opus in Claude Code"),
             ("AGENTS.md", "never replaces the sensitive review"),
             ("agents/build.md", "advisor triggers"),
             ("agents/build.md", "at most twice"),
