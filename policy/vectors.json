@@ -2119,6 +2119,24 @@
     "guard"
    ],
    "note": "a loop over a literal command word stays allowed"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"X\"}) { clientMutationId } }'",
+   "expect": "deny",
+   "note": "the GraphQL route to the merge gh-pr-merge denies (person's decision 2026-11-22; lifted with self-merge in v2.1)"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"X\"}) { clientMutationId } }'",
+   "expect": "deny",
+   "note": "the GraphQL route to the merge gh-pr-merge denies (person's decision 2026-11-22; lifted with self-merge in v2.1)"
+  },
+  {
+   "kind": "shell",
+   "input": "gh api graphql -f query='query { viewer { login } }'",
+   "expect": "allow",
+   "note": "a GraphQL read stays allowed"
   }
  ]
 }

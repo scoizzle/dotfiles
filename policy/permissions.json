@@ -325,6 +325,21 @@
         "native": []
       },
       {
+        "id": "gh-api-graphql-merge",
+        "doc": "the GraphQL route to the same merge (mergePullRequest, enablePullRequestAutoMerge); lifted with self-merge in v2.1",
+        "program": "gh",
+        "leading": [
+          "api",
+          "graphql"
+        ],
+        "matches": "mergePullRequest|enablePullRequestAutoMerge",
+        "opencode": [
+          "*gh api graphql*mergePullRequest*",
+          "*gh api graphql*enablePullRequestAutoMerge*"
+        ],
+        "native": []
+      },
+      {
         "id": "npm-publish",
         "program": "npm",
         "tokens": [
