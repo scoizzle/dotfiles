@@ -42,11 +42,11 @@ REVIEW_MODES = ("fresh-same-model", "stop")
 # Family means the model's vendor, not the provider that serves it: an
 # aggregator such as opencode-go may host several.
 VENDORS = (
-    (re.compile(r"(^|/)(claude|opus|sonnet|haiku|fable)", re.I), "anthropic"),
+    (re.compile(r"(^|[^a-z])(anthropic|claude|opus|sonnet|haiku|fable)", re.I), "anthropic"),
     (re.compile(r"deepseek", re.I), "deepseek"),
     (re.compile(r"grok", re.I), "xai"),
     (re.compile(r"gemini", re.I), "google"),
-    (re.compile(r"(^|/)(gpt|o\d|codex)", re.I), "openai"),
+    (re.compile(r"(^|[^a-z])(gpt|o\d|codex)", re.I), "openai"),
     (re.compile(r"glm", re.I), "zhipu"),
     (re.compile(r"kimi", re.I), "moonshot"),
     (re.compile(r"qwen", re.I), "alibaba"),
@@ -59,13 +59,15 @@ class Refused(Exception):
 
 
 def family(model: str) -> str:
+    """The model's vendor. An unknown one is refused, never guessed from the
+    provider: an aggregator could make two vendors look like one family."""
     provider, _, rest = model.split("#", 1)[0].partition("/")
     if provider in PROVIDER_VENDOR:
         return PROVIDER_VENDOR[provider]
     for pattern, vendor in VENDORS:
         if pattern.search(rest):
             return vendor
-    return provider
+    raise Refused(f"unknown model family for {model!r}; add its vendor to VENDORS in bin/models")
 
 
 def load(path: Path) -> dict:
@@ -110,11 +112,18 @@ def resolve(home: Path) -> dict:
     if single not in REVIEW_MODES:
         raise Refused(f"{local_path}: review.single_family must be one of {', '.join(REVIEW_MODES)}")
     if len(families) > 1:
-        if family(chosen["reviewer"]) == family(chosen["implementor"]):
+        reviewer = family(chosen["reviewer"])
+        if reviewer == family(chosen["implementor"]):
             raise Refused(
                 f"the reviewer ({chosen['reviewer']}) is in the implementor's family "
                 f"({chosen['implementor']}) while the roles span {', '.join(sorted(families))}; "
                 "a sensitive change needs a reviewer from another family")
+        # The lead writes diffs too. A Claude lead is reviewed by a fresh Opus
+        # (the person's rule, 2026-11-22); any other lead needs another family.
+        if reviewer == family(chosen["lead"]) and reviewer != "anthropic":
+            raise Refused(
+                f"the reviewer ({chosen['reviewer']}) is in the lead's family ({chosen['lead']}) "
+                "while the roles span families; only a Claude lead may be reviewed by its own family (a fresh Opus)")
         mode = "cross-family"
     else:
         mode = single
@@ -136,9 +145,16 @@ def apply(home: Path) -> dict:
             (stage / role).write_text(model)  # no newline: opencode substitutes the bytes as is
         final = base / "models"
         old = base / ".models-old"
+        if old.exists():
+            shutil.rmtree(old)  # left by an apply that was interrupted
         if final.exists():
             final.rename(old)
-        stage.rename(final)
+        try:
+            stage.rename(final)
+        except OSError:
+            if old.exists() and not final.exists():
+                old.rename(final)
+            raise
         if old.exists():
             shutil.rmtree(old)
     finally:
@@ -168,6 +184,13 @@ def check(home: Path, available_path: str | None, offline: bool = False) -> int:
     except Refused as error:
         print(f"FAIL {error}")
         return 1
+    resolved_path = target(home) / "models.resolved.json"
+    try:
+        recorded = json.loads(resolved_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        recorded = None
+    if recorded != want:
+        problems.append(f"{resolved_path} does not match the resolution (review {want['review_mode']}); run models apply")
     folder = target(home) / "models"
     for role, model in want["roles"].items():
         path = folder / role
@@ -195,7 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=("resolve", "apply", "check"))
     parser.add_argument("--home", default=str(Path.home()))
-    parser.add_argument("--available", help="file of available model ids, one per line (default: opencode models)")
+    parser.add_argument("--available", default=os.environ.get("DOTFILES_MODELS_AVAILABLE") or None,
+                        help="file of available model ids, one per line (default: $DOTFILES_MODELS_AVAILABLE, else opencode models)")
     parser.add_argument("--offline", action="store_true", help="with check: skip the availability probe (install --check)")
     args = parser.parse_args(argv)
     home = Path(args.home)

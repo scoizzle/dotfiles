@@ -118,9 +118,25 @@ def main() -> int:
               "the canonical apply writes the role model files")
         r = run(os.path.join(canonical, "install.cs"), home, "--check", canonical=canonical)
         check(r.returncode == 0, f"--check after apply finds no drift, role files included (got {r.returncode}: {r.stdout.strip()[-200:]})")
+        with open(os.path.join(role_dir, "reviewer")) as handle:
+            reviewer = handle.read()
+        check(reviewer.startswith("claude-agent/opus"), f"the reviewer file holds the default profile's reviewer (got {reviewer!r})")
         os.unlink(os.path.join(role_dir, "reviewer"))
         r = run(os.path.join(canonical, "install.cs"), home, "--check", canonical=canonical)
         check(r.returncode == 1 and "reviewer" in r.stdout, f"--check reports a missing role file as drift (got {r.returncode})")
+
+        # 6b. A machine that cannot reach a role's model fails the install, loudly.
+        home = fresh_home(tmp, "home-no-claude")
+        listing = os.path.join(tmp, "no-claude.txt")
+        with open(listing, "w") as handle:
+            handle.write("opencode-go/deepseek-v4.1-flash\n")
+        os.environ["DOTFILES_MODELS_AVAILABLE"] = listing
+        try:
+            r = run(os.path.join(canonical, "install.cs"), home, canonical=canonical)
+        finally:
+            del os.environ["DOTFILES_MODELS_AVAILABLE"]
+        check(r.returncode == 2 and "not available" in r.stdout,
+              f"install fails when this machine cannot reach a role's model (got {r.returncode})")
 
         # 7. With DOTFILES_DIR unset, the default is ~/dotfiles under the HOME in use.
         home = fresh_home(tmp, "home-default")

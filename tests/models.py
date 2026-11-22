@@ -142,5 +142,46 @@ with tempfile.TemporaryDirectory() as raw:
     check(role_file(home, "drafter") in "".join(r.stdout.split()),
           "dream's default model is this machine's drafter role")
 
+    # 9. Review of 248ffb4 (Opus): the lead writes diffs too.
+    home = home_with(tmp, "lead-same", {"roles": {"lead": "opencode-go/deepseek-v4.1-flash#high",
+                                                   "reviewer": "opencode-go/deepseek-v4.1-flash#high",
+                                                   "implementor": "claude-agent/sonnet"}})
+    r = run(home, "apply")
+    check(r.returncode != 0 and "lead's family" in r.stderr,
+          f"a reviewer in the lead's non-Claude family is refused in a mixed set (got {r.returncode})")
+
+    # 10. Family comes from the vendor token anywhere in the id; an unknown vendor is refused.
+    import importlib.machinery, importlib.util
+    loader = importlib.machinery.SourceFileLoader("models_mod", str(MODELS))
+    spec = importlib.util.spec_from_loader("models_mod", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    for model, want in (("amazon-bedrock/anthropic.claude-opus-4", "anthropic"),
+                        ("opencode/claude-sonnet-5", "anthropic"),
+                        ("claude-agent/claude-opus-4-8", "anthropic"),
+                        ("opencode/gpt-6", "openai"),
+                        ("opencode-go/glm-5.3-flash", "zhipu"),
+                        ("opencode-go/deepseek-v4.1-flash#low", "deepseek")):
+        check(mod.family(model) == want, f"family({model}) is {want} (got {mod.family(model)})")
+    home = home_with(tmp, "unknown-vendor", {"roles": {"explore": "opencode/big-pickle"}})
+    r = run(home, "apply")
+    check(r.returncode != 0 and "unknown model family" in r.stderr, f"an unknown vendor is refused (got {r.returncode})")
+
+    # 11. check catches a stale models.resolved.json, not only stale role files.
+    home = home_with(tmp, "stale-resolved")
+    run(home, "apply")
+    (home / ".config" / "opencode" / "models.local.json").write_text('{"profile": "go-only", "review": {"single_family": "stop"}}')
+    for role, model in json.loads((ROOT / "models" / "profiles" / "go-only.json").read_text())["roles"].items():
+        (home / ".config" / "opencode" / "models" / role).write_text(model)
+    r = run(home, "check", available=EVERYTHING)
+    check(r.returncode != 0 and "models.resolved.json" in r.stdout, "a stale models.resolved.json fails check")
+
+    # 12. A leftover .models-old from an interrupted apply does not break the next one.
+    home = home_with(tmp, "leftover")
+    run(home, "apply")
+    (home / ".config" / "opencode" / ".models-old").mkdir(parents=True)
+    (home / ".config" / "opencode" / ".models-old" / "lead").write_text("x/y")
+    check(run(home, "apply").returncode == 0, "apply recovers from a leftover .models-old")
+
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)
