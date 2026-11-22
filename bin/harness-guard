@@ -771,7 +771,8 @@ def check_shell(policy: dict, command: str, depth: int = 0, cwd: str | None = No
         # which it checks on its own; that shape is fine. What is not: an expanded
         # or backquoted command word, or arguments left with no command in front
         # (`$(printf rm) -rf build` leaves `-rf build`).
-        if (seg[0] != "$" and ("$" in seg[0] or "`" in seg[0])) or seg[0].startswith("-"):
+        word = (strip_keywords(seg) or [""])[0]  # `do $f -rf x`: the command word follows the keyword
+        if (word != "$" and ("$" in word or "`" in word)) or word.startswith("-"):
             found.append(Decision("ask", "opaque-command", f"opaque-command: the command word in `{' '.join(seg)[:60]}` is built at run time"))
         if prog == "sed" and sed_executes(seg):
             found.append(Decision("ask", "sed-execute", f"sed-execute: `{' '.join(seg)[:100]}` runs a shell command"))
