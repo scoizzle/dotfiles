@@ -499,6 +499,8 @@ def main() -> int:
     parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
     parser.add_argument("--repo", default=None,
                         help="repo to act on (default: this repo; with --scope grok, the checkout containing the cwd)")
+    parser.add_argument("--from", dest="from_root", default=None,
+                        help="apply to this account's home from a non-canonical checkout; must name the repo acted on")
     args = parser.parse_args()
     if args.sandbox and args.scope not in ("home", "all"):
         parser.error("--sandbox applies to --scope home (or all); --scope sandbox already previews the fragment")
@@ -510,6 +512,21 @@ def main() -> int:
     if args.scope == "grok":
         target = checkout_root(Path(args.repo) if args.repo else Path.cwd())
         return print_grok(target, home)
+
+    # Same rule as install.cs (2026-11-20): only the canonical checkout writes
+    # this account's home, or --from naming the checkout that is running. An
+    # explicit throwaway --home is not this account's home.
+    if args.scope in ("home", "all"):
+        canonical = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "dotfiles")
+        own_home = home.resolve() == Path.home().resolve()
+        if own_home and repo.resolve() != canonical.resolve():
+            meant = args.from_root and Path(args.from_root).resolve() == repo.resolve()
+            if args.apply and not meant:
+                print(f"refusing to apply: {repo} is not the canonical checkout ({canonical}).", file=sys.stderr)
+                print("every session would load this checkout's agents, permissions and hook.", file=sys.stderr)
+                print(f"run {canonical / 'bin' / 'sync-harness'}, or pass --from {repo} to mean it.", file=sys.stderr)
+                return 3
+            print(f"warning: {repo} is not the canonical checkout ({canonical})", file=sys.stderr)
 
     policy = json.loads((repo / "policy" / "permissions.json").read_text())
 
