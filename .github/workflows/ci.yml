@@ -130,7 +130,7 @@ jobs:
         run: python3 tests/skills.py
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness bin/notify-bot bin/setup-bot-webhooks evals/cost.py evals/score.py evals/scoreboard.py
+        run: python3 -m py_compile bin/review-bundle bin/dream bin/lint-config bin/harness-guard bin/sync-harness bin/notify-bot bin/setup-bot-webhooks evals/cost.py evals/score.py evals/scoreboard.py evals/compare.py
 
       - name: classifier and policy render tests
         run: |
@@ -146,6 +146,7 @@ jobs:
           python3 tests/skills_negative.py
           python3 tests/dream_canonical.py
           python3 tests/agents_prune.py
+          python3 tests/eval_compare.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
