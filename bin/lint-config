@@ -446,6 +446,33 @@ def check_contract() -> None:
     (#44) or restored the tier cascade, without pinning any wording.
     """
     text = (ROOT / "AGENTS.md").read_text()
+    if len(text) > CONTRACT_CAP:
+        fail(f"AGENTS.md is {len(text)} characters, over the {CONTRACT_CAP} cap; raising the cap is its own change")
+    heading = "## Rules and what enforces them"
+    if heading not in text:
+        fail(f"AGENTS.md: missing {heading!r}; rules have no enforcers")
+    else:
+        policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        lint_src = Path(__file__).read_text()
+        rows = [line for line in text.split(heading, 1)[1].splitlines()
+                if line.startswith("|") and not re.fullmatch(r"\|[\s|:-]+", line)][1:]
+        if not rows:
+            fail("AGENTS.md: the rule table has no rows")
+        for line in rows:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) != 3:
+                fail(f"AGENTS.md rule table: {line[:80]!r} needs rule | enforcer | failure")
+                continue
+            rule_text, enforcers, failure = cells
+            for token in (t.strip() for t in enforcers.split(",")):
+                if token == "judgment":
+                    if failure in ("", "—", "-"):
+                        fail(f"AGENTS.md rule table: judgment rule {rule_text[:60]!r} names no failure it prevents")
+                    continue
+                why = resolve_enforcer(token, policy, ci, lint_src)
+                if why:
+                    fail(f"AGENTS.md rule table: {rule_text[:60]!r}: {why}")
     for stale in (
         "or say that no second model was available",
         "say so and continue",

@@ -154,6 +154,38 @@ def main() -> int:
         finally:
             agents_path.write_text(saved)
 
+        # v2: the contract is capped, and every rule in its table names an
+        # enforcer that exists. These replace ~100 exact-phrase needles.
+        saved = agents_path.read_text()
+        row = "| No agent merge in v2.0 |"
+        contract_cases = (
+            ("AGENTS.md over the cap", saved + "\n" + "x" * 8000, "over the 8000 cap"),
+            ("rule table heading removed", saved.replace("## Rules and what enforces them", "## Rules"),
+             "rules have no enforcers"),
+            ("a policy enforcer that does not exist", saved.replace("policy:git-push-destructive", "policy:no-such-rule", 1),
+             "no policy rule or key 'no-such-rule'"),
+            ("a test enforcer that does not exist", saved.replace("test:install_root.py", "test:no_such.py", 1),
+             "no tests/no_such.py"),
+            ("a lint enforcer that does not exist", saved.replace("lint:check_no_claude_in_opencode", "lint:check_nothing", 1),
+             "no lint check check_nothing"),
+            ("an unknown enforcer kind", saved.replace("policy:git-push |", "hope:git-push |", 1), "unknown enforcer kind"),
+            ("a judgment rule with no failure", saved.replace("| judgment | #39 landed unreviewed |", "| judgment | — |", 1),
+             "names no failure it prevents"),
+        )
+        for name, text, marker in contract_cases:
+            try:
+                agents_path.write_text(text)
+                failed |= not expect(f"contract: {name}", lint(tree), marker)
+            finally:
+                agents_path.write_text(saved)
+        ci_path = tree / ".github" / "workflows" / "ci.yml"
+        ci_saved = ci_path.read_text()
+        try:
+            ci_path.write_text(ci_saved.replace("python3 tests/install_root.py", "true"))
+            failed |= not expect("contract: a test enforcer CI does not run", lint(tree), "does not run in CI")
+        finally:
+            ci_path.write_text(ci_saved)
+
         # v2: Claude runs in Claude Code. A claude-agent/* pin in an opencode agent
         # file or opencode.json puts it back inside opencode.
         review_path = tree / "agents" / "review-deep.md"
