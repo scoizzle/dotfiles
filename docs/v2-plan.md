@@ -432,11 +432,12 @@ The order is verify, then subtract, then add.
 | **Subtract** | | | |
 | 1 | Stamped renders; prune the 3 retired `~/.claude/agents/*` | the 3 retired agents survive `--apply` | −3 files / +80 |
 | 2 | Cut verifier and its six wiring points | removal-only; suite green, no remaining reference | −450 |
-| 3 | Claude models out of opencode: delete the plugin and the `claude-agent/*` pins; `family`/`model` frontmatter; render Claude agents only to Claude Code | lint rejects a `claude-agent/` id in opencode config | −150 / +120 |
+| 2b | **Measure before deleting the Claude path.** Run `review-deep` on all 9 eval cases, 3 attempts each, in three arms: (A) Opus native, `claude -p --agent review-deep`; (B) Opus through opencode, `claude-agent/opus`, with the plugin as it is today; (C) Sonnet native. Record recall, false reds, tokens and wall time per arm, plus the rerun flip rate, and a paired CI for A vs B. A trial that reads the case's answer counts as a fail. | `evals/run-claude.sh` has no opencode arm and refuses fewer than 3 attempts | +80, no deletions |
+| 3 | Claude models out of opencode: delete the plugin and the `claude-agent/*` pins; `family`/`model` frontmatter; render Claude agents only to Claude Code. **Gated on 2b:** proceeds if A is tied with B or better. If B beats A with a CI excluding zero, stop and bring the result to the person before deleting anything. | lint rejects a `claude-agent/` id in opencode config | −150 / +120 |
 | 4 | Contract rewrite to ≤ 8,000 chars always-loaded: each rule moves to its enforcer and its sentence is deleted; procedures → skills; the PR sequence → a script | cap check fails at 11,835 | −4,000 chars |
 | 5 | Phrase lint → rule table + enforcer-resolving lint | lint fails on a table row whose test does not exist | −300 / +80 |
 | **Add** | | | |
-| 6 | Roles: Opus lead + DeepSeek `implementor#low` in opencode, with the opencode version pinned in `tools.json`; blind writer eval of the split, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family; `evals/run-claude.sh` on all 9 cases, Opus and Sonnet, 3 attempts each | the eval script refuses a comparison with fewer than 3 attempts per case | +180 |
+| 6 | Roles: Opus lead + DeepSeek `implementor#low` in opencode, with the opencode version pinned in `tools.json`; blind writer eval of the split, 3 attempts per case; `skills/implementor-brief/` (the five parts); review by writer family (reviewer recall already measured in 2b) | the eval script refuses a comparison with fewer than 3 attempts per case | +150 |
 | 7 | Ledger as one file per review with `kind`; evidence-required findings; round cap | `tests/review_log.py` fails with no writer | +120 |
 | 8 | Sandbox on by default; guard bypass corpus + three-way parity; per-actor write targets (dream run files, no stash) | parity test fails on a known bypass; two concurrent dream runs collide today | +240 |
 | 9 | Memory: weekly promote cadence, drafter prompt | promote of a lesson without `source:` must fail | +40 |
@@ -454,7 +455,7 @@ invents risks.
 2. **Grok Build.** Default: keep its render (it is cheap and tested), but no new
    v2 work targets it. Drop it if you do not run Grok weekly.
 3. **Reviewer for Claude-written diffs.** Decided 2026-11-21: a fresh-context
-   Sonnet `review-deep`, not Grok. Phase 6 runs `evals/run-claude.sh` with
+   Sonnet `review-deep`, not Grok. Phase 2b runs `evals/run-claude.sh` with
    Sonnet on the 9 eval cases, so its recall is a number rather than an
    assumption.
 4. **Self-merge.** Default: v2.1, after the four gates above.
