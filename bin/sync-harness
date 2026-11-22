@@ -387,10 +387,11 @@ def stale_agents(policy: dict, repo: Path, home: Path) -> list[Path]:
     base = home / ".claude" / "agents"
     if not base.is_dir():
         return []
-    rendered = set(render_claude_agents(policy, repo))
+    # casefold: on a case-insensitive filesystem Review-Deep.md is review-deep.md.
+    rendered = {name.casefold() for name in render_claude_agents(policy, repo)}
     return sorted(
         p for p in base.glob("*.md")
-        if p.stem not in rendered and p.is_file() and GENERATED in p.read_text(errors="replace")
+        if p.stem.casefold() not in rendered and p.is_file() and GENERATED in p.read_text(errors="replace")
     )
 
 

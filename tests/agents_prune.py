@@ -56,5 +56,15 @@ with tempfile.TemporaryDirectory() as tmp:
     check(mine.read_text() == "---\nname: my-own\n---\nA prompt I wrote.\n", "a hand-written agent is untouched")
     check(sync.stale_agents(policy, ROOT, home) == [], "after retiring, nothing is stale")
 
+with tempfile.TemporaryDirectory() as tmp:
+    # On a case-insensitive filesystem (macOS default) Review-Deep.md is the
+    # rendered review-deep.md; retiring it would remove a live agent.
+    home = Path(tmp)
+    agents = home / ".claude" / "agents"
+    agents.mkdir(parents=True)
+    cased = agents / "Review-Deep.md"
+    cased.write_text(f"---\nname: review-deep\n---\n<!-- {sync.GENERATED} from agents/review-deep.md. -->\n")
+    check(cased not in sync.stale_agents(policy, ROOT, home), "a rendered agent under another case is never stale")
+
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)
