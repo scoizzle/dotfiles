@@ -113,7 +113,7 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
-| `plugins/`      | OpenCode plugins loaded at startup; none are installed since v2 removed Claude from opencode (see `plugins/README.md`) | opencode (`~/.config/opencode/plugins`) |
+| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |

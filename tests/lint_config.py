@@ -228,6 +228,32 @@ def main() -> int:
         finally:
             probe.unlink()
 
+        # v2 runs Claude through opencode again: the entrypoint label is back.
+        plugin_path = tree / "plugins" / "claude-entrypoint.js"
+        plugin_saved = plugin_path.read_text() if plugin_path.exists() else ""
+        try:
+            plugin_path.write_text(plugin_saved.replace("CLAUDE_CODE_ENTRYPOINT", "SOME_OTHER_ENV"))
+            failed |= not expect("plugin lost the entrypoint label", lint(tree), "CLAUDE_CODE_ENTRYPOINT")
+        finally:
+            plugin_path.write_text(plugin_saved)
+        # The header comment names the variable, so only the assignment counts.
+        try:
+            plugin_path.write_text(plugin_saved.replace(
+                'process.env.CLAUDE_CODE_ENTRYPOINT = "opencode"', "// label removed"))
+            failed |= not expect("plugin mentions the label only in a comment", lint(tree), "CLAUDE_CODE_ENTRYPOINT")
+        finally:
+            plugin_path.write_text(plugin_saved)
+        # A sibling plugin must not make a missing entrypoint file look fine.
+        other = tree / "plugins" / "other.js"
+        moved = plugin_path.with_suffix(".moved")
+        other.write_text('export default { id: "other", setup() {} }\n')
+        try:
+            plugin_path.rename(moved)
+            failed |= not expect("entrypoint plugin file is missing", lint(tree), "claude-entrypoint.js")
+        finally:
+            moved.rename(plugin_path)
+            other.unlink()
+
     print("FAIL" if failed else "ok")
     return 1 if failed else 0
 
