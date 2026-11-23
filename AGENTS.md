@@ -5,7 +5,8 @@ rules are in the table at the end.
 
 ## Doing the work
 
-You do a small change yourself. Hand a large one (many files, or long debugging)
+You do a small change yourself. Hand a large one
+(more than three files or issues, or a check that failed twice)
 to an implementor and supervise it skeptically (`t3-dispatch`).
 Never dispatch to avoid editing.
 

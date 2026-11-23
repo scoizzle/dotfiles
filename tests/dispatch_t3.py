@@ -92,7 +92,8 @@ ib = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 # The person, 2026-11-23, after Phase 6b: a small change the lead does itself; a
 # large one goes to an implementor under skeptical supervision.
 doing = agents_md.split("## Doing the work", 1)[-1].split("\n\n", 2)[1]
-for needle in ("small change yourself", "large one", "supervise it skeptically", "Never dispatch to avoid editing"):
+for needle in ("small change yourself", "large one", "more than three files or issues, or a check that failed twice",
+               "supervise it skeptically", "Never dispatch to avoid editing"):
     check(needle in doing, f"AGENTS.md -> Doing the work: {needle!r}")
 check("small change yourself" in build and "Never dispatch to avoid editing" in build,
       "agents/build.md opens with the same split")
