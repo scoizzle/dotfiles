@@ -151,6 +151,54 @@ def main():
               leaked.returncode != 0,
               f"refs/heads/leak exists in the fixture repo: {leaked.stdout}")
 
+        # --blind and --lead (v2 Phase 6b): the default prompt hands the writer
+        # each case's cause notes, so every arm scored 18/18. --blind drops
+        # them; --lead runs a lead first, which writes .eval-brief.md and must not
+        # edit, and the writer gets that brief instead.
+        prompt_log = os.path.join(root, "prompt.txt")
+        write(os.path.join(stubs, "record-fix.sh"),
+              f"#!/bin/sh\nprintf '%s' \"$1\" > '{prompt_log}'\nprintf 'fixed\\n' > app.txt\n", mode=0o755)
+        write(os.path.join(stubs, "lead.sh"),
+              "#!/bin/sh\nprintf 'BRIEF-MARKER: set app.txt to fixed\\n' > .eval-brief.md\n", mode=0o755)
+        write(os.path.join(stubs, "lead-edits.sh"),
+              "#!/bin/sh\nprintf 'fixed\\n' > app.txt\nprintf 'brief\\n' > .eval-brief.md\n", mode=0o755)
+        write(os.path.join(stubs, "lead-silent.sh"), "#!/bin/sh\nexit 0\n", mode=0o755)
+
+        result = run(root, cases, checks, os.path.join(stubs, "record-fix.sh"))
+        seen = open(prompt_log, encoding="utf-8").read() if os.path.exists(prompt_log) else ""
+        check("the default prompt carries the cause notes", "app.txt is not fixed." in seen, seen[-400:])
+        result = run(root, cases, checks, os.path.join(stubs, "record-fix.sh"), "--blind")
+        seen = open(prompt_log, encoding="utf-8").read() if os.path.exists(prompt_log) else ""
+        check("--blind drops the cause notes but keeps the check",
+              result.returncode == 0 and "app.txt is not fixed." not in seen and "sh oracle/check.sh" in seen,
+              f"rc={result.returncode}\n{seen[-400:]}\n{result.stdout}")
+
+        def run_lead(lead_stub, writer_stub):
+            env = {"EVAL_LEAD_CMD": lead_stub}
+            os.environ.update(env)
+            try:
+                return run(root, cases, checks, writer_stub, "--lead", "test/lead")
+            finally:
+                for key in env:
+                    os.environ.pop(key, None)
+
+        result = run_lead(os.path.join(stubs, "lead.sh"), os.path.join(stubs, "record-fix.sh"))
+        seen = open(prompt_log, encoding="utf-8").read() if os.path.exists(prompt_log) else ""
+        check("--lead hands the writer the lead's brief, blind",
+              result.returncode == 0 and "BRIEF-MARKER" in seen and "app.txt is not fixed." not in seen
+              and "sh oracle/check.sh" in seen,
+              f"rc={result.returncode}\n{seen[-400:]}\n{result.stdout}\n{result.stderr}")
+        briefs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "brief.md"]
+        check("the brief is kept in the results, outside the clone", bool(briefs), str(briefs))
+        result = run_lead(os.path.join(stubs, "lead-edits.sh"), os.path.join(stubs, "noop.sh"))
+        check("a lead that edits fails the run", result.returncode != 0 and "lead edited" in result.stdout, result.stdout)
+        result = run_lead(os.path.join(stubs, "lead-silent.sh"), os.path.join(stubs, "fix.sh"))
+        check("a lead that writes no brief fails the run", result.returncode != 0 and "no brief" in result.stdout, result.stdout)
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(sorted(logs)[-1], encoding="utf-8").read() if logs else ""
+        check("each run records its cost and whether the brief carried code",
+              " cost=" in tail and " brief_code=" in tail, tail[-300:])
+
         # Without EVAL_WRITER_CMD the harness calls `opencode run`. A stub on
         # PATH records its arguments: the writer agent defaults to build, the
         # default agent whose pin this eval measures, and -a overrides it.

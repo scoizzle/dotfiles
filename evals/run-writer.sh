@@ -17,6 +17,16 @@
 # EVAL_WRITER_CMD replaces the `opencode run` invocation: it is run in the
 # scratch clone with the prompt as its one argument. tests/eval_writer.py uses
 # that to exercise this script without a model.
+#
+# --blind gives the writer only the case's claim, the check and the protected
+# paths, not the cause notes (with them every arm scored 18/18, Phase 6).
+# --lead MODEL runs a lead first, as `build` in the same clone with shell, told
+# to diagnose, not edit, and write .eval-brief.md per skills/implementor-brief;
+# the writer then gets that brief (blind). A lead that edits or writes no brief
+# fails the run. EVAL_LEAD_CMD replaces the lead's `opencode run` like
+# EVAL_WRITER_CMD. Each run's [eval] line records cost= and tokens= summed over
+# every opencode session in its clone (lead and writer), from the session store,
+# and brief_code= (1 when the brief carries a fenced code block).
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -24,6 +34,8 @@ WORK_ROOT="${EVAL_WORK_ROOT:-/private/var/folders/cy/4_ykzyn94plgzgh4v_vwhzrh000
 CASES="${EVAL_CASES_DIR:-$HERE/cases}"
 CHECKS="${EVAL_WRITER_CHECKS:-$HERE/writer-checks.json}"
 MODEL=""
+LEAD=""
+BLIND=0
 AGENT="build"
 ONLY=""
 RUNS=1
@@ -34,7 +46,7 @@ PASSED=0
 CASE_TIMEOUT="${EVAL_CASE_TIMEOUT:-900}"
 
 usage() {
-  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N]" >&2
+  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]]" >&2
   exit 2
 }
 
@@ -44,6 +56,8 @@ while [ $# -gt 0 ]; do
     -a) [ $# -ge 2 ] || usage; AGENT="$2"; shift 2 ;;
     -c) [ $# -ge 2 ] || usage; ONLY="$2"; shift 2 ;;
     --runs) [ $# -ge 2 ] || usage; RUNS="$2"; shift 2 ;;
+    --blind) BLIND=1; shift ;;
+    --lead) [ $# -ge 2 ] || usage; LEAD="$2"; BLIND=1; shift 2 ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -128,10 +142,17 @@ for dir in "$CASES"/*/; do
   notes="$(notes_for "$cfg")"
   protect="$(protect_for "$id")"
 
+  claim="$(field "$cfg" claim)"
+  if [ "$BLIND" -eq 1 ]; then
+    report="CHANGE (what the bugged change was meant to do; the cause is not given)
+${claim}"
+  else
+    report="BUG REPORT
+${notes}"
+  fi
   prompt="The check below fails in this repository, and it is the oracle for a bug report: it encodes the behaviour that is currently broken. Fix the production code so the check passes. The fix is not in the tree.
 
-BUG REPORT
-${notes}
+${report}
 
 CHECK (exit 0 means fixed)
 ${check}
@@ -180,12 +201,51 @@ Run the check yourself before you finish. Do not launch subagents."
     git -C "$co" update-ref refs/eval/bugged HEAD
 
     start=$(date +%s)
-    if [ -n "${EVAL_WRITER_CMD:-}" ]; then
-      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_WRITER_CMD" "$prompt" ) > "$outdir/writer.txt" 2>&1
-    else
-      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$prompt" ) > "$outdir/writer.txt" 2>&1
+    start_ms=$(( $(date +%s) * 1000 ))
+    lead_reason=""
+    brief_code="-"
+    writer_prompt="$prompt"
+    if [ -n "$LEAD" ]; then
+      lead_prompt="You are the lead. Do not edit, create or delete any file except .eval-brief.md; you may run commands, including the check. Diagnose why the check below fails, then write .eval-brief.md in this directory: a brief for an implementor who will fix it, following the implementor-brief skill (goal, done check, proof wanted, what you know, constraints, files in scope). The implementor sees only your brief and the check.
+
+${prompt}"
+      if [ -n "${EVAL_LEAD_CMD:-}" ]; then
+        ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_LEAD_CMD" "$lead_prompt" ) > "$outdir/lead.txt" 2>&1
+      else
+        ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent build --model "$LEAD" --auto "$lead_prompt" ) > "$outdir/lead.txt" 2>&1
+      fi
+      if [ -f "$co/.eval-brief.md" ]; then
+        mv "$co/.eval-brief.md" "$outdir/brief.md"
+        if grep -q '```' "$outdir/brief.md"; then brief_code=1; else brief_code=0; fi
+      else
+        lead_reason="no brief"
+      fi
+      if [ -n "$(git -C "$co" status --porcelain)" ]; then
+        lead_reason="${lead_reason:+$lead_reason; }lead edited"
+      fi
+      writer_prompt="An implementor brief from your lead follows; the check is the oracle.
+
+BRIEF
+$(cat "$outdir/brief.md" 2>/dev/null)
+
+CHECK (exit 0 means fixed)
+${check}
+
+Do not modify these paths; they are the oracle, and editing one fails the run:
+${protect}
+
+Run the check yourself before you finish. Do not launch subagents."
     fi
-    wrc=$?
+    if [ -n "$lead_reason" ]; then
+      wrc=0
+      : > "$outdir/writer.txt"
+    elif [ -n "${EVAL_WRITER_CMD:-}" ]; then
+      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_WRITER_CMD" "$writer_prompt" ) > "$outdir/writer.txt" 2>&1
+      wrc=$?
+    else
+      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$writer_prompt" ) > "$outdir/writer.txt" 2>&1
+      wrc=$?
+    fi
 
     ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" bash -c "$check" ) > "$outdir/check.txt" 2>&1
     crc=$?
@@ -201,7 +261,7 @@ Run the check yourself before you finish. Do not launch subagents."
       fi
     done <<< "$protect"
 
-    reason=""
+    reason="$lead_reason"
     if [ "$wrc" -ne 0 ]; then
       if [ "$wrc" -eq 142 ] || [ "$wrc" -eq 124 ]; then
         reason="timeout"
@@ -216,8 +276,22 @@ Run the check yourself before you finish. Do not launch subagents."
       reason="${reason:+$reason; }touched tests (${touched# })"
     fi
 
-    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s seconds=%s\n' \
-      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "$((end-start))" >> "$outdir/writer.txt"
+    usage_line="$(python3 -I - "$co" "$start_ms" <<'PY'
+import os, sqlite3, sys
+co, since = sys.argv[1], int(sys.argv[2])
+db = os.path.expanduser("~/.local/share/opencode/opencode.db")
+dirs = {co, os.path.realpath(co)}
+try:
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    q = "SELECT coalesce(sum(cost),0), coalesce(sum(tokens_input+tokens_output+tokens_cache_read),0) FROM session_v2 WHERE time_created >= ? AND directory IN (%s)" % ",".join("?" * len(dirs))
+    cost, tokens = con.execute(q, (since, *dirs)).fetchone()
+except Exception:
+    cost, tokens = 0, 0
+print(f"cost={cost:.4f} tokens={tokens}")
+PY
+)"
+    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s blind=%s seconds=%s %s brief_code=%s\n' \
+      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "$BLIND" "$((end-start))" "$usage_line" "$brief_code" >> "$outdir/writer.txt"
 
     TOTAL=$((TOTAL+1))
     if [ -z "$reason" ]; then
