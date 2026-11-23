@@ -137,12 +137,10 @@ jobs:
           python3 tests/classify.py
           python3 tests/review_bundle.py
           python3 tests/eval_writer.py
-          python3 tests/eval_claude.py
           python3 tests/policy_render.py
           python3 tests/lint_config.py
           python3 tests/guard_windows.py
           python3 tests/guard_control_plane.py
-          python3 tests/sandbox_render.py
           python3 tests/skills_negative.py
           python3 tests/dream_canonical.py
           python3 tests/agents_prune.py

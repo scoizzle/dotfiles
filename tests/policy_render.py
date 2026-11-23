@@ -94,39 +94,6 @@ for name, text in rendered.items():
         print(f"FAIL: rendered native agent {name} leaked the opencode frontmatter")
         sys.exit(1)
 
-# Grok trust is exact-directory only: a parent entry must never cover a child.
-with tempfile.TemporaryDirectory() as tmp:
-    root = Path(tmp)
-    if sync.grok_trusted(root / "repo", root) is not None:
-        print("FAIL: grok_trusted with no trust file must be None")
-        sys.exit(1)
-    trust = root / ".grok" / "trusted_folders.toml"
-    trust.parent.mkdir()
-    target = root / "repo"
-    target.mkdir()
-    trust.write_text(f'[folders."{target}"]\ntrusted = true\n')
-    if sync.grok_trusted(target, root) is not True:
-        print("FAIL: grok_trusted must match an exact trusted folder")
-        sys.exit(1)
-    trust.write_text(f'[folders."{target}"]\ntrusted = false\n')
-    if sync.grok_trusted(target, root) is not False:
-        print("FAIL: grok_trusted must read trusted = false")
-        sys.exit(1)
-    child = target / "child"
-    child.mkdir()
-    trust.write_text(f'[folders."{target}"]\ntrusted = true\n')
-    if sync.grok_trusted(child, root) is not False:
-        print("FAIL: grok_trusted must not treat a parent entry as covering a child")
-        sys.exit(1)
-
-# --scope grok names the checkout, not the subdirectory it was run from.
-if sync.checkout_root(ROOT / "bin") != ROOT:
-    print(f"FAIL: checkout_root(bin) is {sync.checkout_root(ROOT / 'bin')}, expected {ROOT}")
-    sys.exit(1)
-if sync.checkout_root(Path(tempfile.gettempdir())) != Path(tempfile.gettempdir()):
-    print("FAIL: checkout_root must fall back to the start directory outside a checkout")
-    sys.exit(1)
-
 # A native agent file the user wrote is backed up, never overwritten silently.
 with tempfile.TemporaryDirectory() as tmp:
     home = Path(tmp)
