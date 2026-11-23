@@ -330,6 +330,40 @@ some of the time) and an arm where Opus writes the brief and DeepSeek works from
 it. Until then the split stays a skill (`skills/implementor-brief`), not
 contract text, and `AGENTS.md`'s "You do the work" stands.
 
+## Phase 6b result (2026-11-23)
+
+Phase 6 handed every writer the cause notes, so a second round ran blind
+(`run-writer.sh --blind`: claim, check and protected paths only), 6 cases × 3
+runs per arm (run IDs 6b-A..D). Cost is list price from the session store by
+model (the store records $0 for both subscriptions): Opus 5.5 $4 / $5 cache
+write / $0.20 cache read / $20 out per 1M; DeepSeek V4.1 Flash $0.15 / $0.003 /
+$0.60.
+
+| Arm | Pass | Median s | Opus list $/run | DeepSeek list $/run |
+| --- | --- | --- | --- | --- |
+| A DeepSeek low, blind | 18/18 | ~100 | — | 0.011 |
+| B Opus medium, blind | 18/18 | ~78 | 0.291 | — |
+| C Opus lead writes the brief → DeepSeek | 18/18 | ~166 | 0.326 | 0.013 |
+| D DeepSeek works, Opus supervises (`--supervise`) | 18/18 | 158 | 0.286 | 0.012 |
+
+D is the split as the person means it (2026-11-23: "Opus as a skeptical
+supervisor, DeepSeek doing the heavy lifting"). DeepSeek's first attempt was
+right in all 18 runs and Opus accepted all 18: 0 catches, 0 false alarms, 0
+misses. C is the opposite split (Opus diagnoses, DeepSeek types) and costs more
+Opus than B.
+
+What it shows: on single-cause fixes this small, supervising costs as much Opus
+as doing the fix (−2%), because verifying means reading the same context. Blind
+did not make the cases harder; all four arms are at ceiling, so nothing here
+ranks correctness. In subscription terms (Go Plus: $200 of DeepSeek list usage
+for $40; Max 20x: an estimated ~$2,350 of Opus list usage a week, from one
+user's audit, unofficial) a run of A or B is ~0.01% of a week's allowance.
+
+What it does not show: a task where DeepSeek's work is large (many files, long
+debugging) next to Opus's check, which is where supervision should save Opus;
+and a case where DeepSeek's first attempt is wrong, which is where a catch
+shows. Next: 2–3 multi-file cases mined from the Poly PRs in #1113.
+
 ## v2 reimagined: one harness, roles, profiles (2026-11-22)
 
 Decided by the person, superseding Harness topology and Roles where they differ:
