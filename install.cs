@@ -35,15 +35,13 @@ var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 var targetRoot = Path.Combine(home, ".config", "opencode");
 
 // Links outside ~/.config/opencode, home-relative destination -> repo path. Claude Code
-// reads ~/.claude/CLAUDE.md and Grok Build reads ~/.grok/AGENTS.md, so all three
-// harnesses load the one AGENTS.md. Skills and commands go to
+// reads ~/.claude/CLAUDE.md, so it loads the one AGENTS.md too. Skills and commands go to
 // ~/.claude/{skills,commands}, which Claude Code reads and Grok Build reads through
 // its Claude compatibility layer. These are always symlinks, even with --copy: they
 // exist to be shared. New skills and commands are picked up on the next run.
 var homeEntries = new List<(string Dest, string Src, bool IsDir)>
 {
     (Path.Combine(".claude", "CLAUDE.md"), "AGENTS.md", false),
-    (Path.Combine(".grok", "AGENTS.md"), "AGENTS.md", false),
     // notify-bot is the one helper agents run by name rather than by absolute path.
     (Path.Combine(".local", "bin", "notify-bot"), Path.Combine("bin", "notify-bot"), false),
 };

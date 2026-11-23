@@ -3,7 +3,7 @@
 
     ./compare.py --arm A=<run>,<run>,<run> --arm B=<run>,<run>,<run> [--cases DIR]
 
-Each <run> is a directory written by run.sh or run-claude.sh. Every case-attempt
+Each <run> is a directory written by run.sh. Every case-attempt
 is scored with score.py's own grader and counts as a pass or a fail:
 
 - a defect case passes when every expected finding is recovered;

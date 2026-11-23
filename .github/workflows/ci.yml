@@ -39,8 +39,6 @@ jobs:
           shellcheck -s sh bootstrap.sh
           shellcheck -s sh update.sh
           shellcheck -s bash evals/run.sh
-          shellcheck -s bash evals/run-grok.sh
-          shellcheck -s bash evals/run-claude.sh
 
       # Ensures the cold-start path still works when the script is piped, which is the
       # only way it will ever be run on a bare machine.
@@ -108,7 +106,7 @@ jobs:
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
-          for p in .claude/CLAUDE.md .grok/AGENTS.md .claude/commands/dream.md .local/bin/notify-bot; do
+          for p in .claude/CLAUDE.md .claude/commands/dream.md .local/bin/notify-bot; do
             test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
             test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
           done

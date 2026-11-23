@@ -32,42 +32,18 @@ change. Compare two models by running each in turn and reading the `TOTAL` line.
 `run.sh` exits non-zero when a case fails before or during review. Each case has
 a 900-second cap; set `EVAL_CASE_TIMEOUT` for a slower case.
 
-To compare a model across harnesses, `run-grok.sh` runs the same cases through
-Grok Build (`grok -p`) with the same prompt, the verifier's instructions as
-appended system rules, the same timeout, and the same results layout, so
-`score.py` grades it unchanged:
+To compare two setups, run each one three or more times and give the run
+directories to `compare.py`. It refuses fewer than three attempts per arm, prints
+each arm's pass count and rerun flip rate, and a paired 95% CI against the first
+arm. A report that names the case's answer key fails that attempt:
 
 ```sh
-./run-grok.sh -c concat-nonstring-operand
-./score.py /private/var/folders/.../opencode/evals-run/<run-dir>
+./compare.py --arm A=<run>,<run>,<run> --arm B=<run>,<run>,<run>
 ```
 
-Grok Build's `plain` output includes its interim narration, not only the final
-report. The scorer reads the whole text, so a harness comparison should either
-trim to the report or confirm the finding appears in the final report alone.
-
-`run-claude.sh` is the same comparison for `review-deep` between opencode's
-Claude Agent integration and a native `claude -p` process. It passes the same
-change prompt, appends `agents/review-deep.md` as a system prompt, and takes the
-read-only tool list from `policy/permissions.json` `readonly_agents`, so the
-reviewer has Read/Grep/Glob plus the Roslynk read tools and never the writing
-ones. Results use the same layout and `--output-format json` supplies the cost
-and turn count per case:
-
-```sh
-./run-claude.sh -c concat-nonstring-operand
-./score.py /private/var/folders/.../opencode/evals-run/claude-...
-```
-
-It runs change cases only: a plan case needs the verifier's shell, so it stays
-with `run.sh -a verifier`. `EVAL_CLAUDE_CMD` replaces the `claude -p`
-invocation, which is how `tests/eval_claude.py` exercises the harness without a
-model.
-
-Grok Build runs with `--permission-mode bypassPermissions --always-approve`
-because it must build and test non-interactively. Unlike `run.sh`, the write
-boundary is therefore the prompt and the verifier's instructions, not an agent
-permission rule: only run it against a disposable clone.
+Every harness comparison now runs through opencode (`docs/v2-plan.md`); the
+`run-grok.sh` and `run-claude.sh` runners were retired with Grok Build and the
+native Claude Code render.
 
 Each case clones its fixture repo at a base commit into a scratch directory under
 `$EVAL_WORK_ROOT` (default: the opencode temp dir) and runs the agent there. A
@@ -88,8 +64,7 @@ cases/<case-id>/case.json      fixture definition
 cases/<case-id>/change.patch   the diff, for a change case
 cases/<case-id>/plan.md        the plan, for a plan case
 run.sh                         run one model over the case set
-run-grok.sh                    run the same cases through Grok Build's harness
-run-claude.sh                  run review-deep through a native `claude -p`
+compare.py                     compare arms over 3+ attempts with a paired CI
 run-writer.sh                  run a writer on the bugged cases and score it
 writer-checks.json             writer oracle per case: check command and protected paths
 score.py                       grade results against expectations

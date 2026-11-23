@@ -13,17 +13,11 @@ sensitive change (auth, secrets, a schema or data migration, or a public
 contract), when you ask, or after the same check has failed twice. Ordinary
 edits are not dispatched.
 
-Permissions come from one policy, `policy/permissions.json`, rendered for opencode,
-Claude Code and Grok Build by `bin/sync-harness` and checked by `bin/lint-config` in
-CI. After installing, run `~/.config/opencode/bin/sync-harness` to see what it would
-add to `~/.claude/settings.json`, then `--apply`. Grok Build reads that same file:
-the rules everywhere, and the `harness-guard` hook in folders it trusts.
-One `AGENTS.md` is loaded by all three: `install.cs` also links it as
-`~/.claude/CLAUDE.md` and `~/.grok/AGENTS.md`. The limits of each layer are in
-[`docs/security-model.md`](docs/security-model.md). An opt-in Claude Code sandbox
-profile for shell commands lives in the same policy: preview it with
-`bin/sync-harness --scope sandbox`, and opt in with `--scope home --apply
---sandbox`.
+Permissions come from one policy, `policy/permissions.json`, rendered for opencode
+(and, until v2's cleanup finishes, Claude Code) by `bin/sync-harness` and checked by
+`bin/lint-config` in CI. opencode is the one harness; Grok Build and the Claude Code
+sandbox profile were dropped in v2 (`docs/v2-plan.md`). The limits of each layer
+are in [`docs/security-model.md`](docs/security-model.md).
 
 ## Default agent
 
@@ -103,12 +97,12 @@ back here.
 
 ## What this repo manages
 
-The repo is the single source for three harnesses: opencode, Claude Code, and
-Grok Build (which reads `~/.claude` through its Claude compatibility layer).
+The repo is the single source for opencode, and (until v2's cleanup finishes) the
+Claude Code files it still renders.
 
 | path            | what it is                                        | reaches |
 | --------------- | ------------------------------------------------- | ------- |
-| `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | all three: `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md` |
+| `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
 | `commands/`     | slash commands | opencode; `~/.claude/commands` |
@@ -121,15 +115,10 @@ Grok Build (which reads `~/.claude` through its Claude compatibility layer).
 
 `install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
 must be merged into files you also edit: `~/.claude/settings.json` (rules and the
-`harness-guard` hook, which Grok reads too in folders it trusts), the read-only
+`harness-guard` hook), the read-only
 reviewers and the native `implementor`/`verifier` under `~/.claude/agents`,
-and the Roslynk MCP registration for Claude Code. Grok's own `config.toml` is never
-touched. Run `./install.cs` and then `~/.config/opencode/bin/sync-harness` (report)
-and `--apply`; both are safe to repeat. `--scope grok` reports whether the current
-checkout is a trusted Grok folder, which is what makes Grok load the project
-`AGENTS.md` and the hook; it prints the `grok --trust` command and writes nothing,
-because trusting a folder is your decision. Verify what Grok actually loads with
-`grok inspect` in a trusted folder.
+and the Roslynk MCP registration for Claude Code. Run `./install.cs` and then
+`~/.config/opencode/bin/sync-harness` (report) and `--apply`; both are safe to repeat.
 
 How the bookshelf and the out-of-band dream pass fit together is in
 [`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
@@ -200,10 +189,9 @@ Outside `~/.config/opencode`, also untracked on purpose:
 - `~/.claude/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
   of it credential-bearing. `~/.claude` also holds the login the Claude Agent
   integration borrows, so it is never linked or copied. The only managed paths
-  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`
-  and `~/.grok/AGENTS.md`; the rest of `~/.claude` (login, projects) and all of
-  `~/.grok/config.toml` are never touched. Grok reads the rules and, in a trusted
-  folder, the hook from `~/.claude/settings.json` (written by `bin/sync-harness`).
+  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`;
+  the rest of `~/.claude` (login, projects) and all of `~/.grok` are never
+  touched.
 
 ## Adding a file to the repo
 

@@ -17,13 +17,13 @@ that every later session trusts).
 | --- | --- | --- |
 | Reviewers, the advisor and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
 | `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
-| A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.local/bin/notify-bot`, `~/.grok/AGENTS.md`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
+| A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.local/bin/notify-bot`, `~/.config/opencode/models*`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |
 | `dream` drafts with `dream-drafter` (no tools) and without `--auto` | `bin/dream`, `agents/dream-drafter.md` | Tool-level. |
 | The digest is redacted, framed as untrusted, and every returned line is validated | `bin/dream` | Heuristic. Drops, does not repair. |
 | Drafted lessons are staged in `memory/learnings/pending/` and reach agents only through `dream --promote`, which needs a person | `bin/dream` | Human gate. |
 | `dream` never writes `memory/core/`; `--promote` also rewrites only `memory/learnings/working.md`, from the dated archive, after the same confirmation | `bin/dream` | Path allowlist in `assert_working_target`. |
-| The Grok Bot webhook file (`~/.config/bot-webhooks/env`) is a credential store: the read tools and the shell globs deny it, and the sandbox denies it | `policy/permissions.json` `protected.paths`, rendered into the rules and the sandbox | Tool-level for the read tools; text globs plus `harness-guard` for shell. `notify-bot` is an `excluded_commands` entry so the sandboxed shell can still read the file it owns and POST. |
+| The Grok Bot webhook file (`~/.config/bot-webhooks/env`) is a credential store: the read tools and the shell globs deny it | `policy/permissions.json` `protected.paths`, rendered into the rules | Tool-level for the read tools; text globs plus `harness-guard` for shell. |
 
 `bin/lint-config` runs in CI and evaluates concrete commands and paths against each
 agent's effective rules. It exists because a rule order bug is invisible by reading:
@@ -58,64 +58,17 @@ subagent, and a rendered `build` would be the dispatchable writer `AGENTS.md`
 forbids. A native main session gets the writer role from the worktree's
 `AGENTS.md`, which Claude Code loads (probed 2026-11-19).
 
-`~/.grok/config.toml` is never touched; it holds an MCP bearer token. Grok's
-trust gate matters in practice: only folders listed in `~/.grok/trusted_folders.toml`
-run global hooks, and each T3 worktree is a separate checkout. In an untrusted
-folder Grok still enforces the rules, and `ask` still forces a prompt in
-always-approve mode, but the hook (and so its parsing) is skipped. The project
-`Agents.md` is also trust-gated: `grok inspect` lists it only in a trusted folder,
-so an untrusted worktree runs on the global `~/.grok/AGENTS.md` alone. That second
-gap is why every Grok thread should be checked, not just the machine. Trusting a
-folder is a person's decision (`/hooks-trust`, or `grok --trust`);
-`bin/sync-harness --scope grok` reports the state of the current checkout and
-prints the command, and never writes the trust file.
+Grok Build was dropped in v2 (`docs/v2-plan.md`); `~/.grok` stays a protected,
+never-read path because it can hold credentials.
 
 Optional hardening: `/Library/Application Support/ClaudeCode/managed-settings.json`
-is root-owned, read by both harnesses (`grok inspect` reports the path), applies in
-every folder, and cannot be overridden by user or project settings.
+is root-owned, read by Claude Code, applies in every folder, and cannot be overridden by user or project settings.
 `bin/sync-harness --scope managed` prints the rules for it and the `sudo` command a
 person runs; it writes nothing and never uses sudo. It carries rules, not the hook.
 
-Grok's sandbox is CLI-only (`--sandbox workspace|read-only|strict`, profiles in
-`~/.grok/sandbox.toml`); no config key makes it the default.
-
-Opt-in, from the same policy: the `sandbox` section is rendered by
-`bin/sync-harness --scope sandbox` as a Claude Code settings fragment, and a plain
-`--apply` never adds, changes or removes it. Opt in with
-`--scope home --apply --sandbox`, which merges it additively into
-`~/.claude/settings.json`. It enables the sandbox, forbids the unsandboxed retry,
-adds the two NuGet package-cache write paths (`~/.nuget/packages` and
-`~/.local/share/NuGet`), denies reads of every `protected.paths` entry, removes
-the listed token variables, allows the listed domains, and keeps
-`gh` and `git push`/`fetch`/`pull` outside the sandbox (they need the credential
-stores it hides, and still pass the rules and the hook). It covers Claude Code
-shell commands only: the Read, Edit and WebFetch tools, MCP servers and hooks run
-outside it and still rely on the rules and `harness-guard`.
-
-Verified on 2026-11-16 under Claude Code 2.1.325 on macOS, with the profile passed
-through `--settings`: a write to the home directory was refused; a direct
-connection had no route; a domain outside the list was refused by the proxy with
-403; `api.nuget.org` was reachable; and `dotnet new console`, restore and
-`dotnet build` succeeded with only those two write paths. Not verified: Linux and
-WSL2; a test run (the check was a build); the excluded `gh` and `git` commands;
-environment-variable scrubbing (those variables were not set in that session);
-and Grok Build, including whether it honours the `sandbox` key at all. opencode
-has no equivalent. The lists are still a starting profile: expect to add write
-paths and domains for a real build.
-
-`~/.dotnet` is not writable, deliberately: it holds `~/.dotnet/tools`, where
-global tools such as the roslynk MCP server live, and MCP servers run outside the
-sandbox, so a sandboxed command that could write there could replace a binary
-that later runs unsandboxed. `bin/lint-config` fails on an `allow_write` entry
-that equals, contains or sits inside a location whose contents run or are loaded
-outside the sandbox. The NuGet package cache stays a residual path: a sandboxed
-command can still write a package that a later unsandboxed build loads.
-
-Ask Claude to run
-`touch ~/sandbox-probe` (it fails with `Operation not permitted` on macOS,
-`Read-only file system` on Linux and WSL2) and
-`curl --noproxy '*' https://example.com` (it fails with `Could not resolve host`)
-to confirm the sandbox is active, and decline any offer to retry outside it.
+There is no sandbox in v2: opencode has none, and the person chose no container
+(2026-11-22). The Claude Code sandbox profile was removed; the guard and the
+policy rules catch accidents and are not a boundary.
 
 `harness-guard` parses the command (quoting, `&&`/`;`/pipes, `$(...)`, `sh -c`,
 `env`/`command` wrappers, `git -C x push`, clustered flags like `-fu`, heredoc
@@ -155,9 +108,7 @@ Limits specific to this layer:
 - The guard hook is a convenience layer in a file the user owns
   (`~/.claude/settings.json`) and can edit out. Enforcement needs the root-owned
   file above, which carries rules, not the hook.
-- Instructions are shared: `install.cs` links `~/.claude/CLAUDE.md` and
-  `~/.grok/AGENTS.md` to `AGENTS.md`. Grok Build does not cap the file
-  (verified 2026-11-05).
+- Instructions are shared: `install.cs` links `~/.claude/CLAUDE.md` to `AGENTS.md`.
 
 Live harness configuration is a separate control plane, and it is `ask`, not
 `deny`: a person confirms, because the person is the review for that edit.
@@ -263,13 +214,6 @@ unattended sessions with `--auto`.
 - The redaction patterns cover common credential shapes, not every secret.
 - The line validator is a denylist of payload shapes; a well-phrased false lesson
   passes it. The human gate is the control that holds.
-- The sandbox excludes `notify-bot` (the bare name and the `~/.local/bin` forms) so
-  it can read its config and reach the bot host. The config path is the account home
-  from the password database, so `$HOME` cannot move it; `bin/setup-bot-webhooks`
-  honors `BOT_WEBHOOKS_ENV`/`--env` because a person runs it, but a non-default path
-  is a test path and `notify-bot` will not read it. `bin/` and
-  `~/.local/bin/notify-bot` are control-plane paths, so an edit to the helper is
-  `ask`. The rules and the hook still judge the command line.
 - Claude Code reports that a `Write(path)` permission rule is not matched by its
   file permission checks — only `Edit(path)` is, and `Edit` rules cover all
   file-editing tools. The committed `Write(**/memory/core/**)` deny is therefore
@@ -283,10 +227,8 @@ Best practice across the frontier labs is the same three moves:
 1. **Sandbox the executor.** Run agents with shell in a container or VM with no
    host credentials mounted, a read-only home, an allowlisted network, and a
    writable bind mount of the working tree only. Denylists then become a second
-   layer, not the only one. The opt-in Claude Code sandbox profile above is the
-   first step and only that: it bounds shell commands from Claude Code, leaves the
-   file and web tools, MCP servers and hooks outside, and was exercised only for
-   one `dotnet` build (see above).
+   layer, not the only one. v2 deliberately runs without one (the person,
+   2026-11-22); this stays the first thing to add if that changes.
 2. **Give credentials per task, not per machine.** A short-lived, repo-scoped
    token injected for one run beats `~/.config/gh` being readable and denied.
 3. **Keep a human on irreversible and persistent actions.** Pushes, deletes, and

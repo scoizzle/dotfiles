@@ -5,9 +5,6 @@
     sync-harness --apply              # write it
     sync-harness --scope repo|home|all
     sync-harness --scope managed      # print the root-owned rules to install; writes nothing
-    sync-harness --scope sandbox      # print the opt-in Claude Code sandbox profile; writes nothing
-    sync-harness --scope grok         # report whether this repo is trusted by Grok Build; writes nothing
-    sync-harness --scope home --apply --sandbox   # opt in to that profile in ~/.claude/settings.json
     sync-harness --home DIR           # act on DIR instead of $HOME (tests)
 
 Targets:
@@ -15,29 +12,16 @@ Targets:
   repo   opencode.json `permissions`, and the managed block in agents/verifier.md
          (its `shell *: allow` would otherwise erase the global shell rules).
   home   ~/.claude/settings.json: `permissions.deny/ask` rules and a PreToolUse
-         hook running bin/harness-guard. Claude Code reads both. Grok Build reads
-         the rules everywhere and the hook in folders it trusts
-         (~/.grok/trusted_folders.toml; verified with `grok inspect`). The same
+         hook running bin/harness-guard, which Claude Code reads. The same
          step adds the read-only reviewers and the native agent set under
          ~/.claude/agents and registers the Roslynk MCP server for Claude Code.
-         ~/.grok/config.toml is never touched.
-  grok   report only, never part of `all`: whether this repo is a trusted Grok
-         folder. Trust is what makes Grok load the project `Agents.md` and the
-         harness-guard hook; the rules load either way. Trusting a folder is a
-         person's decision, so this prints the state and the command.
   managed  opt-in, never part of `all`, writes nothing: prints the rules for the
          root-owned /Library/Application Support/ClaudeCode/managed-settings.json,
          which both harnesses read in every folder, and the sudo command a person
          runs. It carries rules only.
-  sandbox  opt-in, never part of `all`, writes nothing: prints the Claude Code
-         Bash-sandbox profile as one settings fragment. A plain --apply never
-         touches the sandbox key; `--scope home --apply --sandbox` merges it.
-
 The home merge is additive and idempotent: it adds missing rules, replaces its own
 hook entry (found by the `harness-guard` command name), and keeps everything else.
 It backs the file up before writing. Retired rules are not removed automatically.
-The sandbox merge is additive too: scalars are set from the fragment and lists are
-unioned, so nothing the user added is removed.
 """
 from __future__ import annotations
 
@@ -145,55 +129,6 @@ def dump_opencode(config: dict) -> str:
         text,
     )
     return text + "\n"
-
-
-def render_sandbox(policy: dict) -> dict:
-    """The opt-in Claude Code Bash-sandbox profile, as one settings fragment.
-
-    Keys and shapes follow https://code.claude.com/docs/en/sandboxing and the
-    settings reference. Only shell commands run inside this sandbox; the file and
-    web tools, MCP servers and hooks do not. Every protected path is denied for
-    reads: plain paths through `credentials.files`, wildcard entries through
-    `filesystem.denyRead`. Claude Code strips a trailing slash from a directory
-    path, so directory entries are written without one.
-    """
-    section = policy["sandbox"]
-    protected = policy["protected"]["paths"]
-    files = [{"path": entry.rstrip("/"), "mode": "deny"} for entry in protected if "*" not in entry]
-    deny_read = [entry for entry in protected if "*" in entry]
-    return {"sandbox": {
-        "enabled": True,
-        "allowUnsandboxedCommands": False,
-        "excludedCommands": list(section["excluded_commands"]),
-        "filesystem": {
-            "allowWrite": list(section["allow_write"]),
-            "denyRead": deny_read,
-        },
-        "credentials": {
-            "files": files,
-            "envVars": [{"name": name, "mode": "deny"} for name in section["env_vars"]],
-        },
-        "network": {"allowedDomains": list(section["allowed_domains"])},
-    }}
-
-
-def merge_sandbox(settings: dict, fragment: dict) -> dict:
-    """`settings` with `fragment` merged in: dicts merge, list keys union, scalars replace."""
-    out = json.loads(json.dumps(settings))
-    out["sandbox"] = merge_block(out.get("sandbox"), fragment["sandbox"])
-    return out
-
-
-def merge_block(have, want):
-    """The merge rule: a list keeps the user's entries first and adds the missing ones."""
-    if isinstance(have, dict) and isinstance(want, dict):
-        out = dict(have)
-        for key, value in want.items():
-            out[key] = merge_block(have.get(key), value)
-        return out
-    if isinstance(have, list) and isinstance(want, list):
-        return have + [item for item in want if item not in have]
-    return want
 
 
 def verifier_block(policy: dict) -> str:
@@ -443,61 +378,6 @@ def managed_settings(policy: dict) -> str:
     return json.dumps({"permissions": {"deny": native["deny"], "ask": native["ask"]}}, indent=2, ensure_ascii=False) + "\n"
 
 
-def grok_trusted(target: Path, home: Path) -> bool | None:
-    """True/False for a trusted Grok folder, None when there is no trust file.
-
-    Grok records each decision as a `[folders."<dir>"]` table with `trusted = true`.
-    Only an exact directory matches: whether a parent entry covers a child is
-    unverified, so this never assumes it.
-    """
-    trust_file = home / ".grok" / "trusted_folders.toml"
-    if not trust_file.exists():
-        return None
-    resolved = target.resolve()
-    section = None
-    for line in trust_file.read_text().splitlines():
-        match = re.match(r'\s*\[folders\."(.+)"\]\s*$', line)
-        if match:
-            try:
-                section = Path(match.group(1)).expanduser().resolve()
-            except OSError:
-                section = None
-            continue
-        if section == resolved and re.match(r"\s*trusted\s*=\s*true\s*$", line):
-            return True
-    return False
-
-
-def checkout_root(start: Path) -> Path:
-    """The git checkout `start` is in, else `start` itself.
-
-    Grok's trust is per checkout, not per subdirectory: `grok inspect` in a
-    subdirectory of a trusted repo reports the git root as trusted and loads the
-    root `Agents.md`. Both Claude Code and Grok also resolve the worktree from
-    there, so naming the toplevel is what the person actually needs.
-    """
-    result = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
-                            capture_output=True, text=True)
-    out = result.stdout.strip()
-    return Path(out) if result.returncode == 0 and out else start
-
-
-def print_grok(repo: Path, home: Path) -> int:
-    trusted = grok_trusted(repo, home)
-    state = "trusted" if trusted else "untrusted"
-    print(f"{state:10}{repo}")
-    if trusted:
-        print("         project Agents.md and the harness-guard hook load here")
-    elif trusted is None:
-        print("         no ~/.grok/trusted_folders.toml: rules load; project Agents.md and the hook do not")
-        print(f"         trust it: grok --trust {repo}")
-    else:
-        print("         rules load, but project Agents.md and the harness-guard hook do not")
-        print(f"         trust it: grok --trust {repo}")
-    print("         trust is a person's decision; this reports, it never writes")
-    return 0
-
-
 def print_managed(policy: dict) -> None:
     state = "present" if MANAGED_SETTINGS.exists() else "absent"
     print(f"{state:8}{MANAGED_SETTINGS}")
@@ -511,25 +391,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="write the changes (default: only report drift)")
     parser.add_argument("--check", action="store_true", help="report drift (the default)")
-    parser.add_argument("--scope", choices=("repo", "home", "all", "managed", "sandbox", "grok"), default="all")
-    parser.add_argument("--sandbox", action="store_true",
-                        help="merge the opt-in Claude Code sandbox profile into the home settings (with --scope home or all)")
+    parser.add_argument("--scope", choices=("repo", "home", "all", "managed"), default="all")
     parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
     parser.add_argument("--repo", default=None,
-                        help="repo to act on (default: this repo; with --scope grok, the checkout containing the cwd)")
+                        help="repo to act on (default: this repo)")
     parser.add_argument("--from", dest="from_root", default=None,
                         help="apply to this account's home from a non-canonical checkout; must name the repo acted on")
     args = parser.parse_args()
-    if args.sandbox and args.scope not in ("home", "all"):
-        parser.error("--sandbox applies to --scope home (or all); --scope sandbox already previews the fragment")
     repo = Path(args.repo) if args.repo else ROOT
     home = Path(args.home)
-
-    # The grok scope is about the folder Grok would run in, which is the
-    # checkout containing the cwd (a T3 worktree), not the script's own repo.
-    if args.scope == "grok":
-        target = checkout_root(Path(args.repo) if args.repo else Path.cwd())
-        return print_grok(target, home)
 
     # Same rule as install.cs (2026-11-20): only the canonical checkout writes
     # this account's home, or --from naming the checkout that is running. An
@@ -550,10 +420,6 @@ def main() -> int:
 
     if args.scope == "managed":
         print_managed(policy)
-        return 0
-
-    if args.scope == "sandbox":
-        print(json.dumps(render_sandbox(policy), indent=2, ensure_ascii=False))
         return 0
 
     drift = False
@@ -592,17 +458,6 @@ def main() -> int:
         elif state != "ok":
             print(f"note    roslynk MCP for Claude Code: {state}")
         path, want, notes = home_target(policy, home)
-        current = json.loads(want)
-        if args.sandbox:
-            merged = merge_sandbox(current, render_sandbox(policy))
-            if merged["sandbox"] != current.get("sandbox"):
-                notes.append("sandbox: profile not in sync")
-                want = json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
-            else:
-                print("ok      sandbox: profile in sync")
-        else:
-            print("note    sandbox: profile not managed; preview with --scope sandbox, "
-                  "opt in with --scope home --apply --sandbox")
         if not notes:
             print(f"ok      {path}")
         else:
