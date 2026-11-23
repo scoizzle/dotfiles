@@ -59,6 +59,25 @@ check("delegate_task" in build, "agents/build.md dispatches through delegate_tas
 check(re.search(r"call `advisor`|go to the explore agent", build) is None,
       "agents/build.md no longer names an opencode subagent call")
 
+# The dispatch recipe lives in skills/t3-dispatch, loaded before a dispatch,
+# not in AGENTS.md or build.md, which every session loads (prune, 2026-11-23).
+skill_path = ROOT / "skills" / "t3-dispatch" / "SKILL.md"
+skill = skill_path.read_text() if skill_path.exists() else ""
+check(bool(skill), "skills/t3-dispatch/SKILL.md exists")
+check("t3-dispatch" in build and "t3-dispatch" in t3, "build.md and AGENTS.md -> T3 Code point at the t3-dispatch skill")
+for needle, label in (
+    ("role: <role>", "the brief's first line is the role line"),
+    ("~/.config/opencode/agents/<role>.md", "the brief names the installed role file, not the copy under review"),
+    ('isolation: "worktree"', "worktree isolation"),
+    ('interactionMode: "plan"', "plan mode for the read-only roles"),
+    ("models.resolved.json", "the target comes from the role's resolved model"),
+    ('isolation: "shared"', "an uncommitted change is reviewed in the shared checkout"),
+    ("restart", "a plugin code change needs a restart"),
+    ("review-log", "every review and consult is recorded"),
+):
+    check(needle in skill, f"t3-dispatch: {label}")
+check(re.search(r"(?i)verifier[^.]*(not|without)[^.]*plan", skill) is not None, "t3-dispatch: the verifier is not sent in plan mode")
+check(len(build) < 2000, f"agents/build.md stays small ({len(build)} chars)")
 brief = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 check("delegate_task" in brief and "agents/implementor.md" in brief, "implementor-brief dispatches via delegate_task and names agents/implementor.md")
 check("agents/review-deep.md" in (ROOT / "commands" / "verify.md").read_text().split("delegate_task", 1)[-1],

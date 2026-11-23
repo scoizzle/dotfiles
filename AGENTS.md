@@ -53,9 +53,8 @@ A second reviewer only when asked or after the same check failed twice.
 ## T3 Code
 
 All dispatch is T3 `delegate_task` (`subagent` is denied; without T3 a sensitive
-change stops and asks). A brief starts `role: <role>`, then "follow `agents/<role>.md`",
-on the role's model; reviewer, advisor and explore add `isolation: "worktree"`,
-`interactionMode: "plan"` (verifier: worktree only).
+change stops and asks), set up per the `t3-dispatch` skill. Every brief starts
+`role: <role>`, which `plugins/harness-guard.js` enforces.
 
 `t3-code*` tools own the worktree and link/watch state, `git` and `gh pr create`
 (or `pull_request_*`) the PR. A finished change: push, open, `link_pull_request`, one
@@ -78,9 +77,7 @@ per change:
 - a design choice the code cannot settle (public contract, data shape, new module
   or entry point, migration);
 - the same check has failed twice;
-- you are about to delete, rewrite or retarget a test or check;
-- the plan touches more than three files (tests and config count) or 400 lines
-  added plus removed.
+- you are about to delete, rewrite or retarget a test or check.
 
 Record its answer (risks, a simpler alternative, missed cases). It
 never replaces the review, can add a stop but never remove one, never answers
