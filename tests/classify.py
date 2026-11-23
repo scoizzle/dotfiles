@@ -46,6 +46,7 @@ CASES = [
     ("notes/auth-secrets.txt", True),
     ("README.md", False),
     ("AGENTS.md", True),
+    ("docs/rules.md", True),
     ("agents/build.md", True),
     ("bin/review-bundle", True),
     ("commands/verify.md", True),

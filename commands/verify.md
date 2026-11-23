@@ -4,7 +4,7 @@ description: Ask the read-only reviewer to check the current change
 
 Review the current uncommitted change.
 
-Bundle: !`~/.config/opencode/bin/review-bundle . --show AGENTS.md --show agents/review-deep.md`
+Bundle: !`~/.config/opencode/bin/review-bundle . --show AGENTS.md --show docs/rules.md --show agents/review-deep.md`
 
 The bundle's `06-test-changes-NN.txt` is what the diff did to tests: removed
 declarations and assertions, added skips, deleted and moved test files. It is a

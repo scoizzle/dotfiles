@@ -88,6 +88,11 @@ for needle, label in (
     ("REJECT", "the lead sends broken work back with findings"),
 ):
     check(needle in skill, f"t3-dispatch: {label}")
+# Review mechanics moved to t3-dispatch (the person, 2026-11-23).
+check("blocks only with evidence" in skill and "one re-review" in skill, "t3-dispatch: findings need evidence; one re-review")
+# What must fire at session start stays in AGENTS.md (advisor, 2026-11-23).
+for needle in ("consult is required when a trigger fires", "bin/review-log add", "never read `pending/`", "memory/core/**"):
+    check(needle in agents_md, f"AGENTS.md keeps {needle!r}")
 ib = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 # The person, 2026-11-23, after Phase 6b: a small change the lead does itself; a
 # large one goes to an implementor under skeptical supervision.

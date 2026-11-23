@@ -203,6 +203,7 @@ T1_MAX_LINES = 400
 ALWAYS = (
     ".github/*",
     "AGENTS.md",
+    "docs/rules.md",
     "agents/*",
     "bin/*",
     "commands/*",

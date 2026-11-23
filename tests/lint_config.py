@@ -61,7 +61,7 @@ def main() -> int:
             build_path.write_text(build_original)
 
         verify_path = tree / "commands" / "verify.md"
-        for old in ("--show AGENTS.md", "--show agents/review-deep.md", "base copies"):
+        for old in ("--show AGENTS.md", "--show docs/rules.md", "--show agents/review-deep.md", "base copies"):
             saved = verify_path.read_text()
             try:
                 verify_path.write_text(saved.replace(old, ""))
@@ -70,10 +70,11 @@ def main() -> int:
                 verify_path.write_text(saved)
 
         for name, needle in (
-            ("AGENTS.md", "run-tests"),
-            ("AGENTS.md", "platform-detection"),
-            ("AGENTS.md", "test-anti-patterns"),
-            ("AGENTS.md", "assertion-quality"),
+            # Moved from AGENTS.md to roslynk-rules (the person, 2026-11-23).
+            ("skills/roslynk-rules/SKILL.md", "run-tests"),
+            ("skills/roslynk-rules/SKILL.md", "platform-detection"),
+            ("skills/roslynk-rules/SKILL.md", "test-anti-patterns"),
+            ("skills/roslynk-rules/SKILL.md", "assertion-quality"),
             ("agents/build.md", "run-tests"),
             ("agents/implementor.md", "run-tests"),
             ("agents/implementor.md", "assertion-quality"),
@@ -120,12 +121,63 @@ def main() -> int:
         finally:
             agents_path.write_text(saved)
 
+        # Moved text keeps the same guards where it now lives (advisor, 2026-11-23).
+        for rel, stale, marker in (
+            ("skills/finish-change/SKILL.md", "Do not stage, commit, or push unless asked.", "open and watch its PR"),
+            ("skills/t3-dispatch/SKILL.md", "say so and continue", "sensitive review"),
+            ("skills/consult-advisor/SKILL.md", "plan-review-deep", "retired tier cascade"),
+        ):
+            path = tree / rel
+            saved_skill = path.read_text()
+            try:
+                path.write_text(saved_skill + f"\n{stale}\n")
+                failed |= not expect(f"{rel}: {stale!r} restored", lint(tree), marker)
+            finally:
+                path.write_text(saved_skill)
+        # A moved trigger must be in the skill's description, which every session
+        # loads, not only in its body (review, 2026-11-23).
+        for rel, words in (
+            ("skills/finish-change/SKILL.md", ("bot", "thread id")),
+            ("skills/consult-advisor/SKILL.md", ("design choice", "failed twice", "retarget a test")),
+            ("skills/roslynk-rules/SKILL.md", ("run-tests", "platform-detection", "test-anti-patterns", "assertion-quality")),
+        ):
+            path = tree / rel
+            saved_skill = path.read_text()
+            head, sep, body = saved_skill.partition("\n---\n")
+            for word in words:
+                try:
+                    path.write_text(head.replace(word, "something") + sep + body)
+                    failed |= not expect(f"{rel}: description loses {word!r}", lint(tree), "description")
+                finally:
+                    path.write_text(saved_skill)
+        # Each pointer AGENTS.md keeps must name a skill that exists.
+        for skill in ("t3-dispatch", "consult-advisor", "finish-change", "memory", "roslynk-rules"):
+            saved = agents_path.read_text()
+            try:
+                agents_path.write_text(saved.replace(f"`{skill}`", "`gone`"))
+                failed |= not expect(f"AGENTS.md loses its pointer to {skill}", lint(tree), f"points at {skill}")
+            finally:
+                agents_path.write_text(saved)
+
         # v2: the contract is capped, and every rule in its table names an
-        # enforcer that exists. These replace ~100 exact-phrase needles.
-        saved = agents_path.read_text()
+        # enforcer that exists. These replace ~100 exact-phrase needles. The
+        # table lives in docs/rules.md (the person, 2026-11-23); the cap stays on
+        # AGENTS.md, which every session loads.
+        rules_path = tree / "docs" / "rules.md"
+        saved_agents = agents_path.read_text()
+        try:
+            agents_path.write_text(saved_agents + "\n" + "x" * 8000)
+            failed |= not expect("contract: AGENTS.md over the cap", lint(tree), "over the 8000 cap")
+        finally:
+            agents_path.write_text(saved_agents)
+        try:
+            agents_path.write_text(saved_agents.replace("docs/rules.md", "docs/elsewhere.md"))
+            failed |= not expect("contract: AGENTS.md loses its pointer to docs/rules.md", lint(tree), "points at docs/rules.md")
+        finally:
+            agents_path.write_text(saved_agents)
+        saved = rules_path.read_text()
         row = "| No agent merge in v2.0 |"
         contract_cases = (
-            ("AGENTS.md over the cap", saved + "\n" + "x" * 8000, "over the 8000 cap"),
             ("rule table heading removed", saved.replace("## Rules and what enforces them", "## Rules"),
              "rules have no enforcers"),
             ("a policy enforcer that does not exist", saved.replace("policy:git-push-destructive", "policy:no-such-rule", 1),
@@ -145,10 +197,10 @@ def main() -> int:
         )
         for name, text, marker in contract_cases:
             try:
-                agents_path.write_text(text)
+                rules_path.write_text(text)
                 failed |= not expect(f"contract: {name}", lint(tree), marker)
             finally:
-                agents_path.write_text(saved)
+                rules_path.write_text(saved)
         ci_path = tree / ".github" / "workflows" / "ci.yml"
         ci_saved = ci_path.read_text()
         try:
@@ -166,14 +218,14 @@ def main() -> int:
         lint_saved = lint_path.read_text()
         try:
             # The fixture names its own lint enforcer, so the case does not depend on a real row.
-            agents_path.write_text(saved.replace("policy:no_edit", "lint:check_plugins", 1))
+            rules_path.write_text(saved.replace("policy:no_edit", "lint:check_plugins", 1))
             # Called from somewhere other than main() is not a running check.
             lint_path.write_text(lint_saved.replace("    check_plugins()\n", "", 1)
                                  + "\n\ndef _unused() -> None:\n    check_plugins()\n")
             failed |= not expect("contract: a lint enforcer not called from main", lint(tree), "called from main")
         finally:
             lint_path.write_text(lint_saved)
-            agents_path.write_text(saved)
+            rules_path.write_text(saved)
 
         # v2: models come from roles (models/roles.json), never from an agent file.
         # opencode 2.3.2 lets frontmatter `model:` win over config, so a pin there

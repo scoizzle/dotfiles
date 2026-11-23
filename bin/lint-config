@@ -159,6 +159,16 @@ def check_policy(agents: dict) -> None:
 
 
 CONTRACT_CAP = 8000
+MOVED_SKILLS = ("t3-dispatch", "consult-advisor", "finish-change", "memory", "roslynk-rules")
+DESCRIPTION_TRIGGERS = {
+    "finish-change": ("bot", "thread id"),
+    "consult-advisor": ("design choice", "failed twice", "retarget a test"),
+    "roslynk-rules": ("run-tests", "platform-detection", "test-anti-patterns", "assertion-quality"),
+}
+# Files that carry contract text: AGENTS.md, the lead's agent file, and the
+# skills sections moved into. The escape-hatch and retired-word guards scan all.
+CONTRACT_FILES = ("AGENTS.md", "docs/rules.md", "agents/build.md",
+                  *(f"skills/{s}/SKILL.md" for s in MOVED_SKILLS))
 POLICY_RULE_KEYS = ("no_edit", "protected", "control_plane")
 ENFORCER_KINDS = ("policy", "test", "lint")
 
@@ -204,58 +214,82 @@ def check_contract() -> None:
     retired-word checks stay: they catch text that made the review skippable
     (#44) or restored the tier cascade, without pinning any wording.
     """
-    text = (ROOT / "AGENTS.md").read_text()
-    if len(text) > CONTRACT_CAP:
-        fail(f"AGENTS.md is {len(text)} characters, over the {CONTRACT_CAP} cap; raising the cap is its own change")
+    agents_text = (ROOT / "AGENTS.md").read_text()
+    if len(agents_text) > CONTRACT_CAP:
+        fail(f"AGENTS.md is {len(agents_text)} characters, over the {CONTRACT_CAP} cap; raising the cap is its own change")
+    # The rule table lives in docs/rules.md (the person, 2026-11-23): every
+    # session loads AGENTS.md, and the model does not need the table.
+    if "docs/rules.md" not in agents_text:
+        fail("AGENTS.md no longer points at docs/rules.md; the enforced rules have no index")
+    rules_path = ROOT / "docs" / "rules.md"
+    text = rules_path.read_text() if rules_path.exists() else ""
     heading = "## Rules and what enforces them"
     if heading not in text:
-        fail(f"AGENTS.md: missing {heading!r}; rules have no enforcers")
+        fail(f"docs/rules.md: missing {heading!r}; rules have no enforcers")
     else:
         policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         lint_src = Path(__file__).read_text()
         table = [line for line in text.split(heading, 1)[1].splitlines() if line.startswith("|")]
         if not table or [c.strip() for c in table[0].strip().strip("|").split("|")] != ["Rule", "Enforcer", "Failure it prevents"]:
-            fail("AGENTS.md rule table: the header row must be | Rule | Enforcer | Failure it prevents |")
+            fail("docs/rules.md rule table: the header row must be | Rule | Enforcer | Failure it prevents |")
         rows = [line for line in table[1:] if not re.fullmatch(r"\|[\s|:-]+", line)]
         if not rows:
-            fail("AGENTS.md: the rule table has no rows")
+            fail("docs/rules.md: the rule table has no rows")
         for line in rows:
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cells) != 3:
-                fail(f"AGENTS.md rule table: {line[:80]!r} needs rule | enforcer | failure")
+                fail(f"docs/rules.md rule table: {line[:80]!r} needs rule | enforcer | failure")
                 continue
             rule_text, enforcers, failure = cells
             for token in (t.strip() for t in enforcers.split(",")):
                 if token == "judgment":
                     if failure in ("", "—", "-"):
-                        fail(f"AGENTS.md rule table: judgment rule {rule_text[:60]!r} names no failure it prevents")
+                        fail(f"docs/rules.md rule table: judgment rule {rule_text[:60]!r} names no failure it prevents")
                     continue
                 why = resolve_enforcer(token, policy, ci, lint_src)
                 if why:
-                    fail(f"AGENTS.md rule table: {rule_text[:60]!r}: {why}")
-    for stale in (
-        "or say that no second model was available",
-        "say so and continue",
-        "Do not stop to ask about fallbacks",
-    ):
-        if stale in text:
-            fail(f"AGENTS.md: the old escape hatch is back ({stale!r}); the sensitive review is skippable again")
-    if "Do not stage, commit, or push unless asked" in text:
-        fail("AGENTS.md: the old commit/push gate is back; a finished change must open and watch its PR")
+                    fail(f"docs/rules.md rule table: {rule_text[:60]!r}: {why}")
+    # Each section moved out of AGENTS.md leaves a pointer to a skill that exists
+    # (the person, 2026-11-23), and the moved text keeps the same guards.
+    for skill in MOVED_SKILLS:
+        if f"`{skill}`" not in agents_text:
+            fail(f"AGENTS.md no longer points at {skill}; its rules are unreachable")
+        elif not (ROOT / "skills" / skill / "SKILL.md").exists():
+            fail(f"AGENTS.md points at {skill}, but skills/{skill}/SKILL.md is missing")
+    # A trigger that left AGENTS.md must be in its skill's description, which
+    # every session loads; a body loads only on demand (review, 2026-11-23).
+    for skill, words in DESCRIPTION_TRIGGERS.items():
+        path = ROOT / "skills" / skill / "SKILL.md"
+        found = re.search(r"^description:(.*)$", path.read_text(), re.M) if path.exists() else None
+        description = found.group(1) if found else ""
+        for word in words:
+            if word not in description:
+                fail(f"skills/{skill}: its description lost the trigger {word!r}; a session no longer sees when it applies")
+    guarded = {name: (ROOT / name).read_text() for name in CONTRACT_FILES if (ROOT / name).exists()}
+    for name, body in guarded.items():
+        for stale in (
+            "or say that no second model was available",
+            "say so and continue",
+            "Do not stop to ask about fallbacks",
+        ):
+            if stale in body:
+                fail(f"{name}: the old escape hatch is back ({stale!r}); the sensitive review is skippable again")
+        if "Do not stage, commit, or push unless asked" in body:
+            fail(f"{name}: the old commit/push gate is back; a finished change must open and watch its PR")
     for stale in ("Tier: T0", "plan-review-deep", "review-light", "second-opinion"):
-        for name in ("AGENTS.md", "agents/build.md"):
+        for name in CONTRACT_FILES:
             if stale in (ROOT / name).read_text():
                 fail(f"{name}: the retired tier cascade is back ({stale!r})")
     verify = (ROOT / "commands" / "verify.md").read_text()
     for needle in (
-        "review-bundle . --show AGENTS.md --show agents/review-deep.md",
+        "review-bundle . --show AGENTS.md --show docs/rules.md --show agents/review-deep.md",
         "base copies",
     ):
         if needle not in verify:
             fail(f"commands/verify.md: missing {needle!r}; the reviewer loses the base rules it judges by")
     for name, needles in (
-        ("AGENTS.md", ("run-tests", "platform-detection", "test-anti-patterns", "assertion-quality")),
+        ("skills/roslynk-rules/SKILL.md", ("run-tests", "platform-detection", "test-anti-patterns", "assertion-quality")),
         ("agents/build.md", ("run-tests",)),
         ("agents/implementor.md", ("run-tests", "assertion-quality")),
         ("agents/verifier.md", ("run-tests",)),

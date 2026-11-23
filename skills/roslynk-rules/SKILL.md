@@ -1,6 +1,6 @@
 ---
 name: roslynk-rules
-description: Local rules for Roslynk when working in a C#/.NET solution with this config — which Roslynk tools read-only review agents may use, and why get_diagnostics is a compile check rather than a test run. Use when the task touches *.cs, *.razor or *.cshtml in a repo that has a .sln or .slnx.
+description: Load before the first C# read or edit (*.cs, *.razor, *.cshtml in a repo with a .sln or .slnx): opens the solution, names the Roslynk tool for each grep, read or build, which tools read-only agents may use, why get_diagnostics is a compile check not a test run, and which .NET test skills to load first (run-tests, platform-detection, test-anti-patterns, assertion-quality).
 license: MIT
 compatibility: opencode
 metadata:
@@ -9,6 +9,15 @@ metadata:
 ---
 
 # Roslynk — local rules
+
+## Load first (moved from AGENTS.md, 2026-11-23)
+
+- `run-tests` before any .NET test command, or a judgment of one.
+- `platform-detection` before naming the runner (VSTest, bridged or native MTP).
+- `test-anti-patterns` and `assertion-quality` before calling a test weak, or
+  removing, weakening or retargeting one.
+
+Never imply Roslynk answered when it did not.
 
 Upstream's entire skill is one line, vendored here verbatim (MIT):
 

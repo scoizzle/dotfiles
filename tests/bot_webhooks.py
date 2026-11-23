@@ -482,7 +482,9 @@ def main():
 
     # The standing rule lives in the loaded instructions, not only in a doc.
     rule = 'notify-bot <BOT> <status> "<one-line summary>" <thread-id>'
-    for rel in ("AGENTS.md", "agents/build.md", "agents/implementor.md"):
+    # The rule moved from AGENTS.md to skills/finish-change (the person, 2026-11-23);
+    # its trigger is in that skill's description, which every session loads.
+    for rel in ("skills/finish-change/SKILL.md", "agents/build.md", "agents/implementor.md"):
         check(rule in (ROOT / rel).read_text(), f"{rel} has the standing notify-bot rule")
 
     if failures:

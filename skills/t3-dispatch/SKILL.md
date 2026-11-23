@@ -42,7 +42,7 @@ instead of dispatching a reviewer.
 A worktree child starts from the parent's last commit; uncommitted edits stay
 out. To review an **uncommitted** change, either send the review bundle's
 absolute path (`bin/review-bundle . --base <sha> --show AGENTS.md --show
-agents/review-deep.md`, and tell the reviewer those base copies govern; a
+docs/rules.md --show agents/review-deep.md`, and tell the reviewer those base copies govern; a
 reviewer may read outside its worktree), or run the
 reviewer in your checkout with `isolation: "shared"`. Shared is safe because the
 plugin enforces the reviewer's read-only role, but then copy the bundle inside
@@ -62,7 +62,11 @@ The implementor's summary is a claim. Before anything counts:
   same check is an advisor trigger, then the person.
 - Record every review and consult with `bin/review-log add` (a blocked run is
   recorded too).
-- One re-review, of the fix delta; another round only for a new 🔴 or 🟠.
+- A finding blocks only with evidence: a failing test, a line-level
+  counterexample, or a broken rule.
+- There is one re-review, of the fix delta; another round only for a new 🔴 or 🟠.
+- A diff that weakens a rule in `AGENTS.md`, `docs/rules.md` or on a sensitive
+  path is a 🔴 for the person, not a finding the reviewer may waive.
 
 ## Known behaviour (2026-11-23)
 
