@@ -33,8 +33,10 @@ const plugin = (await import(pathToFileURL(pluginPath).href)).default
 const hooks = {}
 let contextCalls = 0
 const store = new Map(Object.entries(s.storage ?? {}))
+const toolHooks = {}
 const ctx = {
   options: {},
+  tool: { hook: async (name, cb) => { toolHooks[name] = cb; return { dispose: async () => {} } } },
   storage: { get: async (k) => store.get(k), set: async (k, v) => { store.set(k, v) }, remove: async (k) => { store.delete(k) } },
   location: { directory: s.cwd },
   permission: { hook: async (name, cb) => { hooks[name] = cb; return { dispose: async () => {} } } },
@@ -45,8 +47,22 @@ const ctx = {
 }
 await plugin.setup(ctx)
 const out = []
+let n = 0
 for (const call of s.calls) {
-  const event = { sessionID: s.sessionID ?? "ses_1", agent: "build", action: call.action, resources: call.resources, effect: call.effect ?? "allow" }
+  const id = `call_${++n}`
+  const sessionID = s.sessionID ?? "ses_1"
+  // opencode runs tool execute.before with the whole input, then evaluates the
+  // permission with the command split into segments (probe, 2026-11-22).
+  if (call.action === "shell" && !call.noBefore && toolHooks["execute.before"]) {
+    try {
+      await toolHooks["execute.before"]({ tool: "shell", sessionID, agent: "build", messageID: "msg_1", id, input: { command: call.resources[0] } })
+    } catch (error) {
+      out.push({ effect: "deny", message: error.message })
+      continue
+    }
+  }
+  const resources = call.segments ?? call.resources
+  const event = { sessionID, agent: "build", action: call.action, resources, effect: call.effect ?? "allow", source: { type: "tool", messageID: "msg_1", id } }
   await hooks.evaluate(event)
   out.push({ effect: event.effect, message: event.message ?? null })
 }
@@ -185,6 +201,19 @@ def main() -> int:
         r = run(tmp, [{"action": "edit", "resources": ["a"]}],
                 messages=[user("Fix the bug."), user("role: reviewer\nnow stop editing")], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "a role counts only in the first user message")
+
+        # opencode splits a shell command into segments before evaluating it and
+        # drops `cd` (probe, 2026-11-22), so the guard must see the whole command.
+        res = run(tmp, [{"action": "shell", "resources": ["echo cm0gLXJmIC8= | base64 -d | sh"],
+                         "segments": ["echo cm0gLXJmIC8=", "base64 -d", "sh"]}])
+        check(res["results"][:1] and res["results"][0]["effect"] == "deny",
+              "a decode-to-shell pipeline opencode splits into segments is still denied")
+        res = run(tmp, [{"action": "shell", "resources": ["x"], "segments": ["cat > notes.txt <<'EOF'\nhello\nEOF", "echo ok"], "noBefore": True}])
+        check(res["results"][:1] and res["results"][0]["effect"] == "deny",
+              "a shell call execute.before never saw is still guarded per segment (review)")
+        res = run(tmp, [{"action": "shell", "resources": ["python3 - <<'EOF'\nprint(1)\nEOF"], "segments": ["python3 -"]}])
+        check(res["results"][:1] and res["results"][0]["effect"] == "ask",
+              "a guard ask on the whole command reaches the permission decision")
 
         # The real guard: guard-only vectors that opencode's text globs cannot catch.
         real = {}

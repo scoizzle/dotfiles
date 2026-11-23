@@ -5,7 +5,10 @@
 //
 // - shell and edit calls go through bin/harness-guard, which parses what the
 //   text globs in opencode.json cannot (heredocs, `sh -c`, git global options,
-//   decode-to-shell). A crash, a timeout or a missing guard denies.
+//   decode-to-shell). A crash, a timeout or a missing guard denies. opencode
+//   evaluates a shell permission per segment, with `cd` dropped (probe,
+//   2026-11-22), so shell is checked whole in tool `execute.before`, which runs
+//   first: a deny throws there, an ask is held for that call's evaluation.
 // - a session's role is the first non-blank line of its first user message
 //   after T3's header line and its `Act as the … sub-agent` line, when it reads
 //   `role: <name>`. It gets that role's allowlist
@@ -143,7 +146,21 @@ export default {
       return session?.directory ?? session?.location?.directory ?? ctx.location?.directory ?? process.cwd()
     }
 
+    const pendingAsk = new Map()
+    const seenShell = new Set()
+    await ctx.tool.hook("execute.before", async (call) => {
+      if (call.tool !== "shell" || typeof call.input?.command !== "string") return
+      seenShell.add(call.id)
+      const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs)
+      if (verdict?.effect === "deny") throw new Error(verdict.message)
+      if (verdict?.effect === "ask") pendingAsk.set(call.id, verdict.message)
+    })
+
     await ctx.permission.hook("evaluate", async (event) => {
+      if (event.action === "shell" && event.source?.id && pendingAsk.has(event.source.id)) {
+        tighten(event, "ask", pendingAsk.get(event.source.id))
+        pendingAsk.delete(event.source.id)
+      }
       let role
       try {
         role = await roleOf(event.sessionID)
@@ -161,7 +178,10 @@ export default {
           return
         }
       }
-      if (event.action === "shell" || event.action === "edit") {
+      // A shell call execute.before never saw (another tool reaching shell)
+      // still goes through the guard, per segment, as defense in depth.
+      const unseenShell = event.action === "shell" && !seenShell.delete(event.source?.id)
+      if (event.action === "edit" || unseenShell) {
         const cwd = await cwdOf(event.sessionID)
         for (const target of (event.resources ?? []).map(String)) {
           const payload =
