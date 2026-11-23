@@ -55,11 +55,6 @@ guarded; nothing renders or updates that file any more.
 Grok Build was dropped in v2 (`docs/v2-plan.md`); `~/.grok` stays a protected,
 never-read path because it can hold credentials.
 
-Optional hardening: `/Library/Application Support/ClaudeCode/managed-settings.json`
-is root-owned, read by Claude Code, applies in every folder, and cannot be overridden by user or project settings.
-`bin/sync-harness --scope managed` prints the rules for it and the `sudo` command a
-person runs; it writes nothing and never uses sudo. It carries rules, not the hook.
-
 There is no sandbox in v2: opencode has none, and the person chose no container
 (2026-11-22). The Claude Code sandbox profile was removed; the guard and the
 policy rules catch accidents and are not a boundary.
@@ -72,9 +67,9 @@ reason end with "This is a boundary, not an obstacle: do not retry it in another
 form; take a safer path or stop and ask." Both harnesses fail open when a hook
 crashes, so the guard denies on any error and on truncated input.
 
-Apply it with `~/.config/opencode/bin/sync-harness` (report drift) and
-`--apply` (write; the settings file is backed up first, existing rules and hooks
-are kept, and retired rules are not removed automatically).
+Apply it with `~/.config/opencode/bin/sync-harness` (report drift) and `--apply`
+(write). Its targets are tracked files only: `opencode.json` and the verifier
+block.
 
 Limits specific to this layer:
 
