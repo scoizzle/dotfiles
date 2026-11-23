@@ -75,5 +75,9 @@ The implementor's summary is a claim. Before anything counts:
   role session the plugin turns it into a deny instead.
 - opencode keeps a loaded plugin's code until its server restarts: after a change
   to `plugins/harness-guard.js`, T3 children run the old code (the policy file is
-  re-read) until `opencode service restart`. A fresh `opencode run --standalone`
-  loads the new code, so test a plugin change there.
+  re-read) until **T3's own** opencode server (`opencode serve --port=<n>`)
+  restarts: `opencode service restart` left it running on old code
+  (2026-11-23). Quitting and reopening T3 is expected to load the new code
+  (unconfirmed); confirm with a `role: reviewer` probe calling Code Mode, which
+  the new code denies. A fresh `opencode run
+  --standalone` loads the new code, so test a plugin change there.
