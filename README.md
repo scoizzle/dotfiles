@@ -233,6 +233,11 @@ Pick one, and override any role, in an untracked
 {"profile": "go-only", "roles": {"explore": "opencode-go/deepseek-v4.1-flash#high"}}
 ```
 
+Log in to each provider your profile uses **before** the first `./install.cs`:
+`opencode auth login` for opencode Go, and `claude auth login` for Claude. The
+installer checks that every role's model is reachable and fails with "not
+available on this machine" until it is (seen on a fresh home, 2026-11-23).
+
 `./install.cs` writes one file per role under `~/.config/opencode/models/`,
 which `opencode.json` reads through `{file:}`, and `./bin/models check` tells you
 if this machine cannot reach a model. A single-family setup reviews with a fresh
