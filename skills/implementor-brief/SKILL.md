@@ -7,9 +7,14 @@ compatibility: opencode
 
 # Implementor brief
 
-The lead plans and reviews; the implementor writes one bounded task. A cheap
-implementor cannot recover a decision the brief left out, so the brief carries
-the decisions, never pointers to where they might be found.
+When you dispatch, the implementor does the heavy lifting: the investigation and the fix. The lead
+is a skeptical supervisor: it spends its tokens checking the result (see
+`t3-dispatch` → After it returns), not doing the diagnosis for the implementor.
+The brief still carries every decision already made, never pointers to where
+one might be found, because a cheap implementor cannot recover one the brief
+left out (an approach already settled, such as "reuse helper X", is a
+decision); but it states the goal and the check, not the lead's theory of the
+fix.
 
 Until the Phase 6 writer eval reports (`docs/v2-plan.md`), `AGENTS.md` → Doing
 the work decides whether to dispatch at all; this skill only says how.

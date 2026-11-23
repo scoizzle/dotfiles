@@ -78,6 +78,18 @@ for needle, label in (
     check(needle in skill, f"t3-dispatch: {label}")
 check(re.search(r"(?i)verifier[^.]*(not|without)[^.]*plan", skill) is not None, "t3-dispatch: the verifier is not sent in plan mode")
 check(len(build) < 2000, f"agents/build.md stays small ({len(build)} chars)")
+# The lead is a skeptical supervisor; the implementor does the heavy lifting
+# (the person, 2026-11-23). The skill says what supervising means.
+for needle, label in (
+    ("skeptical", "the lead supervises skeptically"),
+    ("git diff", "the lead reads the diff, not the summary"),
+    ("oracle", "the lead looks for edits to the tests or oracle"),
+    ("special-cases", "the lead looks for a fix that special-cases the check"),
+    ("REJECT", "the lead sends broken work back with findings"),
+):
+    check(needle in skill, f"t3-dispatch: {label}")
+ib = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
+check("heavy lifting" in ib and "supervis" in ib, "implementor-brief: the implementor investigates and fixes; the lead supervises")
 brief = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 check("delegate_task" in brief and "agents/implementor.md" in brief, "implementor-brief dispatches via delegate_task and names agents/implementor.md")
 check("agents/review-deep.md" in (ROOT / "commands" / "verify.md").read_text().split("delegate_task", 1)[-1],

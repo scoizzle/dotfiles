@@ -48,9 +48,18 @@ reviewer in your checkout with `isolation: "shared"`. Shared is safe because the
 plugin enforces the reviewer's read-only role, but then copy the bundle inside
 the checkout and never stage it.
 
-## After it returns
+## After it returns: supervise, skeptically
 
-- Rerun an implementor's done check at its returned SHA and read `git status`.
+The implementor's summary is a claim. Before anything counts:
+
+- Rerun the done check at its returned SHA and read `git status`.
+- Read `git diff` against the base, not the summary. Look for edits to tests or
+  the oracle, a fix that special-cases the check, a symptom fixed instead of its
+  cause, and behaviour the check does not cover that the change breaks.
+- A finding you can fix in a line or two, fix yourself. Anything larger, send
+  back: one REJECT with the findings and their
+  evidence, as a new `delegate_task` to the same role. A second failure on the
+  same check is an advisor trigger, then the person.
 - Record every review and consult with `bin/review-log add` (a blocked run is
   recorded too).
 - One re-review, of the fix delta; another round only for a new 🔴 or 🟠.
