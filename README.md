@@ -8,7 +8,8 @@ Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 ## Workflow
 
 `AGENTS.md` is the contract every harness loads. The default agent does the work.
-A broad lookup may go to the explore agent. One read-only review is for a
+All dispatch goes through T3 Code's `delegate_task`; opencode's own `subagent`
+tool is denied. A broad lookup may go to the explore role. One read-only review is for a
 sensitive change (auth, secrets, a schema or data migration, or a public
 contract), when you ask, or after the same check has failed twice. Ordinary
 edits are not dispatched.
@@ -23,8 +24,8 @@ are in [`docs/security-model.md`](docs/security-model.md).
 In opencode, the top-level `build` agent edits. `agents/build.md` is the source;
 the tracked `.opencode/agents/build.md` symlink is the project override opencode
 loads. `implementor` (`opencode --agent implementor`) is the same job for a
-direct `opencode run`: one task, no dispatch. Extra agent files remain installed
-so a lookup or a review can still be called. They are not the default path.
+direct `opencode run`: one task, no dispatch. The other agent files are the prompts a T3 brief
+names ("Read and follow `agents/<role>.md`"), since a T3 child runs as `build`.
 
 ## Install on a new machine
 

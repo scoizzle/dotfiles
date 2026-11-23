@@ -15,7 +15,9 @@ that every later session trusts).
 
 | Control | Where | Strength |
 | --- | --- | --- |
-| Reviewers, the advisor and the dream drafter have no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
+| The dream drafter, and an agent run as itself (`opencode run --agent review-deep`, the evals), has no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
+| A reviewer, advisor, explore, verifier or implementor dispatched through T3 runs as `build` (T3's `delegate_task` cannot pick an agent; probe, 2026-11-22), so its read-only limits are the brief ("Read and follow `agents/<role>.md`") and `interactionMode: plan`, and a stray edit lands in its own `isolation: worktree` checkout, not the lead's tree. The implementor's `execute` deny is lost the same way; `subagent` stays denied globally | `AGENTS.md` → T3 Code, `agents/build.md` | Instruction plus isolation. Weaker than tool-level; the person accepted this on 2026-11-22. |
+| opencode's `subagent` tool is denied for every agent: all dispatch is T3 | `policy/permissions.json` `opencode.tool_deny`, rendered into `opencode.json` | Tool-level. |
 | `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
 | A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.local/bin/notify-bot`, `~/.config/opencode/models*`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
 | `git push` is `ask`; force, delete, mirror, and `+refspec` pushes are `deny` in any argument position | `opencode.json` | Pattern match on the command line. |

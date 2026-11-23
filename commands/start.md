@@ -1,8 +1,14 @@
 ---
 description: Resolve a queue slice into a compact brief without loading queue docs into the main context
-agent: explore
-subagent: true
 ---
+
+Do not do the steps below yourself. Send them as one T3 `delegate_task` to the
+explore role (target, brief opening and settings as `agents/build.md` says:
+`isolation: "worktree"`, `interactionMode: "plan"`), with `$ARGUMENTS` filled in
+and this repository's absolute path, and return its brief. Without T3, say so
+and stop.
+
+The task to delegate:
 
 Resolve slice `$ARGUMENTS` from this repository's queue and return a brief of at most 40 lines. Do not edit anything.
 

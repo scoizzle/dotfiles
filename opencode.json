@@ -5,6 +5,7 @@
   "permissions": [
     { "action": "skill", "resource": "antigravity2.0", "effect": "deny" },
     { "action": "skill", "resource": "pre-ship-review", "effect": "deny" },
+    { "action": "subagent", "resource": "*", "effect": "deny" },
     { "action": "shell", "resource": "*git push*", "effect": "ask" },
     { "action": "shell", "resource": "*git -* push*", "effect": "ask" },
     { "action": "shell", "resource": "*git worktree remove*", "effect": "ask" },

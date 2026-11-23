@@ -35,6 +35,7 @@ def rule(action: str, resource: str, effect: str) -> dict:
 
 def render_opencode(policy: dict) -> list[dict]:
     out = [rule("skill", s, "deny") for s in policy["opencode"]["skill_deny"]]
+    out += [rule(tool, "*", "deny") for tool in policy["opencode"].get("tool_deny", [])]
     out += shell_rules(policy)
     prot = policy["protected"]
     for entry in prot["paths"]:

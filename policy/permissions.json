@@ -345,6 +345,10 @@
     "memory/core"
   ],
   "opencode": {
+    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22), so opencode's own dispatch is off and plain opencode has none.",
+    "tool_deny": [
+      "subagent"
+    ],
     "skill_deny": [
       "antigravity2.0",
       "pre-ship-review"

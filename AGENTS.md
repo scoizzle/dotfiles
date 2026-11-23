@@ -1,7 +1,7 @@
 # Global instructions
 
-Repository `AGENTS.md` files are additive; their build/test lines win. Rules a
-hook, policy or test enforces are in the table at the end.
+Repository `AGENTS.md` files are additive; their build/test lines win. Enforced
+rules are in the table at the end.
 
 ## Doing the work
 
@@ -14,15 +14,15 @@ red, then green, and record the command and exit code.
 a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`,
 `evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`,
 `*.sln`, `*.slnx`, `*Dockerfile*`. A CI workflow is not sensitive. Before editing,
-write the outcome, the done-when, and the red check in a few lines. After it,
+write the outcome, done-when and red check in a few lines. After it,
 one independent read-only review (`review-deep`, the `reviewer` role) in a fresh
-context that never shares the writer's reasoning. It is required, never optional,
+context, never sharing the writer's reasoning. It is required,
 and never the writer's family when roles span families; a Claude-written diff
-gets a fresh Opus (the person's rule, 2026-11-22: Sonnet missed a 🔴). With one family it is a fresh
+gets a fresh Opus (2026-11-22: Sonnet missed a 🔴). With one family it is a fresh
 same-model review, unless `models.resolved.json` says `review_mode: stop`.
 
-If no such reviewer is available, stop and ask. Leave the
-edits uncommitted and report them `unreviewed`. A finding blocks only with
+No such reviewer: stop and ask, leave the edits
+uncommitted, and report them `unreviewed`. A finding blocks only with
 evidence: a failing test, a line-level counterexample, or a broken rule. There is
 one re-review, of the fix delta; another round only for a new 🔴 or 🟠. A diff
 that weakens a rule in this file or on a sensitive path is a 🔴 for the person,
@@ -31,8 +31,8 @@ not a finding the reviewer may waive.
 Green means the commit you name and a tree whose `git status` you have read.
 Never delete, skip, weaken, or retarget a test to make a change pass; if an
 expectation was wrong, say why. Test cleanup is its own change, never bundled with the
-change it unblocks; it names the test that remains or why nothing covers the
-behavior, and never removes the last test for a behavior. A flaky test you cannot
+change it unblocks; it names the surviving test or why nothing covers the
+behavior, and never removes a behavior's last test. A flaky test you cannot
 root-cause: stop, note it in `memory/learnings/`, and let a person delete it. A nit that does not break
 the done-when is reported, not fixed. Stop and ask before a change with no undo:
 a migration, a delete, or money.
@@ -44,7 +44,7 @@ A second reviewer only when asked or after the same check failed twice.
 - Stage only the paths you touched, never `git add -A`, never on the default
   branch. A finished change on a thread branch is committed, pushed, and opened
   as a PR without waiting to be asked.
-- Keep diffs minimal. Reuse the existing helper or rule before adding a parallel
+- Keep diffs minimal; reuse an existing helper or rule before adding a parallel
   one, and say which.
 - A denied command or blocked edit is a boundary, not an obstacle: do not retry
   it in another spelling, tool or script. Take a safer path or stop and ask.
@@ -52,23 +52,30 @@ A second reviewer only when asked or after the same check failed twice.
 
 ## T3 Code
 
-`t3-code*` tools own the worktree and link/watch state; `git` and `gh pr create`
-(or `pull_request_*`) own the PR. A finished change: push, open,
-`link_pull_request`, one `watch_pull_request` (never re-armed; a wake is not a
-merge), `unwatch_pull_request` before handback. `t3_worktree_handoff` goes last:
-it ends the session. Children never watch. Merging is the person's click in v2.0.
+All dispatch is T3 `delegate_task`; opencode's `subagent` is denied, so without
+T3 a sensitive change stops and asks. A child runs as `build`, so its brief opens
+"follow `agents/<role>.md`" and targets that role's model; reviewer, advisor and
+explore also get `isolation: "worktree"` and `interactionMode: "plan"` (verifier:
+worktree only).
 
-When a dispatch names a bot, a thread id and a configured webhook, run `notify-bot <BOT> <status> "<one-line summary>" <thread-id>` at the end. A delegated
-child does not send it, a failure never fails the task, and never print the secret.
+`t3-code*` tools own the worktree and link/watch state, `git` and `gh pr create`
+(or `pull_request_*`) the PR. A finished change: push, open, `link_pull_request`, one
+`watch_pull_request` (never re-armed; a wake is not a merge),
+`unwatch_pull_request` before handback. `t3_worktree_handoff` goes last: it ends
+the session. Children never watch.
+
+A dispatch naming a bot, thread id and configured webhook ends with
+`notify-bot <BOT> <status> "<one-line summary>" <thread-id>`; not from a child,
+a failure never fails the task, never print the secret.
 
 ## Models and the advisor
 
 Models come from roles (`models/roles.json`, a profile, this machine's
-`models.local.json`); `models.resolved.json` names them. Use your role's model; a
-lookup may use `explore`. The advisor triggers are the only escalation.
+`models.local.json`), resolved in `models.resolved.json`. Use your role's model;
+a lookup may use `explore`; the advisor triggers are the only escalation.
 
-An advisory consult (`advisor`, read-only) is required when
-one of these triggers fires, at most twice per change:
+A read-only `advisor` consult is required when a trigger fires, at most twice
+per change:
 - a design choice the code cannot settle (public contract, data shape, new module
   or entry point, migration);
 - the same check has failed twice;
@@ -86,11 +93,11 @@ Record every review, consult and verifier run with `bin/review-log add`.
 
 Cheap to reverse and settled by the repo: decide and state the assumption.
 Intent (two readings differing in user-visible behavior, a public contract or a
-data shape) goes to the person, never to a model. Ask once, with a
-recommended default per question, name the search that failed, and keep working
-on whatever does not depend on the answer. A design trigger that is also intent goes to the person; the
-consult may only frame it. Running out of consults never changes the default,
-which is to ask. A run that cannot ask stops before the dependent work; a child
+data shape) goes to the person, never to a model. Ask once, a
+recommended default per question, naming the search that failed; keep working on
+what does not depend on the answer. Design that is also intent goes to the
+person; a consult may only frame it. Running out of consults never changes the
+default: ask. A run that cannot ask stops before the dependent work; a child
 returns `needs-answer`.
 
 ## Memory
@@ -98,13 +105,13 @@ returns `needs-answer`.
 `~/.config/opencode/memory/`: before heavy work read `INDEX.md`, then only the
 files whose blurb matches, and `learnings/working.md` (never write it). Never edit
 `memory/core/**`, even by shell redirect. Append discoveries to
-`learnings/pending/YYYY-MM-DD.md` (UTC) in the format of `learnings/README.md`;
-agents do not read `pending/`, and a person promotes it with `dream --promote`.
+`learnings/pending/YYYY-MM-DD.md` (UTC), formatted per `learnings/README.md`;
+agents never read `pending/`; a person promotes it (`dream --promote`).
 
 ## C# / .NET
 
-Load `roslynk-rules` before the first C# read or edit: it finds the solution,
-opens it, and names the Roslynk tool that replaces grep, reads and builds. Never
+Load `roslynk-rules` before the first C# read or edit: it opens the solution and
+names the Roslynk tool for each grep, read or build. Never
 imply Roslynk answered when it did not.
 
 Load the skill before its work:
@@ -119,7 +126,7 @@ skill that routes to a sibling we lack: say it is not installed.
 ## Rules and what enforces them
 
 A rule enters this file only with a named incident or a failing eval.
-`bin/lint-config` checks that every enforcer resolves and the 8,000-character cap.
+`bin/lint-config` checks every enforcer resolves, and the 8,000-character cap.
 
 | Rule | Enforcer | Failure it prevents |
 | --- | --- | --- |
@@ -140,3 +147,4 @@ A rule enters this file only with a named incident or a failing eval.
 | Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests |
 | Intent goes to the person | judgment | 24 asks in 1,688 sessions (#51) |
 | Never `git add -A` | judgment | 2026-11-20 lesson: a pathspec did not stop it |
+| All dispatch via T3 | test:dispatch_t3.py | T3 children run as `build` (2026-11-22) |

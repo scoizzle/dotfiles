@@ -173,6 +173,25 @@ eval (`evals/run-writer.sh`, `tests/eval_writer.py`) on DeepSeek implementors
 from Opus briefs and compares against Opus implementing alone: first-pass green
 rate, review reds per change, and Opus tokens per change.
 
+### All orchestration through T3 (2026-11-22)
+
+The person: "all agent orchestration should be handled via t3". Asked two
+follow-ups, they chose:
+- read-only roles go through T3 too, worktree-isolated;
+- T3 is required everywhere, so opencode's `subagent` tool is denied (`policy/permissions.json`
+  `opencode.tool_deny`) and plain opencode has no dispatch.
+
+A probe the same day found that a T3 child on opencode always runs as `build`.
+`delegate_task` has no agent selector, and plan mode is only a notice in the
+prompt, so the write tools stay listed. Because of that, a reviewer, advisor,
+explore or implementor brief opens with "Read and follow `agents/<role>.md`",
+and `agents/build.md` defers to such a brief. The read-only roles also get
+`isolation: worktree` and `interactionMode: plan`, except the verifier, which
+runs tests. The frontmatter denies still apply where an agent runs as itself:
+`bin/dream` and the eval runners (`opencode run --agent`). The advisor consult
+on the plan asked that the loss of tool-level read-only be put to the person as
+an explicit decision; the person chose it knowing that.
+
 ## Learnings from poteto (Lauren Tan, Cursor)
 
 Sources: the pstack guide and principle skills at the commit #54 pins

@@ -17,15 +17,17 @@ refuses anything `harness-guard` would deny or ask about, because it cannot prom
 
 Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
-Send the bundle directory, the contract, and the recorded check command and output
-to the `review-deep` reviewer (`agents/review-deep.md`). It is read-only: it does
-not edit and does not rebuild. The reviewer is the `reviewer` role (`~/.config/opencode/models.resolved.json`).
+Send the bundle directory (by its absolute path), the contract, and the recorded
+check command and output through T3 `delegate_task` to the reviewer, with a brief
+that opens "Read and follow ~/.config/opencode/agents/review-deep.md" (the installed copy), `isolation:
+"worktree"` and `interactionMode: "plan"` (`agents/build.md`). It is read-only: it
+does not edit and does not rebuild. The reviewer is the `reviewer` role (`~/.config/opencode/models.resolved.json`).
 `bin/models` keeps it out of the implementor's family while the roles span more
 than one; when every role is one family it is a fresh same-model review, and a
 `review_mode` of `stop` means stop and ask the person. A diff the lead wrote
 itself in a Claude family gets a fresh Opus `review-deep`.
 
-If the reviewer is not reachable, stop, leave the change uncommitted, and report it
+If T3 or the reviewer is not reachable, stop, leave the change uncommitted, and report it
 `unreviewed`. If the bundle command failed because this is not a
 git repository, say so and use the changed file list instead.
 

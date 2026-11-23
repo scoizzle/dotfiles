@@ -416,6 +416,8 @@ def main() -> int:
             fail("build: edit must be allow; the default agent does the work")
         if effective(build, "shell", "ls") != "allow":
             fail("build: shell must be allow; the default agent does the work")
+        if effective(build, "subagent", "explore") != "deny":
+            fail("build: subagent must be deny; all dispatch goes through T3 delegate_task")
         if "EXECUTE ALLOWLIST:" in build_text:
             fail("build: EXECUTE ALLOWLIST is the retired dispatcher fence")
         project_build = ROOT / ".opencode" / "agents" / "build.md"

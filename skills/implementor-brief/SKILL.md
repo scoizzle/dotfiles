@@ -35,6 +35,12 @@ Then the mechanics, always:
 - **Base.** A delegate worktree is cut from the parent's current commit, not the
   default branch (2026-11-21). The lead pushes `<base>` before dispatch, and the
   brief starts with `git fetch origin && git checkout -b <branch> origin/<base>`.
+- **Dispatch** is one T3 `delegate_task` (`AGENTS.md` → T3 Code) with
+  `isolation: "worktree"`, `role: "implementation"`, and the implementor role's
+  model from `models.resolved.json`. The child runs as `build`, so the brief's
+  first line is "Read and follow ~/.config/opencode/agents/implementor.md". Its
+  frontmatter denies (`execute`, `subagent`) do not bind a `build` child; the
+  global `subagent` deny still does, and `execute` rests on the brief.
 - **At most three issues per task.** Past about three, a DeepSeek implementor
   hits its step limit and leaves work uncommitted (2026-11-21). Split the rest.
 - **No `git stash`.** The stash is shared by every worktree; commit work in
