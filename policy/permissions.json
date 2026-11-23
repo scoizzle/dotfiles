@@ -364,7 +364,7 @@
     ]
   },
   "roles": {
-    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated itself, only the tools it calls, so its `fetch` is not covered.",
+    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it in tool execute.before against the same allowlist; a read-only role may not use it. An agent run as itself (opencode run --agent X) takes its role from models/roles.json `agents`. reviewer, advisor and explore (not the verifier) allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree (it still may not edit there). In a full-access T3 thread an ask is approved without a prompt (2026-11-23), so only a deny binds there. A session's role line and its agent's role both apply: a call must pass every one, so neither loosens the other.",
     "read_only": [
       "read",
       "grep",
@@ -408,19 +408,22 @@
     "roles": {
       "reviewer": {
         "allow": [
-          "@read_only"
+          "@read_only",
+          "external_directory"
         ]
       },
       "advisor": {
         "allow": [
-          "@read_only"
+          "@read_only",
+          "external_directory"
         ]
       },
       "explore": {
         "allow": [
           "@read_only",
           "webfetch",
-          "websearch"
+          "websearch",
+          "external_directory"
         ]
       },
       "verifier": {
@@ -439,6 +442,9 @@
           "websearch",
           "question"
         ]
+      },
+      "drafter": {
+        "allow": []
       }
     }
   }

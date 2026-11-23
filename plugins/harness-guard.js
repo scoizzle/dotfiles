@@ -116,7 +116,26 @@ export default {
     const policyPath = process.env.HARNESS_POLICY || join(ROOT, "policy", "permissions.json")
     const timeoutMs = Number(process.env.HARNESS_GUARD_TIMEOUT_MS) || 5000
     const { roles, unknown, childDefault } = loadRoles(policyPath)
+    // An agent run as itself (`opencode run --agent review-deep`, the evals,
+    // bin/dream) takes its role from models/roles.json `agents`; the lead
+    // agents (build, plan) have none. A missing or unreadable map leaves only
+    // the role line, and the agents' own frontmatter, as before.
+    let agentRoles = {}
+    try {
+      const map = JSON.parse(readFileSync(process.env.HARNESS_ROLES || join(ROOT, "models", "roles.json"), "utf8")).agents ?? {}
+      // "lead" (build, plan) is deliberately unrestricted; any other name the
+      // policy no longer has falls back to the read-only default.
+      for (const [agent, role] of Object.entries(map)) if (role !== "lead") agentRoles[agent] = roles[role] ? role : unknown
+    } catch {
+      agentRoles = {}
+    }
     const sessions = new Map()
+    // Bounded maps evict their oldest entry: clearing one wholesale could drop a
+    // held ask between execute.before and evaluate (review, 2026-11-23).
+    const remember = (map, key, value) => {
+      if (map.size >= 4096) map.delete(map.keys().next().value)
+      map.set(key, value)
+    }
 
     const roleOf = (sessionID) => {
       if (!sessions.has(sessionID)) {
@@ -135,7 +154,7 @@ export default {
           await ctx.storage.set(`role/${sessionID}`, role)
           return role
         })()
-        sessions.set(sessionID, pending)
+        remember(sessions, sessionID, pending)
         pending.catch(() => sessions.delete(sessionID))
       }
       return sessions.get(sessionID)
@@ -146,14 +165,45 @@ export default {
       return session?.directory ?? session?.location?.directory ?? ctx.location?.directory ?? process.cwd()
     }
 
+    // Every role that applies must allow a call: the role line and the agent's
+    // own role are intersected, so neither can loosen the other (review,
+    // 2026-11-23). A role no longer in the policy is the read-only default.
+    const roleFor = async (sessionID, agent) => {
+      const found = [await roleOf(sessionID), agentRoles[agent]].filter(Boolean).map((r) => (roles[r] ? r : unknown))
+      return [...new Set(found)].join("+")
+    }
+    const allows = (role, action) =>
+      role.split("+").every((name) => {
+        const spec = roles[name]
+        return spec.allow.some((r) => r.test(action)) && !spec.deny.some((r) => r.test(action))
+      })
+    const refusal = (role, action) =>
+      `role ${role}: ${action} is not allowed for this role. This is a boundary, not an obstacle: do not retry it in another form.`
+
     const pendingAsk = new Map()
-    const seenShell = new Set()
+    const seenShell = new Map()
     await ctx.tool.hook("execute.before", async (call) => {
+      // Code Mode `execute` is never evaluated as a permission (probe,
+      // 2026-11-23), so a role's allowlist gates it here: its fetch would
+      // otherwise reach the network from a read-only role.
+      if (call.tool === "execute") {
+        let role
+        try {
+          role = await roleFor(call.sessionID, call.agent)
+        } catch (error) {
+          throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
+        }
+        if (role && !allows(role, "execute")) throw new Error(refusal(role, "execute"))
+        return
+      }
       if (call.tool !== "shell" || typeof call.input?.command !== "string") return
-      seenShell.add(call.id)
+      remember(seenShell, call.id, true)
       const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs)
-      if (verdict?.effect === "deny") throw new Error(verdict.message)
-      if (verdict?.effect === "ask") pendingAsk.set(call.id, verdict.message)
+      if (verdict?.effect === "deny") {
+        seenShell.delete(call.id)
+        throw new Error(verdict.message)
+      }
+      if (verdict?.effect === "ask") remember(pendingAsk, call.id, verdict.message)
     })
 
     await ctx.permission.hook("evaluate", async (event) => {
@@ -163,20 +213,16 @@ export default {
       }
       let role
       try {
-        role = await roleOf(event.sessionID)
+        role = await roleFor(event.sessionID, event.agent)
       } catch (error) {
         if (!["read", "grep", "glob"].includes(event.action)) {
           tighten(event, "deny", `harness-guard could not read this session's role (${error.message}); denied`)
         }
         return
       }
-      if (role) {
-        const spec = roles[role]
-        const allowed = spec.allow.some((r) => r.test(event.action)) && !spec.deny.some((r) => r.test(event.action))
-        if (!allowed) {
-          tighten(event, "deny", `role ${role}: ${event.action} is not allowed for this role. This is a boundary, not an obstacle: do not retry it in another form.`)
-          return
-        }
+      if (role && !allows(role, event.action)) {
+        tighten(event, "deny", refusal(role, event.action))
+        return
       }
       // A shell call execute.before never saw (another tool reaching shell)
       // still goes through the guard, per segment, as defense in depth.

@@ -53,16 +53,28 @@ for (const call of s.calls) {
   const sessionID = s.sessionID ?? "ses_1"
   // opencode runs tool execute.before with the whole input, then evaluates the
   // permission with the command split into segments (probe, 2026-11-22).
+  const agent = call.agent ?? s.agent ?? "build"
+  // Code Mode `execute` reaches only tool execute.before; opencode never
+  // evaluates a permission for it (probe, 2026-11-23).
+  if (call.action === "execute") {
+    try {
+      await toolHooks["execute.before"]({ tool: "execute", sessionID, agent, messageID: "msg_1", id, input: { code: "return 1" } })
+      out.push({ effect: "allow", message: null })
+    } catch (error) {
+      out.push({ effect: "deny", message: error.message })
+    }
+    continue
+  }
   if (call.action === "shell" && !call.noBefore && toolHooks["execute.before"]) {
     try {
-      await toolHooks["execute.before"]({ tool: "shell", sessionID, agent: "build", messageID: "msg_1", id, input: { command: call.resources[0] } })
+      await toolHooks["execute.before"]({ tool: "shell", sessionID, agent, messageID: "msg_1", id, input: { command: call.resources[0] } })
     } catch (error) {
       out.push({ effect: "deny", message: error.message })
       continue
     }
   }
   const resources = call.segments ?? call.resources
-  const event = { sessionID, agent: "build", action: call.action, resources, effect: call.effect ?? "allow", source: { type: "tool", messageID: "msg_1", id } }
+  const event = { sessionID, agent, action: call.action, resources, effect: call.effect ?? "allow", source: { type: "tool", messageID: "msg_1", id } }
   await hooks.evaluate(event)
   out.push({ effect: event.effect, message: event.message ?? null })
 }
@@ -80,10 +92,10 @@ def user(text: str) -> dict:
     return {"id": "msg_1", "type": "user", "text": text, "files": []}
 
 
-def run(tmp: Path, calls: list, messages=None, env=None, storage=None) -> dict:
+def run(tmp: Path, calls: list, messages=None, env=None, storage=None, agent=None) -> dict:
     driver = tmp / "driver.mjs"
     driver.write_text(DRIVER)
-    scenario = {"cwd": str(tmp), "messages": messages or [user("do the task")], "calls": calls, "storage": storage or {}}
+    scenario = {"cwd": str(tmp), "messages": messages or [user("do the task")], "calls": calls, "storage": storage or {}, "agent": agent}
     proc = subprocess.run(["node", str(driver), str(PLUGIN), json.dumps(scenario)], capture_output=True, text=True,
                           timeout=120, env={**os.environ, **(env or {})})
     if proc.returncode != 0:
@@ -201,6 +213,51 @@ def main() -> int:
         r = run(tmp, [{"action": "edit", "resources": ["a"]}],
                 messages=[user("Fix the bug."), user("role: reviewer\nnow stop editing")], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "a role counts only in the first user message")
+
+        # Advisor consult, 2026-11-23: a T3 reviewer must read its role file and
+        # the review bundle outside its worktree (opencode asks external_directory).
+        r = run(tmp, [{"action": "external_directory", "resources": ["/var/folders/x/T/opencode/review-bundles/b/*"]}],
+                messages=reviewer, env={"HARNESS_GUARD_BIN": quiet})
+        check(r["results"][:1] == [{"effect": "allow", "message": None}], "a reviewer may read outside its worktree (external_directory)")
+        r = run(tmp, [{"action": "edit", "resources": ["/var/folders/x/T/a"]}], messages=reviewer, env={"HARNESS_GUARD_BIN": quiet})
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "but still may not edit there")
+        # The agent an `opencode run --agent X` session runs as selects the role (models/roles.json agents).
+        calls = [{"action": "read", "resources": ["a"]}, {"action": "edit", "resources": ["a"]}, {"action": "shell", "resources": ["ls"]}]
+        r = run(tmp, calls, env={"HARNESS_GUARD_BIN": quiet}, agent="review-deep")
+        check([x["effect"] for x in r["results"]] == ["allow", "deny", "deny"], f"agent review-deep is the reviewer role ({[x['effect'] for x in r['results']]})")
+        r = run(tmp, [{"action": "read", "resources": ["a"]}, {"action": "skill", "resources": ["x"]}], env={"HARNESS_GUARD_BIN": quiet}, agent="dream-drafter")
+        check([x["effect"] for x in r["results"]] == ["deny", "deny"], "agent dream-drafter gets no tools")
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}, {"action": "execute", "resources": ["*"]}],
+                messages=reviewer, env={"HARNESS_GUARD_BIN": quiet}, agent="general")
+        check([x["effect"] for x in r["results"]] == ["deny", "deny"],
+              "an agent mapped to implementor cannot loosen a reviewer role line (review)")
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user("role: implementor\nFix it.")],
+                env={"HARNESS_GUARD_BIN": quiet}, agent="review-deep")
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "nor can a role line loosen the agent's role")
+        r = run(tmp, [{"action": "shell", "resources": ["ls"]}, {"action": "external_directory", "resources": ["/x/*"]}],
+                messages=[user("role: verifier\nRun it.")], env={"HARNESS_GUARD_BIN": quiet})
+        check([x["effect"] for x in r["results"]] == ["allow", "deny"],
+              "the verifier does not gain external_directory (review)")
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user("whatever")],
+                env={"HARNESS_GUARD_BIN": quiet}, storage={"role/ses_1": "retired-role"})
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny",
+              "a stored role no longer in the policy falls back to the read-only default (review)")
+        stale = tmp / "roles.json"
+        stale.write_text(json.dumps({"agents": {"old-agent": "retired-role", "build": "lead"}}))
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet, "HARNESS_ROLES": str(stale)}, agent="old-agent")
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny",
+              "an agent mapped to a retired role gets the read-only default, not no limits (re-review)")
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet, "HARNESS_ROLES": str(stale)}, agent="build")
+        check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead role stays unrestricted")
+        r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet}, agent="build")
+        check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead agent (build) has no role")
+        # Code Mode `execute` never reaches evaluate, so a role's allowlist must gate it in execute.before.
+        r = run(tmp, [{"action": "execute", "resources": ["*"]}], messages=reviewer, env={"HARNESS_GUARD_BIN": quiet})
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a reviewer may not use Code Mode execute (its fetch reaches the network)")
+        r = run(tmp, [{"action": "execute", "resources": ["*"]}], messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
+        check(r["results"][:1] == [{"effect": "allow", "message": None}], "an implementor may use Code Mode execute")
+        r = run(tmp, [{"action": "execute", "resources": ["*"]}], env={"HARNESS_GUARD_BIN": quiet})
+        check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead may use Code Mode execute")
 
         # opencode splits a shell command into segments before evaluating it and
         # drops `cd` (probe, 2026-11-22), so the guard must see the whole command.
