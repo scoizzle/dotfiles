@@ -35,17 +35,11 @@ try:
 except ImportError:  # Windows native is unsupported; keep the module importable.
     pwd = None
 
-# The one bot list. Adding a bot is one line here; setup and notify-bot both use it.
-BOTS = (
-    "JARVIS",
-    "ENGINEERING_LEAD",
-    "VENTURE",
-    "HERALD",
-    "EDWARD",
-    "PATRON",
-    "FORGE",
-    "SWE",
-)
+# A bot is a name with a <NAME>_WEBHOOK_URL or _AUTH key in the person's 0600
+# file; there is no list in the code, so a friend using this repo starts with
+# none (2026-11-22). Add one with bin/setup-bot-webhooks --add NAME.
+BOT_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
+BOT_KEY = re.compile(r"([A-Z][A-Z0-9_]*)_WEBHOOK_(URL|AUTH)")
 
 TIMEOUT = 10
 SCHEMES = {"bearer", "basic", "token", "digest", "apikey"}
@@ -135,15 +129,25 @@ def load_config(path: Path | None = None) -> dict[str, str]:
     return values
 
 
-def bot_key(name: str) -> str | None:
-    key = name.strip().upper().replace("-", "_")
-    return key if key in BOTS else None
+def bots(path: Path | None = None) -> tuple[str, ...]:
+    """The bots the file names, in file order. A key that is not NAME_WEBHOOK_URL
+    or NAME_WEBHOOK_AUTH with NAME in A-Z, 0-9, _ is not a bot."""
+    seen: list[str] = []
+    for key in load_config(path):
+        match = BOT_KEY.fullmatch(key)
+        if match and match.group(1) not in seen:
+            seen.append(match.group(1))
+    return tuple(seen)
+
+
+def bot_key(name: str) -> str:
+    return name.strip().upper().replace("-", "_")
 
 
 def configured_bots(path: Path | None = None) -> dict[str, tuple[str, str]]:
     values = load_config(path)
     out = {}
-    for key in BOTS:
+    for key in bots(path):
         url = values.get(f"{key}_WEBHOOK_URL", "")
         auth = values.get(f"{key}_WEBHOOK_AUTH", "")
         if url and auth:
@@ -181,25 +185,23 @@ def post(url: str, auth: str, payload: dict) -> int:
 
 def send(name: str, status: str, summary: str, thread: str, path: Path | None = None) -> int:
     key = bot_key(name)
-    if key is None:
-        print(f"notify-bot: unknown bot {name!r}; known: {', '.join(BOTS)}", file=sys.stderr)
-        return 2
     status = status.strip()
     if not status:
         print("notify-bot: status must not be empty", file=sys.stderr)
         return 2
     try:
-        bots = configured_bots(path)
+        ready = configured_bots(path)
     except ConfigError as exc:
         print(f"notify-bot: {exc}", file=sys.stderr)
         return 1
-    if key not in bots:
+    if key not in ready:
+        shown = key if BOT_NAME.fullmatch(key) else repr(name)
         print(
-            f"notify-bot: {key} is not configured; run bin/setup-bot-webhooks",
+            f"notify-bot: {shown} is not configured; run bin/setup-bot-webhooks --add {shown}",
             file=sys.stderr,
         )
         return 2
-    url, auth = bots[key]
+    url, auth = ready[key]
     try:
         auth = normalize_auth(auth)
     except ValueError:
@@ -223,12 +225,16 @@ def send(name: str, status: str, summary: str, thread: str, path: Path | None = 
 
 def list_bots(path: Path | None = None) -> int:
     try:
-        bots = configured_bots(path)
+        ready = configured_bots(path)
     except ConfigError as exc:
         print(f"notify-bot: {exc}", file=sys.stderr)
         return 1
-    for key in BOTS:
-        print(f"{key}  {'configured' if key in bots else 'not configured'}")
+    names = bots(path)
+    if not names:
+        print("no bots configured; add one with bin/setup-bot-webhooks --add NAME")
+        return 0
+    for key in names:
+        print(f"{key}  {'configured' if key in ready else 'not configured'}")
     return 0
 
 

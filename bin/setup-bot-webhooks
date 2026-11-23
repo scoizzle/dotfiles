@@ -57,22 +57,23 @@ def url_error(url: str) -> str | None:
         return "invalid URL"
 
 
+def bot_names(values: dict[str, str]) -> list[str]:
+    """Bots the file names, in file order (the same rule as notify-bot's bots())."""
+    names: list[str] = []
+    for key in values:
+        match = notify.BOT_KEY.fullmatch(key)
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    return names
+
+
 def read_bots(values: dict[str, str]) -> dict[str, dict[str, str]]:
-    bots = {}
-    for key in notify.BOTS:
-        url = values.get(f"{key}_WEBHOOK_URL", "")
-        auth = values.get(f"{key}_WEBHOOK_AUTH", "")
-        if url or auth:
-            bots[key] = {"url": url, "auth": auth}
-    return bots
+    return {key: {"url": values.get(f"{key}_WEBHOOK_URL", ""), "auth": values.get(f"{key}_WEBHOOK_AUTH", "")}
+            for key in bot_names(values)}
 
 
-def known_keys() -> set[str]:
-    keys = set()
-    for key in notify.BOTS:
-        keys.add(f"{key}_WEBHOOK_URL")
-        keys.add(f"{key}_WEBHOOK_AUTH")
-    return keys
+def known_keys(names: list[str]) -> set[str]:
+    return {f"{key}_WEBHOOK_{part}" for key in names for part in ("URL", "AUTH")}
 
 
 def render(bots: dict[str, dict[str, str]], extras: dict[str, str]) -> str:
@@ -81,13 +82,12 @@ def render(bots: dict[str, dict[str, str]], extras: dict[str, str]) -> str:
         "# Do not commit this file.",
         "",
     ]
-    for key in notify.BOTS:
-        entry = bots.get(key)
-        if not entry:
-            continue
-        lines.append(f"export {key}_WEBHOOK_URL={shell_quote(entry['url'])}")
-        lines.append(f"export {key}_WEBHOOK_AUTH={shell_quote(entry['auth'])}")
-    # A bot dropped from the list keeps its keys: deleting a secret has no undo.
+    for key, entry in bots.items():
+        if entry.get("url"):
+            lines.append(f"export {key}_WEBHOOK_URL={shell_quote(entry['url'])}")
+        if entry.get("auth"):
+            lines.append(f"export {key}_WEBHOOK_AUTH={shell_quote(entry['auth'])}")
+    # Any other key in the file is kept as is: deleting a secret has no undo.
     for key in sorted(extras):
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
             lines.append(f"export {key}={shell_quote(extras[key])}")
@@ -143,10 +143,13 @@ def ask(label: str, hidden: bool, keep: bool) -> str:
     return value.strip()
 
 
-def interactive(bots: dict[str, dict[str, str]]) -> bool:
+def interactive(bots: dict[str, dict[str, str]], names: list[str]) -> bool:
     changed = False
     prompted = False
-    for key in notify.BOTS:
+    if not names:
+        print("no bots configured; name one with --add NAME (repeatable)")
+        return False
+    for key in names:
         existing = bots.get(key, {})
         complete = bool(existing.get("url") and existing.get("auth"))
         print(f"{key}: {'configured' if complete else 'not configured'}")
@@ -198,9 +201,12 @@ def interactive(bots: dict[str, dict[str, str]]) -> bool:
     return changed
 
 
-def non_interactive(bots: dict[str, dict[str, str]]) -> bool:
+def non_interactive(bots: dict[str, dict[str, str]], names: list[str]) -> bool:
+    """Read <NAME>_WEBHOOK_* from the environment for the bots already in the file
+    and those named with --add, never for any other name: an unrelated
+    SLACK_WEBHOOK_URL must not be swept into the secrets file."""
     changed = False
-    for key in notify.BOTS:
+    for key in names:
         url = os.environ.get(f"{key}_WEBHOOK_URL", "").strip()
         auth = os.environ.get(f"{key}_WEBHOOK_AUTH", "").strip()
         if not url and not auth:
@@ -227,7 +233,9 @@ def non_interactive(bots: dict[str, dict[str, str]]) -> bool:
 
 def report(bots: dict[str, dict[str, str]], path: Path) -> None:
     print(f"file  {path}")
-    for key in notify.BOTS:
+    if not bots:
+        print("no bots configured; add one with --add NAME")
+    for key in bots:
         entry = bots.get(key, {})
         complete = bool(entry.get("url") and entry.get("auth"))
         print(f"{key}  {'configured' if complete else 'not configured'}")
@@ -292,7 +300,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Configure Grok Bot webhook callbacks.")
     parser.add_argument("--check", action="store_true", help="show configured bots, no prompts")
     parser.add_argument("--non-interactive", action="store_true",
-                        help="read <BOT>_WEBHOOK_URL and <BOT>_WEBHOOK_AUTH from the environment")
+                        help="read <BOT>_WEBHOOK_URL and <BOT>_WEBHOOK_AUTH from the environment, "
+                             "for bots already in the file and those named with --add")
+    parser.add_argument("--add", action="append", default=[], metavar="NAME",
+                        help="add a bot by name (A-Z, 0-9, _; repeatable)")
     parser.add_argument("--env", help="webhook env file for tests (notify-bot reads only the default path)")
     parser.add_argument("--rc", action="append", help="shell rc file to update (repeatable)")
     parser.add_argument("--no-rc", action="store_true", help="do not touch a shell rc file")
@@ -314,8 +325,15 @@ def main(argv: list[str]) -> int:
         print(f"setup-bot-webhooks: {exc}", file=sys.stderr)
         return 1
 
+    added = [name.strip().upper().replace("-", "_") for name in args.add]
+    for name in added:
+        if not notify.BOT_NAME.fullmatch(name):
+            print(f"setup-bot-webhooks: --add {name!r}: a bot name is A-Z, 0-9 and _, starting with a letter",
+                  file=sys.stderr)
+            return 2
     bots = read_bots(values)
-    extras = {key: value for key, value in values.items() if key not in known_keys()}
+    names = list(bots) + [name for name in added if name not in bots]
+    extras = {key: value for key, value in values.items() if key not in known_keys(list(bots))}
 
     if args.check:
         report(bots, env_path)
@@ -323,9 +341,9 @@ def main(argv: list[str]) -> int:
 
     try:
         if args.non_interactive:
-            changed = non_interactive(bots)
+            changed = non_interactive(bots, names)
         else:
-            changed = interactive(bots)
+            changed = interactive(bots, names)
     except KeyboardInterrupt:
         print("\nsetup-bot-webhooks: interrupted; nothing written", file=sys.stderr)
         return 130

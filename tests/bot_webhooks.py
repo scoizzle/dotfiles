@@ -8,6 +8,7 @@ values are generated at runtime, so no credential-shaped literal lives here.
 import importlib.machinery
 import importlib.util
 import json
+import re
 import os
 import pwd
 import secrets
@@ -55,7 +56,7 @@ def base_env(home, env_path):
     clean = {
         key: value
         for key, value in os.environ.items()
-        if not any(key.startswith(f"{bot}_WEBHOOK_") for bot in BOTS)
+        if not re.fullmatch(r"[A-Za-z0-9_]+_WEBHOOK_(URL|AUTH)", key)
     }
     clean.update({
         "HOME": str(home),
@@ -190,7 +191,25 @@ def main():
         check(True, "a control character is refused")
     else:
         check(False, "a control character is refused")
-    check(module.BOTS == tuple(BOTS), "bot list is the expected single array")
+    # The bot list is the person's config, not the code (2026-11-22: friends use this repo).
+    check("ENGINEERING_LEAD" not in NOTIFY.read_text(), "notify-bot carries no person's bot names")
+    with tempfile.TemporaryDirectory() as listing_tmp:
+        empty = Path(listing_tmp) / "empty"
+        empty.write_text("")
+        check(module.bots(Path(listing_tmp) / "missing") == () and module.bots(empty) == (),
+              "no config file, or an empty one, means no bots")
+        listed = Path(listing_tmp) / "env"
+        listed.write_text(
+            "export B_WEBHOOK_URL='https://example.test/b'\nexport B_WEBHOOK_AUTH='Bearer x'\n"
+            "export A_WEBHOOK_URL='https://example.test/a'\nexport A_WEBHOOK_AUTH='Bearer y'\n"
+            "export C_WEBHOOK_URL='https://example.test/c'\n"
+            "export D_WEBHOOK_AUTH='Bearer z'\n"
+            "export lower_WEBHOOK_URL='https://example.test/l'\nexport _WEBHOOK_URL='https://x.test'\n"
+            "export 9X_WEBHOOK_URL='https://example.test/9'\nexport SLACK_TOKEN='keep'\n")
+        check(module.bots(listed) == ("B", "A", "C", "D"),
+              f"bots come from the file in file order, URL-only and auth-only included (got {module.bots(listed)})")
+        check(set(load_setup().read_bots(module.load_config(listed))) == set(module.bots(listed)),
+              "setup and notify-bot read the same bot list")
     check(os.access(NOTIFY, os.X_OK) and os.access(SETUP, os.X_OK), "both bin scripts are executable")
     check(module.url_problem("https://example.test/hook") is None, "https is accepted")
     check(module.url_problem("http://127.0.0.1:9/hook") is None, "loopback http is accepted")
@@ -233,7 +252,7 @@ def main():
         # Unconfigured: a clear nonzero failure, no secret, no URL echo.
         listing = notify(env, env_path, "--list")
         check(listing.returncode == 0, "--list succeeds without a config file")
-        check("JARVIS" in listing.stdout and "not configured" in listing.stdout, "--list names every bot")
+        check("no bots configured" in listing.stdout, "--list with no config says no bots are configured")
 
         missing = notify(env, env_path, "JARVIS", "done", "nothing to send")
         check(missing.returncode == 2, "unconfigured bot exits 2")
@@ -252,7 +271,8 @@ def main():
         check(usage.returncode == 0 and "notify-bot <bot>" in usage.stdout,
               "notify-bot with no args prints usage")
         unknown = run([str(NOTIFY), "NOPE", "done", "x"], env)
-        check(unknown.returncode == 2 and "unknown bot" in unknown.stderr, "an unknown bot exits 2")
+        check(unknown.returncode == 2 and "not configured" in unknown.stderr and "--add NOPE" in unknown.stderr,
+              "a bot not in the config exits 2 and says how to add it")
         bad_test = run([str(NOTIFY), "--test"], env)
         check(bad_test.returncode == 2, "--test without a bot exits 2")
 
@@ -260,7 +280,7 @@ def main():
         with Listener() as listener:
             env["JARVIS_WEBHOOK_URL"] = listener.url
             env["JARVIS_WEBHOOK_AUTH"] = secret
-            first = run([str(SETUP), "--non-interactive", "--no-rc"], env)
+            first = run([str(SETUP), "--non-interactive", "--no-rc", "--add", "JARVIS"], env)
             check(first.returncode == 0, "non-interactive setup exits 0")
             check(env_path.is_file(), "env file is written")
             check((env_path.stat().st_mode & 0o777) == 0o600, "env file is 0600")
@@ -299,7 +319,7 @@ def main():
             check(listed.returncode == 0, "--list succeeds when configured")
             lines = {line.split()[0]: line for line in listed.stdout.splitlines() if line.split()}
             check(configured(lines.get("JARVIS", "")), "--list shows JARVIS configured")
-            check(not configured(lines.get("FORGE", "")), "--list shows FORGE unconfigured")
+            check("FORGE" not in lines, "--list does not show a bot that was never added")
             check(secret not in listed.stdout and listener.url not in listed.stdout,
                   "--list prints no secret and no URL")
 
@@ -325,7 +345,7 @@ def main():
             weird = "a'b$c`d e#f=g"
             env["HERALD_WEBHOOK_URL"] = listener.url
             env["HERALD_WEBHOOK_AUTH"] = "Bearer " + weird
-            quoted = run([str(SETUP), "--non-interactive", "--no-rc"], env)
+            quoted = run([str(SETUP), "--non-interactive", "--no-rc", "--add", "HERALD"], env)
             check(quoted.returncode == 0, "second bot setup exits 0")
             parsed = module.load_config(env_path)
             check(parsed.get("HERALD_WEBHOOK_AUTH") == "Bearer " + weird,
@@ -342,13 +362,9 @@ def main():
             fresh.mkdir()
             fresh_env_path = fresh / ".config" / "bot-webhooks" / "env"
             fresh_env = base_env(fresh, fresh_env_path)
-            lines = []
-            for bot in BOTS:
-                if bot == "HERALD":
-                    lines.extend(["http://127.0.0.1:9/herald", "Bearer " + other])
-                    break
-                lines.append("")
-            typed = run([str(SETUP), "--no-rc"], fresh_env, stdin="\n".join(lines) + "\n")
+            lines = ["", "http://127.0.0.1:9/herald", "Bearer " + other]
+            typed = run([str(SETUP), "--no-rc", "--add", "JARVIS", "--add", "HERALD"], fresh_env,
+                        stdin="\n".join(lines) + "\n")
             check(typed.returncode == 0, "interactive URL+auth entry exits 0")
             check("HERALD_WEBHOOK_AUTH='Bearer " + other + "'" in fresh_env_path.read_text(),
                   "interactive hidden value is stored normalized")
@@ -398,6 +414,20 @@ def main():
             check(rc_home / ".profile" not in bash_targets,
                   "bash does not add .profile when .bash_profile exists")
 
+        # Advisor consult (2026-11-22): names come from the file and --add only, never the
+        # environment, so an unrelated SLACK_WEBHOOK_URL is not swept into the secrets file.
+        stray_path = Path(tmp) / "stray" / "env"
+        stray_env = base_env(home, stray_path)
+        stray_env["SLACK_WEBHOOK_URL"] = "https://hooks.example.test/slack"
+        stray_env["SLACK_WEBHOOK_AUTH"] = secret
+        stray = run([str(SETUP), "--non-interactive", "--no-rc"], stray_env)
+        check(stray.returncode == 0 and not stray_path.exists(),
+              "an unrelated *_WEBHOOK_* variable is not written without --add")
+        badname = run([str(SETUP), "--non-interactive", "--no-rc", "--add", "x;y"], stray_env)
+        check(badname.returncode == 2 and not stray_path.exists(), "--add refuses a name that is not A-Z, 0-9, _")
+        nothing = run([str(SETUP), "--no-rc"], base_env(home, Path(tmp) / "nothing" / "env"), stdin="")
+        check("--add" in nothing.stdout + nothing.stderr, "setup with no bots says to use --add")
+
         # A failing endpoint exits nonzero without printing the secret.
         with Listener(status=500) as broken:
             env["JARVIS_WEBHOOK_URL"] = broken.url
@@ -424,7 +454,7 @@ def main():
         bad_env = base_env(home, bad_path)
         bad_env["JARVIS_WEBHOOK_URL"] = "http://host:notaport/hook"
         bad_env["JARVIS_WEBHOOK_AUTH"] = secret
-        bad = run([str(SETUP), "--non-interactive", "--no-rc"], bad_env)
+        bad = run([str(SETUP), "--non-interactive", "--no-rc", "--add", "JARVIS"], bad_env)
         check(bad.returncode == 0, "a malformed URL does not crash setup")
         check(not bad_path.exists(), "a malformed URL is not written")
 

@@ -140,15 +140,18 @@ T3 threads and agent jobs can POST a completion callback to a Grok Bot webhook.
 Each bot has a URL and a sender key on its routine panel.
 
 ```sh
-./bin/setup-bot-webhooks          # prompt for each bot
+./bin/setup-bot-webhooks --add JARVIS   # name a bot, then prompt for it
+./bin/setup-bot-webhooks          # prompt again for the bots you have
 ./setup.sh --bots                 # opt in during a normal install
 ./bin/setup-bot-webhooks --check  # what is configured, no prompts
 ```
 
 The URL prompt is visible; the authorization prompt is hidden. Paste either the
 panel's full `Authorization` value (`Bearer …`) or just the key. Enter keeps the
-existing value; blank on a first run skips that bot. The list is `BOTS` at the top
-of `bin/notify-bot`, so adding a bot is a one-line change.
+existing value; blank on a first run skips that bot. Your bots are the names in
+your own file, so a friend using this repo starts with none; `--add NAME` adds one
+(A-Z, 0-9, `_`). `--non-interactive` reads `<NAME>_WEBHOOK_URL` and `_AUTH` from
+the environment only for those names, never for any other webhook variable.
 
 Values live outside git in `~/.config/bot-webhooks/env` (mode 0600, directory
 0700). `bin/setup-bot-webhooks` writes one managed block into the shell rc files;
