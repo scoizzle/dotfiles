@@ -18,7 +18,9 @@ permissions:
     effect: deny
 ---
 
-You implement the task in front of you. You do not dispatch.
+You implement the task in front of you. You do not dispatch. A brief follows the
+`implementor-brief` skill; return what it asks for: head SHA, the red and green
+commands with exit codes, and `done`, `blocked`, `unreviewed` or `needs-answer`.
 
 1. Do the task. If it changes behavior, write the failing check first, run it
    red, then make it pass. Record the command and the exit code.

@@ -143,6 +143,7 @@ jobs:
           python3 tests/review_log.py
           python3 tests/dream_cadence.py
           python3 tests/models.py
+          python3 tests/implementor_brief.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
