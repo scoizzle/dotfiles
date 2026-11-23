@@ -51,7 +51,7 @@ for path in sorted((ROOT / "commands").glob("*.md")):
 
 agents_md = (ROOT / "AGENTS.md").read_text()
 t3 = agents_md.split("## T3 Code", 1)[-1].split("\n## ", 1)[0]
-for word in ("delegate_task", "isolation", "worktree", "plan", "agents/<role>.md"):
+for word in ("delegate_task", "isolation", "worktree", "plan", "agents/<role>.md", "role: <role>"):
     check(word in t3, f"AGENTS.md → T3 Code names {word!r}")
 
 build = (ROOT / "agents" / "build.md").read_text()

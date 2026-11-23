@@ -19,7 +19,7 @@ Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
 Send the bundle directory (by its absolute path), the contract, and the recorded
 check command and output through T3 `delegate_task` to the reviewer, with a brief
-that opens "Read and follow ~/.config/opencode/agents/review-deep.md" (the installed copy), `isolation:
+whose first line is `role: reviewer`, then "Read and follow ~/.config/opencode/agents/review-deep.md" (the installed copy), `isolation:
 "worktree"` and `interactionMode: "plan"` (`agents/build.md`). It is read-only: it
 does not edit and does not rebuild. The reviewer is the `reviewer` role (`~/.config/opencode/models.resolved.json`).
 `bin/models` keeps it out of the implementor's family while the roles span more

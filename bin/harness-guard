@@ -20,10 +20,10 @@ whose old and new text are identical is denied as a no-op. A write to live
 harness configuration, the installed paths and the checkout this guard was loaded
 from, asks: resolving both sides catches the checkout wherever it lives, and the
 edit would be live for every session at once. A deny ends with a sentence saying
-it is a boundary, not an obstacle. v2 runs opencode only, which has no hook, so
-this is no longer rendered as anyone's hook: it is the parser behind the policy
-vectors' guard engine and review-bundle --check, and an existing Claude Code
-settings.json that registers it still works. It is still best effort. It
+it is a boundary, not an obstacle. In v2, plugins/harness-guard.js runs it for
+every opencode shell and edit call (opencode itself has no command hook); it is
+also the parser behind the policy vectors' guard engine and review-bundle
+--check, and an existing Claude Code settings.json that registers it still works. It is still best effort. It
 does not understand `python -c`, a decode done by another tool, or variables built
 at run time. It is a convenience layer, not a sandbox: the user owns the file that
 registers it. See docs/security-model.md.

@@ -46,23 +46,22 @@ A second reviewer only when asked or after the same check failed twice.
   as a PR without waiting to be asked.
 - Keep diffs minimal; reuse an existing helper or rule before adding a parallel
   one, and say which.
-- A denied command or blocked edit is a boundary, not an obstacle: do not retry
-  it in another spelling, tool or script. Take a safer path or stop and ask.
+- A denied command or blocked edit is a boundary, not an obstacle: never retry
+  it in another spelling, tool or script; take a safer path or stop and ask.
 - A one-step revert proceeds; shared state and auth name their cleanup first.
 
 ## T3 Code
 
-All dispatch is T3 `delegate_task`; opencode's `subagent` is denied, so without
-T3 a sensitive change stops and asks. A child runs as `build`, so its brief opens
-"follow `agents/<role>.md`" and targets that role's model; reviewer, advisor and
-explore also get `isolation: "worktree"` and `interactionMode: "plan"` (verifier:
-worktree only).
+All dispatch is T3 `delegate_task` (`subagent` is denied; without T3 a sensitive
+change stops and asks). A brief starts `role: <role>`, then "follow `agents/<role>.md`",
+on the role's model; reviewer, advisor and explore add `isolation: "worktree"`,
+`interactionMode: "plan"` (verifier: worktree only).
 
 `t3-code*` tools own the worktree and link/watch state, `git` and `gh pr create`
 (or `pull_request_*`) the PR. A finished change: push, open, `link_pull_request`, one
 `watch_pull_request` (never re-armed; a wake is not a merge),
-`unwatch_pull_request` before handback. `t3_worktree_handoff` goes last: it ends
-the session. Children never watch.
+`unwatch_pull_request` before handback. `t3_worktree_handoff` goes last (it ends
+the session). Children never watch.
 
 A dispatch naming a bot, thread id and configured webhook ends with
 `notify-bot <BOT> <status> "<one-line summary>" <thread-id>`; not from a child,
@@ -70,9 +69,9 @@ a failure never fails the task, never print the secret.
 
 ## Models and the advisor
 
-Models come from roles (`models/roles.json`, a profile, this machine's
-`models.local.json`), resolved in `models.resolved.json`. Use your role's model;
-a lookup may use `explore`; the advisor triggers are the only escalation.
+Roles (`models/roles.json`, a profile, `models.local.json`) resolve to models
+in `models.resolved.json`. Use your role's model;
+a lookup may use `explore`; advisor triggers are the only escalation.
 
 A read-only `advisor` consult is required when a trigger fires, at most twice
 per change:
@@ -83,7 +82,7 @@ per change:
 - the plan touches more than three files (tests and config count) or 400 lines
   added plus removed.
 
-It returns risks, a simpler alternative and missed cases; record the answer. It
+Record its answer (risks, a simpler alternative, missed cases). It
 never replaces the review, can add a stop but never remove one, never answers
 intent (`proceed` included), and never authorizes a choice with no undo.
 
@@ -147,4 +146,5 @@ A rule enters this file only with a named incident or a failing eval.
 | Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests |
 | Intent goes to the person | judgment | 24 asks in 1,688 sessions (#51) |
 | Never `git add -A` | judgment | 2026-11-20 lesson: a pathspec did not stop it |
-| All dispatch via T3 | test:dispatch_t3.py | T3 children run as `build` (2026-11-22) |
+| All dispatch via T3 | test:dispatch_t3.py | T3 children run as `build` |
+| Role and shell limits in every session | test:guard_plugin.py | heredoc writes passed the globs |

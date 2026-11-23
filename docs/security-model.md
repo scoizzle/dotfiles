@@ -16,7 +16,8 @@ that every later session trusts).
 | Control | Where | Strength |
 | --- | --- | --- |
 | The dream drafter, and an agent run as itself (`opencode run --agent review-deep`, the evals), has no `edit`, `shell`, `subagent`, or `webfetch` | `agents/*.md` | Tool-level. Not reachable by text. |
-| A reviewer, advisor, explore, verifier or implementor dispatched through T3 runs as `build` (T3's `delegate_task` cannot pick an agent; probe, 2026-11-22), so its read-only limits are the brief ("Read and follow `agents/<role>.md`") and `interactionMode: plan`, and a stray edit lands in its own `isolation: worktree` checkout, not the lead's tree. The implementor's `execute` deny is lost the same way; `subagent` stays denied globally | `AGENTS.md` → T3 Code, `agents/build.md` | Instruction plus isolation. Weaker than tool-level; the person accepted this on 2026-11-22. |
+| A T3 child runs as `build` (T3's `delegate_task` cannot pick an agent; probe, 2026-11-22), so its limits come from `plugins/harness-guard.js`: the first `role: <name>` line of its first message selects an action allowlist (`policy/permissions.json` `roles`), anything else is denied, a T3 child with no role line gets the read-only set, the role is stored per session and never relaxed, and in a role session an ask becomes a deny. Verified live: a `role: reviewer` session's write was rejected | `plugins/harness-guard.js`, `policy/permissions.json` | Tool-level for every tool call opencode evaluates. Not covered: Code Mode `execute` is not evaluated itself, so its `fetch` reaches the network; a verifier's shell can still write through what the guard does not parse (`python -c`, `sed -i`). |
+| Every shell and edit call in every session goes through `bin/harness-guard` (heredoc writes, `sh -c`, git global options, decode-to-shell), not only opencode's text globs. A crash, a 5 s timeout or a missing python3 denies. Verified live: a heredoc write the globs allow was denied | `plugins/harness-guard.js` | Parser, best effort (see the guard's own limits below); fails closed. |
 | opencode's `subagent` tool is denied for every agent: all dispatch is T3 | `policy/permissions.json` `opencode.tool_deny`, rendered into `opencode.json` | Tool-level. |
 | `memory/core/` is edit-denied for every agent | `opencode.json` | Tool-level for the edit tools. OpenCode v2 gates `write` and `patch` with the `edit` permission (https://opencode.ai/docs/permissions/, "Target path for edit, write, and patch"). `multiedit` is not a documented action, so there is no separate deny. |
 | A write to live harness configuration — the installed paths (`~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,plugins}`, `~/.claude/{CLAUDE.md,settings.json}`, `~/.local/bin/notify-bot`, `~/.config/opencode/models*`) and the checkout they link to — is `ask` | `policy/permissions.json` `control_plane`, rendered into `opencode.json` and the native rules | Tool-level for the edit tools, and the guard resolves real paths for shell writes. `ask`, not `deny`: a person confirms. |
@@ -48,9 +49,9 @@ vectors through both engines (the guard and opencode's rules) in CI, so they can
 v2 runs opencode only (`docs/v2-plan.md`). Its rules are `opencode.json`
 `permissions` and the `verifier` block, rendered by `bin/sync-harness`, plus
 opencode's non-overridable `policies`; it has no hook, so its shell and edit calls
-are matched as text. `bin/harness-guard` is no longer rendered as anyone's hook.
-It stays as the parser behind the vectors' guard engine and `review-bundle
---check`. A `~/.claude/settings.json` that an earlier install wrote keeps its
+are matched as text. `bin/harness-guard` runs in every opencode session through
+`plugins/harness-guard.js`, and is also the parser behind the vectors' guard
+engine and `review-bundle --check`. A `~/.claude/settings.json` that an earlier install wrote keeps its
 `PreToolUse` hook, so a native Claude Code session on that machine is still
 guarded; nothing renders or updates that file any more.
 

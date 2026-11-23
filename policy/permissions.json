@@ -362,5 +362,84 @@
     "shell_deny_extra": [
       "*/.claude/*"
     ]
+  },
+  "roles": {
+    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated itself, only the tools it calls, so its `fetch` is not covered.",
+    "read_only": [
+      "read",
+      "grep",
+      "glob",
+      "skill",
+      "todowrite",
+      "roslynk_find_dead_code",
+      "roslynk_find_dead_conditionals",
+      "roslynk_find_definition",
+      "roslynk_find_implementations",
+      "roslynk_find_reads",
+      "roslynk_find_references",
+      "roslynk_find_writes",
+      "roslynk_get_callees",
+      "roslynk_get_callers",
+      "roslynk_get_code_actions",
+      "roslynk_get_diagnostics",
+      "roslynk_get_expression_info",
+      "roslynk_get_members",
+      "roslynk_get_solution_status",
+      "roslynk_get_symbol",
+      "roslynk_get_symbol_body",
+      "roslynk_get_type_hierarchy",
+      "roslynk_multi_query",
+      "roslynk_open_solution",
+      "roslynk_search_symbols",
+      "t3-code-*_ci_logs",
+      "t3-code-*_t3_thread_read",
+      "t3-code-*_pull_request_read",
+      "t3-code-*_pull_request_list",
+      "t3-code-*_list_thread_pull_requests",
+      "t3-code-*_read_pull_request_guide",
+      "t3-code-*_read_issue",
+      "t3-code-*_list_issues",
+      "t3-code-*_list_thread_issues",
+      "t3-code-*_t3_worktree_status",
+      "t3-code-*_t3_worktree_list"
+    ],
+    "unknown_role": "reviewer",
+    "child_default": "reviewer",
+    "roles": {
+      "reviewer": {
+        "allow": [
+          "@read_only"
+        ]
+      },
+      "advisor": {
+        "allow": [
+          "@read_only"
+        ]
+      },
+      "explore": {
+        "allow": [
+          "@read_only",
+          "webfetch",
+          "websearch"
+        ]
+      },
+      "verifier": {
+        "allow": [
+          "@read_only",
+          "shell"
+        ]
+      },
+      "implementor": {
+        "allow": [
+          "*"
+        ],
+        "deny": [
+          "t3-code-*",
+          "webfetch",
+          "websearch",
+          "question"
+        ]
+      }
+    }
   }
 }

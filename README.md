@@ -106,7 +106,7 @@ The repo is the single source for opencode.
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; each names its model through a role (`models/roles.json`) | opencode |
 | `commands/`     | slash commands | opencode |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode |
-| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
+| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally; `harness-guard.js` runs every shell and edit call through `bin/harness-guard` and enforces a T3 brief's `role:` line | opencode (`~/.config/opencode/plugins`) |
 | `policy/`       | the permission policy and its test vectors | `bin/sync-harness` renders them into `opencode.json`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
 | `bin/`          | `review-bundle`, `review-log`, `models`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
