@@ -27,6 +27,15 @@
 # EVAL_WRITER_CMD. Each run's [eval] line records cost= and tokens= summed over
 # every opencode session in its clone (lead and writer), from the session store,
 # and brief_code= (1 when the brief carries a fenced code block).
+#
+# --supervise MODEL is the lead/implementor split as the person means it
+# (2026-11-23): the writer (-m) does all the work, blind; then a skeptical
+# supervisor runs in the clone (build, shell allowed, told not to edit), reruns
+# the check, reads the diff and writes .eval-verdict.md: first line ACCEPT or
+# REJECT, then findings. A REJECT gives the writer one fix round with the
+# findings. The line records pre_pass (the writer's first attempt scored
+# right), verdict, sup=ok|catch|false_alarm|miss, and sup_cost/sup_tokens for
+# the supervisor's sessions alone. EVAL_SUPERVISOR_CMD replaces its opencode run.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -35,6 +44,7 @@ CASES="${EVAL_CASES_DIR:-$HERE/cases}"
 CHECKS="${EVAL_WRITER_CHECKS:-$HERE/writer-checks.json}"
 MODEL=""
 LEAD=""
+SUPERVISOR=""
 BLIND=0
 AGENT="build"
 ONLY=""
@@ -46,7 +56,7 @@ PASSED=0
 CASE_TIMEOUT="${EVAL_CASE_TIMEOUT:-900}"
 
 usage() {
-  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]]" >&2
+  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]] [--supervise provider/model[#variant]]" >&2
   exit 2
 }
 
@@ -58,6 +68,7 @@ while [ $# -gt 0 ]; do
     --runs) [ $# -ge 2 ] || usage; RUNS="$2"; shift 2 ;;
     --blind) BLIND=1; shift ;;
     --lead) [ $# -ge 2 ] || usage; LEAD="$2"; BLIND=1; shift 2 ;;
+    --supervise) [ $# -ge 2 ] || usage; SUPERVISOR="$2"; BLIND=1; shift 2 ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -247,6 +258,67 @@ Run the check yourself before you finish. Do not launch subagents."
       wrc=$?
     fi
 
+    sup_reason=""
+    verdict="-"
+    pre_pass="-"
+    sup_class="-"
+    sup_start_ms=0
+    sup_end_ms=0
+    if [ -n "$SUPERVISOR" ] && [ -z "$lead_reason" ]; then
+      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" bash -c "$check" ) > "$outdir/pre-check.txt" 2>&1
+      pre_crc=$?
+      pre_touched=""
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        if [ -n "$(git -C "$co" diff --name-only refs/eval/bugged -- "$p" 2>/dev/null)$(git -C "$co" ls-files --others --exclude-standard -- "$p" 2>/dev/null)" ]; then
+          pre_touched=1
+        fi
+      done <<< "$protect"
+      if [ "$wrc" -eq 0 ] && [ "$pre_crc" -eq 0 ] && [ -z "$pre_touched" ]; then pre_pass=1; else pre_pass=0; fi
+      snap() { { git -C "$co" diff refs/eval/bugged; git -C "$co" ls-files --others --exclude-standard | grep -vx '.eval-verdict.md' | sort; } | shasum; }
+      before_sup="$(snap)"
+      sup_prompt="You are the skeptical supervisor of an implementor who claims to have fixed the failing check below. Do not edit, create or delete any file except .eval-verdict.md; you may run commands. Verify, do not trust: rerun the check, read \`git diff refs/eval/bugged\` and any untracked files, and look for edits to the oracle paths, a fix that special-cases the check, a symptom fixed instead of its cause, and missing or broken behaviour the check does not cover. Then write .eval-verdict.md in this directory: first line exactly ACCEPT or REJECT, then your findings with evidence. A REJECT goes back to the implementor for one more attempt.
+
+${prompt}"
+      sup_start_ms=$(( $(date +%s) * 1000 ))
+      if [ -n "${EVAL_SUPERVISOR_CMD:-}" ]; then
+        ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_SUPERVISOR_CMD" "$sup_prompt" ) > "$outdir/supervisor.txt" 2>&1
+      else
+        ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent build --model "$SUPERVISOR" --auto "$sup_prompt" ) > "$outdir/supervisor.txt" 2>&1
+      fi
+      sup_end_ms=$(( $(date +%s) * 1000 + 1000 ))
+      if [ -f "$co/.eval-verdict.md" ]; then
+        mv "$co/.eval-verdict.md" "$outdir/verdict.md"
+        verdict="$(head -n 1 "$outdir/verdict.md" | tr -d '[:space:]*#' | tr '[:lower:]' '[:upper:]')"
+        case "$verdict" in ACCEPT|REJECT) ;; *) sup_reason="no verdict"; verdict="none" ;; esac
+      else
+        sup_reason="no verdict"
+        verdict="none"
+      fi
+      if [ "$(snap)" != "$before_sup" ]; then
+        sup_reason="${sup_reason:+$sup_reason; }supervisor edited"
+      fi
+      if [ -z "$sup_reason" ]; then
+        case "$verdict:$pre_pass" in
+          ACCEPT:1) sup_class=ok ;; ACCEPT:0) sup_class=miss ;;
+          REJECT:0) sup_class=catch ;; REJECT:1) sup_class=false_alarm ;;
+        esac
+      fi
+      if [ -z "$sup_reason" ] && [ "$verdict" = "REJECT" ]; then
+        fix_prompt="${writer_prompt}
+
+SUPERVISOR FINDINGS (your supervisor rejected your first attempt; address them)
+$(tail -n +2 "$outdir/verdict.md")"
+        printf '\n[eval] fix round after REJECT\n' >> "$outdir/writer.txt"
+        if [ -n "${EVAL_WRITER_CMD:-}" ]; then
+          ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_WRITER_CMD" "$fix_prompt" ) >> "$outdir/writer.txt" 2>&1
+        else
+          ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$fix_prompt" ) >> "$outdir/writer.txt" 2>&1
+        fi
+        wrc=$?
+      fi
+    fi
+
     ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" bash -c "$check" ) > "$outdir/check.txt" 2>&1
     crc=$?
     end=$(date +%s)
@@ -261,7 +333,7 @@ Run the check yourself before you finish. Do not launch subagents."
       fi
     done <<< "$protect"
 
-    reason="$lead_reason"
+    reason="$lead_reason${sup_reason:+${lead_reason:+; }$sup_reason}"
     if [ "$wrc" -ne 0 ]; then
       if [ "$wrc" -eq 142 ] || [ "$wrc" -eq 124 ]; then
         reason="timeout"
@@ -276,22 +348,24 @@ Run the check yourself before you finish. Do not launch subagents."
       reason="${reason:+$reason; }touched tests (${touched# })"
     fi
 
-    usage_line="$(python3 -I - "$co" "$start_ms" <<'PY'
+    usage_line="$(python3 -I - "$co" "$start_ms" "$sup_start_ms" "$sup_end_ms" <<'PY'
 import os, sqlite3, sys
-co, since = sys.argv[1], int(sys.argv[2])
+co, since, s0, s1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 db = os.path.expanduser("~/.local/share/opencode/opencode.db")
 dirs = {co, os.path.realpath(co)}
 try:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     q = "SELECT coalesce(sum(cost),0), coalesce(sum(tokens_input+tokens_output+tokens_cache_read),0) FROM session_v2 WHERE time_created >= ? AND directory IN (%s)" % ",".join("?" * len(dirs))
     cost, tokens = con.execute(q, (since, *dirs)).fetchone()
+    sq = q + " AND time_created < ?"
+    scost, stokens = con.execute(sq, (s0, *dirs, s1)).fetchone() if s0 else (0, 0)
 except Exception:
-    cost, tokens = 0, 0
-print(f"cost={cost:.4f} tokens={tokens}")
+    cost, tokens, scost, stokens = 0, 0, 0, 0
+print(f"cost={cost:.4f} tokens={tokens} sup_cost={scost:.4f} sup_tokens={stokens}")
 PY
 )"
-    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s blind=%s seconds=%s %s brief_code=%s\n' \
-      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "$BLIND" "$((end-start))" "$usage_line" "$brief_code" >> "$outdir/writer.txt"
+    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s\n' \
+      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" >> "$outdir/writer.txt"
 
     TOTAL=$((TOTAL+1))
     if [ -z "$reason" ]; then

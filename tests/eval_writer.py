@@ -199,6 +199,59 @@ def main():
         check("each run records its cost and whether the brief carried code",
               " cost=" in tail and " brief_code=" in tail, tail[-300:])
 
+        # --supervise (the person, 2026-11-23): DeepSeek does the work, Opus is
+        # the skeptical supervisor. The writer runs blind; the supervisor reruns
+        # the check, reads the diff, and writes .eval-verdict.md (first line
+        # ACCEPT or REJECT, then findings); a REJECT gets the writer one fix round
+        # with the findings. Each run records pre_pass (was the writer's first
+        # attempt right), the verdict, and catch/false_alarm/miss.
+        write(os.path.join(stubs, "late-fix.sh"),
+              "#!/bin/sh\ncase \"$1\" in *SUPERVISOR*) printf 'fixed\\n' > app.txt ;; esac\n", mode=0o755)
+        write(os.path.join(stubs, "sup-accept.sh"), "#!/bin/sh\nprintf 'ACCEPT\\nlooks right\\n' > .eval-verdict.md\n", mode=0o755)
+        write(os.path.join(stubs, "sup-reject.sh"),
+              "#!/bin/sh\nif grep -q fixed app.txt; then printf 'ACCEPT\\n' > .eval-verdict.md; "
+              "else printf 'REJECT\\napp.txt is still buggy\\n' > .eval-verdict.md; fi\n", mode=0o755)
+        write(os.path.join(stubs, "sup-edits.sh"),
+              "#!/bin/sh\nprintf 'fixed\\n' > app.txt\nprintf 'ACCEPT\\n' > .eval-verdict.md\n", mode=0o755)
+        write(os.path.join(stubs, "sup-silent.sh"), "#!/bin/sh\nexit 0\n", mode=0o755)
+
+        def run_sup(sup_stub, writer_stub):
+            os.environ["EVAL_SUPERVISOR_CMD"] = sup_stub
+            try:
+                return run(root, cases, checks, writer_stub, "--supervise", "test/sup")
+            finally:
+                os.environ.pop("EVAL_SUPERVISOR_CMD", None)
+
+        def last_line():
+            logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+            newest = max(logs, key=os.path.getmtime) if logs else None
+            return open(newest, encoding="utf-8").read().strip().splitlines()[-1] if newest else ""
+
+        result = run_sup(os.path.join(stubs, "sup-accept.sh"), os.path.join(stubs, "fix.sh"))
+        line = last_line()
+        check("--supervise: a right fix the supervisor accepts passes",
+              result.returncode == 0 and "pre_pass=1" in line and "verdict=ACCEPT" in line and "sup=ok" in line,
+              f"{result.stdout}\n{line}")
+        result = run_sup(os.path.join(stubs, "sup-reject.sh"), os.path.join(stubs, "late-fix.sh"))
+        line = last_line()
+        check("--supervise: a REJECT gets one fix round with the findings, and counts as a catch",
+              result.returncode == 0 and "pre_pass=0" in line and "verdict=REJECT" in line and "sup=catch" in line,
+              f"{result.stdout}\n{line}")
+        result = run_sup(os.path.join(stubs, "sup-accept.sh"), os.path.join(stubs, "noop.sh"))
+        line = last_line()
+        check("--supervise: accepting broken work is a miss, and the run fails",
+              result.returncode != 0 and "sup=miss" in line, f"{result.stdout}\n{line}")
+        result = run_sup(os.path.join(stubs, "sup-reject.sh"), os.path.join(stubs, "noop.sh"))
+        line = last_line()
+        check("--supervise: a rejection the writer cannot fix still fails the run",
+              result.returncode != 0 and "sup=catch" in line, f"{result.stdout}\n{line}")
+        result = run_sup(os.path.join(stubs, "sup-edits.sh"), os.path.join(stubs, "noop.sh"))
+        check("--supervise: a supervisor that edits fails the run",
+              result.returncode != 0 and "supervisor edited" in result.stdout, result.stdout)
+        result = run_sup(os.path.join(stubs, "sup-silent.sh"), os.path.join(stubs, "fix.sh"))
+        check("--supervise: a supervisor that writes no verdict fails the run",
+              result.returncode != 0 and "no verdict" in result.stdout, result.stdout)
+
         # Without EVAL_WRITER_CMD the harness calls `opencode run`. A stub on
         # PATH records its arguments: the writer agent defaults to build, the
         # default agent whose pin this eval measures, and -a overrides it.
