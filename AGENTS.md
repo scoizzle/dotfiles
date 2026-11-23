@@ -5,7 +5,9 @@ rules are in the table at the end.
 
 ## Doing the work
 
-You do the work. Do not dispatch a writer to avoid editing.
+You do a small change yourself. Hand a large one (many files, or long debugging)
+to an implementor and supervise it skeptically (`t3-dispatch`).
+Never dispatch to avoid editing.
 
 **Ordinary change:** do it. A behavior change gets a failing check first: run it
 red, then green, and record the command and exit code.

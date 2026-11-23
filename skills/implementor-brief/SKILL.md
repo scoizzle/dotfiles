@@ -16,8 +16,8 @@ left out (an approach already settled, such as "reuse helper X", is a
 decision); but it states the goal and the check, not the lead's theory of the
 fix.
 
-Until the Phase 6 writer eval reports (`docs/v2-plan.md`), `AGENTS.md` → Doing
-the work decides whether to dispatch at all; this skill only says how.
+Until a large-task writer eval reports (`docs/v2-plan.md`), `AGENTS.md` → Doing
+the work decides whether to dispatch, by size; this skill only says how.
 
 ## The brief, in this order
 
