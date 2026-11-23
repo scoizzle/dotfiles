@@ -136,7 +136,7 @@ A rule enters this file only with a named incident or a failing eval.
 | Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents lingered |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
 | Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
-| The reviewer never shares the writer's family | test:models.py | friends' profiles |
+| Cross-family review when roles span families | test:models.py | friends' profiles |
 | A sensitive change gets the review above | judgment | #39 landed unreviewed |
 | Red before green | judgment | unproven fixes |
 | Never weaken a test to pass | judgment | ImpossibleBench: agents edit tests |

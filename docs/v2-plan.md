@@ -335,6 +335,12 @@ the cross-family rule.
 `main` is protected (2026-11-22): PRs only, the four CI jobs required, no force
 push or delete, admins included because agents use the person's token.
 
+Decided 2026-11-22: the reviewer-family row says what bin/models enforces
+(cross-family when roles span families); `explore`'s read-only rule stays in its
+permissions only; bot names move to the person's untracked webhook config; the
+bootstrap default stays `scoizzle/dotfiles` (`DOTFILES_SLUG` points at a fork);
+`memory/core/` stays shared, and the person fixes `conventions.md:5` by hand.
+
 Portability for friends: nothing personal in tracked defaults (bot names, the
 bootstrap slug, memory, the author's paths); the README says how to pick a
 profile.
