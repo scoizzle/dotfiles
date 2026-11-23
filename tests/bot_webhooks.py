@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin"
 SETUP = BIN / "setup-bot-webhooks"
 NOTIFY = BIN / "notify-bot"
-BOTS = ["JARVIS", "ENGINEERING_LEAD", "VENTURE", "HERALD", "EDWARD", "PATRON", "FORGE", "SWE"]
 
 failures = []
 
@@ -320,6 +319,17 @@ def main():
             lines = {line.split()[0]: line for line in listed.stdout.splitlines() if line.split()}
             check(configured(lines.get("JARVIS", "")), "--list shows JARVIS configured")
             check("FORGE" not in lines, "--list does not show a bot that was never added")
+            # Review of de8b3b8: a bot named but incomplete is listed as not configured.
+            partial_path = Path(tmp) / "partial" / "env"
+            partial_path.parent.mkdir()
+            partial_path.write_text(f"export JARVIS_WEBHOOK_URL='{listener.url}'\n"
+                                    f"export JARVIS_WEBHOOK_AUTH='Bearer {secret}'\n"
+                                    "export FORGE_WEBHOOK_URL='https://example.test/forge'\n")
+            partial = notify(env, partial_path, "--list")
+            partial_lines = {line.split()[0]: line for line in partial.stdout.splitlines() if line.split()}
+            check(configured(partial_lines.get("JARVIS", "")) and "FORGE" in partial_lines
+                  and not configured(partial_lines["FORGE"]),
+                  "--list shows a named but incomplete bot as not configured")
             check(secret not in listed.stdout and listener.url not in listed.stdout,
                   "--list prints no secret and no URL")
 
