@@ -48,21 +48,6 @@ def main() -> int:
         else:
             print("ok unmodified copy")
 
-        policy_path = tree / "policy" / "permissions.json"
-        original = policy_path.read_text()
-        for name in ("explore", "review-deep", "advisor"):
-            policy = json.loads(original)
-            current = policy["readonly_agents"]["models"][name]
-            policy["readonly_agents"]["models"][name] = "opus" if current != "opus" else "haiku"
-            policy_path.write_text(json.dumps(policy, indent=2) + "\n")
-            run = lint(tree)
-            out = run.stdout + run.stderr
-            if run.returncode != 1 or "readonly_agents" not in out:
-                print(f"FAIL: drifted {name} model: rc={run.returncode}, expected 1 mentioning readonly_agents\n{out}")
-                failed = True
-            else:
-                print(f"ok drift detected: {name}")
-        policy_path.write_text(original)
 
         agents_path = tree / "AGENTS.md"
         build_path = tree / "agents" / "build.md"

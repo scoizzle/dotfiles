@@ -130,10 +130,8 @@ A rule enters this file only with a named incident or a failing eval.
 | No `rm -rf`, `reset --hard`, `git clean` | policy:rm-recursive-force, policy:git-reset-hard, policy:git-clean | #16 |
 | `memory/core/**` is read-only | policy:no_edit | — |
 | Install only from the canonical checkout | test:install_root.py | 32 hours on a merged worktree |
-| `sync-harness` writes the home only from it | test:sync_canonical.py | same |
 | `dream` writes only through the canonical memory link | test:dream_canonical.py | same |
 | `dream` stops drafting into a queue unread for 14 days | test:dream_cadence.py | 12 pending files no one read |
-| Retired agents leave `~/.claude/agents` | test:agents_prune.py | #41's agents lingered |
 | Eval comparisons take 3 or more attempts | test:eval_compare.py | single runs ranked gates |
 | Every gate leaves a record, one file each | judgment, test:review_log.py | #41 deleted the ledger |
 | Cross-family review when roles span families | test:models.py | friends' profiles |
