@@ -1,50 +1,32 @@
 #!/usr/bin/env python3
-"""Render policy/permissions.json into the native config of every harness.
+"""Render policy/permissions.json into opencode's config.
 
-    sync-harness                      # --check: show drift, change nothing (exit 1 if any)
-    sync-harness --apply              # write it
-    sync-harness --scope repo|home|all
-    sync-harness --scope managed      # print the root-owned rules to install; writes nothing
-    sync-harness --home DIR           # act on DIR instead of $HOME (tests)
+    sync-harness              # --check: show drift, change nothing (exit 1 if any)
+    sync-harness --apply      # write it
 
-Targets:
+It renders opencode.json `permissions` and each agent's `{file:}` model from
+models/roles.json, and the managed block in agents/verifier.md (its `shell *:
+allow` would otherwise erase the global shell rules). Every target is a tracked
+file in this repo, so a write shows up in git and in review.
 
-  repo   opencode.json `permissions`, and the managed block in agents/verifier.md
-         (its `shell *: allow` would otherwise erase the global shell rules).
-  home   ~/.claude/settings.json: `permissions.deny/ask` rules and a PreToolUse
-         hook running bin/harness-guard, which Claude Code reads. The same
-         step adds the read-only reviewers and the native agent set under
-         ~/.claude/agents and registers the Roslynk MCP server for Claude Code.
-  managed  opt-in, never part of `all`, writes nothing: prints the rules for the
-         root-owned /Library/Application Support/ClaudeCode/managed-settings.json,
-         which both harnesses read in every folder, and the sudo command a person
-         runs. It carries rules only.
-The home merge is additive and idempotent: it adds missing rules, replaces its own
-hook entry (found by the `harness-guard` command name), and keeps everything else.
-It backs the file up before writing. Retired rules are not removed automatically.
+v2 runs opencode only (docs/v2-plan.md), so this no longer renders Claude
+Code's ~/.claude/settings.json, ~/.claude/agents or managed settings. An
+existing ~/.claude/settings.json keeps the harness-guard hook it already has;
+bin/harness-guard stays, as the parser the policy vectors and review-bundle use.
 """
 from __future__ import annotations
 
 import argparse
-import datetime
 import difflib
 import json
-import os
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-HOOK_MATCHER = (
-    "Bash|Read|Grep|Glob|LS|Edit|Write|MultiEdit|NotebookEdit|"
-    "run_terminal_command|read_file|grep|list_dir|search_replace|hashline_edit|write"
-)
 BEGIN = "  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block."
 END = "  # END managed by bin/sync-harness"
-BEGIN_BUILDER = "  # BEGIN builder deny (from policy/permissions.json); edit the policy, not this block."
-END_BUILDER = "  # END builder deny"
+
 
 
 def rule(action: str, resource: str, effect: str) -> dict:
@@ -100,25 +82,6 @@ def dedupe(rules: list[dict]) -> list[dict]:
             seen.add(key)
             out.append(r)
     return out
-
-
-def render_native(policy: dict) -> dict:
-    ask = [n for r in policy["shell"]["ask"] for n in r["native"]]
-    # Edit(path) only: Claude Code reports that a Write(path) rule is not matched
-    # by its file permission checks, and Edit(path) covers every file-editing
-    # tool, so a Write(...) twin here is dead and only adds a startup warning.
-    for path in control_plane_paths(policy):
-        target = path + "**" if path.endswith("/") else path
-        ask.append(f"Edit({target})")
-    deny = [n for r in policy["shell"]["deny"] for n in r["native"]]
-    prot = policy["protected"]
-    for entry in prot["paths"]:
-        deny.append(f"Read({entry}**)" if entry.endswith("/") else f"Read({entry})")
-    deny += [f"Read(**/{n})" for n in prot["names"]]
-    deny += [f"Read(**/{n})" for n in prot["native_env_files"]]
-    for d in policy["no_edit"]:
-        deny += [f"Edit(**/{d}/**)", f"Write(**/{d}/**)"]
-    return {"deny": list(dict.fromkeys(deny)), "ask": list(dict.fromkeys(ask))}
 
 
 def dump_opencode(config: dict) -> str:
@@ -194,285 +157,28 @@ def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
     return targets
 
 
-def home_target(policy: dict, home: Path) -> tuple[Path, str, list[str]]:
-    path = home / ".claude" / "settings.json"
-    settings = json.loads(path.read_text()) if path.exists() else {}
-    native = render_native(policy)
-    notes: list[str] = []
-    perms = settings.setdefault("permissions", {})
-    for kind in ("deny", "ask"):
-        have = perms.setdefault(kind, [])
-        added = [r for r in native[kind] if r not in have]
-        have.extend(added)
-        if added:
-            notes.append(f"permissions.{kind}: +{len(added)} rule(s)")
-    guard = str(home / ".config" / "opencode" / "bin" / "harness-guard")
-    entry = {"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": guard, "timeout": 10}]}
-    hooks = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    index = next((i for i, h in enumerate(hooks) if any(str(x.get("command", "")).endswith("harness-guard") for x in h.get("hooks", []))), None)
-    if index is None:
-        hooks.append(entry)
-        notes.append("hooks.PreToolUse: +harness-guard")
-    elif hooks[index] != entry:
-        hooks[index] = entry
-        notes.append("hooks.PreToolUse: harness-guard entry updated")
-    return path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n", notes
-
-
-def agent_body(path: Path) -> tuple[str, str]:
-    """(description, body) of an opencode-format agent file."""
-    parts = path.read_text().split("---\n", 2)
-    description = re.search(r"^description:\s*(.+)$", parts[1], flags=re.M).group(1).strip().strip('"')
-    return description, parts[2].lstrip("\n")
-
-
-NATIVE_DENY_TOOLS = {
-    "edit": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
-    "subagent": ["Task", "Agent"],
-    "webfetch": ["WebFetch"],
-    "websearch": ["WebSearch"],
-}
-# Deny actions with no native tool to remove: `execute` is the opencode
-# shell-equivalent and a native writer needs Bash to test; `shell` is handled by
-# the global rules and the guard; `opencode_*` names opencode-only tools.
-IGNORED_DENY_ACTIONS = {"shell", "execute"}
-
-
-def agent_denies(name: str, repo: Path) -> tuple[list[str], list[str]]:
-    """(native tools to disallow, deny actions with no native mapping).
-
-    Derived from agents/<name>.md so a new opencode deny reaches the native
-    render, or fails lint, instead of disappearing.
-    """
-    frontmatter = (repo / "agents" / f"{name}.md").read_text().split("---\n", 2)[1]
-    actions, last = [], None
-    for line in frontmatter.splitlines():
-        found = re.search(r"action:\s*([a-z_]+)", line)
-        if found:
-            last = found.group(1)
-        if last and re.search(r"effect:\s*deny", line) and last not in actions:
-            actions.append(last)
-    tools, unknown = [], []
-    for action in actions:
-        if action in NATIVE_DENY_TOOLS:
-            tools += NATIVE_DENY_TOOLS[action]
-        elif action.startswith("roslynk_"):
-            tools.append(f"mcp__roslynk__{action[len('roslynk_'):]}")
-        elif action in IGNORED_DENY_ACTIONS or action.startswith("opencode_"):
-            continue
-        else:
-            unknown.append(action)
-    return list(dict.fromkeys(tools)), unknown
-
-
-def render_claude_agents(policy: dict, repo: Path) -> dict[str, str]:
-    """name -> Claude Code subagent file for the read-only and native agent sets.
-
-    Read-only agents get the policy's read tools. Native agents keep their
-    opencode role: a null model or tool list inherits the harness default, a list
-    is widened with the same Roslynk read surface, and every deny its source
-    agent declares becomes `disallowedTools`.
-    """
-    spec = policy["readonly_agents"]
-    readonly_tools = spec["tools"] + [f"mcp__roslynk__{t}" for t in spec["roslynk_read_tools"]]
-    out = {}
-    for name, model in spec["models"].items():
-        out[name] = claude_agent_text(name, model, readonly_tools, None, repo)
-    for name, cfg in policy.get("native_agents", {}).get("agents", {}).items():
-        tools = cfg.get("tools")
-        if tools is not None:
-            tools = list(tools) + [f"mcp__roslynk__{t}" for t in spec["roslynk_read_tools"]]
-        disallowed, _ = agent_denies(name, repo)
-        out[name] = claude_agent_text(name, cfg.get("model"), tools, disallowed, repo)
-    return out
-
-
-def claude_agent_text(name: str, model: str | None, tools: list[str] | None,
-                      disallowed: list[str] | None, repo: Path) -> str:
-    """One Claude Code agent file. Omitted model/tools mean "inherit the session"."""
-    description, body = agent_body(repo / "agents" / f"{name}.md")
-    lines = [
-        "---",
-        f"name: {name}",
-        f"description: {json.dumps(description, ensure_ascii=False)}",
-    ]
-    if tools is not None:
-        lines.append(f"tools: {', '.join(tools)}")
-    if model:
-        lines.append(f"model: {model}")
-    if disallowed:
-        lines.append(f"disallowedTools: {', '.join(disallowed)}")
-    lines += [
-        "---",
-        f"<!-- Generated by bin/sync-harness from agents/{name}.md. Edit that file and the policy, not this one. -->",
-        "",
-        body,
-    ]
-    return "\n".join(lines)
-
-
-def agents_changes(policy: dict, repo: Path, home: Path) -> list[tuple[Path, str]]:
-    base = home / ".claude" / "agents"
-    return [(base / f"{n}.md", t) for n, t in render_claude_agents(policy, repo).items() if not (base / f"{n}.md").exists() or (base / f"{n}.md").read_text() != t]
-
-
-GENERATED = "Generated by bin/sync-harness"
-
-
-def write_agent(path: Path, text: str) -> Path | None:
-    """Write a rendered agent. A file that is not one of ours is backed up first, never overwritten."""
-    backup = None
-    if path.exists() and GENERATED not in path.read_text():
-        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup = path.with_name(f"{path.name}.bak-{stamp}")
-        shutil.copy2(path, backup)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-    return backup
-
-
-def stale_agents(policy: dict, repo: Path, home: Path) -> list[Path]:
-    """Agent files this script rendered once and no longer renders.
-
-    #41 retired three agents but their rendered copies stayed loadable in
-    ~/.claude/agents. Only a file carrying the GENERATED stamp is ours to retire.
-    """
-    base = home / ".claude" / "agents"
-    if not base.is_dir():
-        return []
-    # casefold: on a case-insensitive filesystem Review-Deep.md is review-deep.md.
-    rendered = {name.casefold() for name in render_claude_agents(policy, repo)}
-    return sorted(
-        p for p in base.glob("*.md")
-        if p.stem.casefold() not in rendered and p.is_file() and GENERATED in p.read_text(errors="replace")
-    )
-
-
-def retire_agent(path: Path) -> Path:
-    """Move a stale rendered agent to a name Claude Code does not load. Nothing is deleted."""
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    kept = path.with_name(f"{path.name}.retired-{stamp}")
-    path.rename(kept)
-    return kept
-
-
-def roslynk_registration(home: Path) -> tuple[str, list[str]]:
-    """('ok'|'missing'|'skip: why', command to register). Claude Code has no Roslynk unless it is registered."""
-    binary = home / ".dotnet" / "tools" / "roslynk"
-    if shutil.which("claude") is None:
-        return "skip: claude CLI not on PATH", []
-    if not binary.exists():
-        return f"skip: {binary} not installed (dotnet tool install -g roslynk)", []
-    env = {**os.environ, "HOME": str(home)}
-    have = subprocess.run(["claude", "mcp", "get", "roslynk"], capture_output=True, text=True, env=env)
-    if have.returncode == 0:
-        return "ok", []
-    return "missing", ["claude", "mcp", "add", "--scope", "user", "roslynk", "--", str(binary), "stdio"]
-
-
-MANAGED_SETTINGS = Path("/Library/Application Support/ClaudeCode/managed-settings.json")
-
-
-def managed_settings(policy: dict) -> str:
-    native = render_native(policy)
-    return json.dumps({"permissions": {"deny": native["deny"], "ask": native["ask"]}}, indent=2, ensure_ascii=False) + "\n"
-
-
-def print_managed(policy: dict) -> None:
-    state = "present" if MANAGED_SETTINGS.exists() else "absent"
-    print(f"{state:8}{MANAGED_SETTINGS}")
-    print("".join("        " + line + "\n" for line in managed_settings(policy).splitlines()))
-    print("install (a person runs these; this script never uses sudo):")
-    print('  sudo mkdir -p "/Library/Application Support/ClaudeCode"')
-    print('  sudo tee "/Library/Application Support/ClaudeCode/managed-settings.json"   # paste the JSON above')
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--apply", action="store_true", help="write the changes (default: only report drift)")
     parser.add_argument("--check", action="store_true", help="report drift (the default)")
-    parser.add_argument("--scope", choices=("repo", "home", "all", "managed"), default="all")
-    parser.add_argument("--home", default=str(Path.home()), help="home directory to act on (default $HOME)")
-    parser.add_argument("--repo", default=None,
-                        help="repo to act on (default: this repo)")
-    parser.add_argument("--from", dest="from_root", default=None,
-                        help="apply to this account's home from a non-canonical checkout; must name the repo acted on")
+    parser.add_argument("--scope", choices=("repo",), default="repo",
+                        help="kept for older callers; repo is the only scope")
+    parser.add_argument("--repo", default=None, help="repo to act on (default: this repo)")
     args = parser.parse_args()
     repo = Path(args.repo) if args.repo else ROOT
-    home = Path(args.home)
-
-    # Same rule as install.cs (2026-11-20): only the canonical checkout writes
-    # this account's home, or --from naming the checkout that is running. An
-    # explicit throwaway --home is not this account's home.
-    if args.scope in ("home", "all"):
-        canonical = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "dotfiles")
-        own_home = home.resolve() == Path.home().resolve()
-        if own_home and repo.resolve() != canonical.resolve():
-            meant = args.from_root and Path(args.from_root).resolve() == repo.resolve()
-            if args.apply and not meant:
-                print(f"refusing to apply: {repo} is not the canonical checkout ({canonical}).", file=sys.stderr)
-                print("every session would load this checkout's agents, permissions and hook.", file=sys.stderr)
-                print(f"run {canonical / 'bin' / 'sync-harness'}, or pass --from {repo} to mean it.", file=sys.stderr)
-                return 3
-            print(f"warning: {repo} is not the canonical checkout ({canonical})", file=sys.stderr)
-
     policy = json.loads((repo / "policy" / "permissions.json").read_text())
 
-    if args.scope == "managed":
-        print_managed(policy)
-        return 0
-
     drift = False
-    if args.scope in ("repo", "all"):
-        for path, want in repo_targets(policy, repo).items():
-            have = path.read_text()
-            if have == want:
-                print(f"ok      {path.relative_to(repo)}")
-                continue
-            drift = True
-            print(f"drift   {path.relative_to(repo)}")
-            sys.stdout.writelines(list(difflib.unified_diff(have.splitlines(True), want.splitlines(True), "current", "policy", n=0))[:60])
-            if args.apply:
-                path.write_text(want)
-    if args.scope in ("home", "all"):
-        for path, text in agents_changes(policy, repo, home):
-            drift = True
-            mine = path.exists() and GENERATED not in path.read_text()
-            print(f"drift   {path}" + ("  (not generated by this script: backed up first)" if mine else ""))
-            if args.apply:
-                backup = write_agent(path, text)
-                if backup:
-                    print(f"        backup {backup}")
-        for path in stale_agents(policy, repo, home):
-            drift = True
-            print(f"stale   {path}  (rendered once, no longer in the policy)")
-            if args.apply:
-                print(f"        retired {retire_agent(path)}")
-        state, command = roslynk_registration(home)
-        if state == "missing":
-            drift = True
-            print("drift   Claude Code has no Roslynk MCP server: " + " ".join(command))
-            if args.apply:
-                result = subprocess.run(command, capture_output=True, text=True, env={**os.environ, "HOME": str(home)})
-                print("        registered" if result.returncode == 0 else f"        FAILED: {result.stderr.strip()[:200]}")
-        elif state != "ok":
-            print(f"note    roslynk MCP for Claude Code: {state}")
-        path, want, notes = home_target(policy, home)
-        if not notes:
-            print(f"ok      {path}")
-        else:
-            drift = True
-            print(f"drift   {path}")
-            for note in notes:
-                print(f"        {note}")
-            if args.apply:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                if path.exists():
-                    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                    backup = path.with_name(f"{path.name}.bak-{stamp}")
-                    shutil.copy2(path, backup)
-                    print(f"        backup {backup}")
-                path.write_text(want)
+    for path, want in repo_targets(policy, repo).items():
+        have = path.read_text()
+        if have == want:
+            print(f"ok      {path.relative_to(repo)}")
+            continue
+        drift = True
+        print(f"drift   {path.relative_to(repo)}")
+        sys.stdout.writelines(list(difflib.unified_diff(have.splitlines(True), want.splitlines(True), "current", "policy", n=0))[:60])
+        if args.apply:
+            path.write_text(want)
     if drift and args.apply:
         print("applied")
         return 0

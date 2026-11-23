@@ -106,15 +106,13 @@ jobs:
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
-          for p in .claude/CLAUDE.md .claude/commands/dream.md .local/bin/notify-bot; do
-            test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
-            test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
+          test -L "$HOME/.local/bin/notify-bot" && test -e "$HOME/.local/bin/notify-bot"
+          # v2 runs opencode only: a fresh install writes nothing into ~/.claude or ~/.grok.
+          for p in .claude/CLAUDE.md .claude/commands .claude/skills .grok/AGENTS.md; do
+            test ! -e "$HOME/$p" || { echo "a fresh install wrote ~/$p"; exit 1; }
           done
           for d in skills/*/; do
             n=$(basename "$d")
-            p=".claude/skills/$n"
-            test -L "$HOME/$p" || { echo "not a symlink: ~/$p"; exit 1; }
-            test -e "$HOME/$p" || { echo "broken: ~/$p"; exit 1; }
             test -f "$HOME/.config/opencode/skills/$n/SKILL.md" || { echo "not linked: ~/.config/opencode/skills/$n/SKILL.md"; exit 1; }
           done
           test -f "$HOME/.config/opencode/memory/INDEX.md"

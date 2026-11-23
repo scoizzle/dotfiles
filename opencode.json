@@ -117,6 +117,7 @@
     { "action": "edit", "resource": "~/.claude/CLAUDE.md", "effect": "ask" },
     { "action": "edit", "resource": "~/.claude/settings.json", "effect": "ask" },
     { "action": "edit", "resource": "~/.local/bin/notify-bot", "effect": "ask" },
+    { "action": "edit", "resource": "~/.grok/AGENTS.md", "effect": "ask" },
     { "action": "edit", "resource": "~/.config/opencode/models.local.json", "effect": "ask" },
     { "action": "edit", "resource": "~/.config/opencode/models/*", "effect": "ask" },
     { "action": "edit", "resource": "~/dotfiles/AGENTS.md", "effect": "ask" },

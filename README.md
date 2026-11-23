@@ -14,8 +14,7 @@ contract), when you ask, or after the same check has failed twice. Ordinary
 edits are not dispatched.
 
 Permissions come from one policy, `policy/permissions.json`, rendered for opencode
-(and, until v2's cleanup finishes, Claude Code) by `bin/sync-harness` and checked by
-`bin/lint-config` in CI. opencode is the one harness; Grok Build and the Claude Code
+by `bin/sync-harness` and checked by `bin/lint-config` in CI. opencode is the one harness; Grok Build and the Claude Code
 sandbox profile were dropped in v2 (`docs/v2-plan.md`). The limits of each layer
 are in [`docs/security-model.md`](docs/security-model.md).
 
@@ -97,28 +96,24 @@ back here.
 
 ## What this repo manages
 
-The repo is the single source for opencode, and (until v2's cleanup finishes) the
-Claude Code files it still renders.
+The repo is the single source for opencode.
 
 | path            | what it is                                        | reaches |
 | --------------- | ------------------------------------------------- | ------- |
-| `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | `~/.config/opencode/AGENTS.md`, `~/.claude/CLAUDE.md` |
+| `AGENTS.md`     | global workflow, safety, model choice, memory and C# rules | `~/.config/opencode/AGENTS.md` |
 | `opencode.json` | model, permissions, MCP servers, agent overrides (permissions are generated) | opencode |
-| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; `explore`, `advisor` and `review-deep` are also rendered read-only for Claude Code and Grok, and `implementor` and `verifier` as native agents. `implementor` is the bounded-task writer and is deliberately dispatchable; `build` stays a main-session role, because rendering it would make the default writer a `Task` subagent | opencode; `~/.claude/agents` |
-| `commands/`     | slash commands | opencode; `~/.claude/commands` |
-| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode; `~/.claude/skills` |
+| `agents/`       | agent prompts (opencode format), one primary and the rest subagents; each names its model through a role (`models/roles.json`) | opencode |
+| `commands/`     | slash commands | opencode |
+| `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally | opencode (`~/.config/opencode/plugins`) |
-| `policy/`       | the permission policy and its test vectors | permissions reach all three via `bin/sync-harness`; `bin/lint-config` checks them |
+| `policy/`       | the permission policy and its test vectors | `bin/sync-harness` renders them into `opencode.json`; `bin/lint-config` checks them |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
+| `bin/`          | `review-bundle`, `review-log`, `models`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
 | `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
 
-`install.cs` makes the links; `bin/sync-harness --apply` writes the parts that
-must be merged into files you also edit: `~/.claude/settings.json` (rules and the
-`harness-guard` hook), the read-only
-reviewers and the native `implementor`/`verifier` under `~/.claude/agents`,
-and the Roslynk MCP registration for Claude Code. Run `./install.cs` and then
-`~/.config/opencode/bin/sync-harness` (report) and `--apply`; both are safe to repeat.
+`install.cs` makes the links and writes each role's model file; `bin/sync-harness
+--apply` re-renders `opencode.json` and the verifier block from the policy. Both
+are safe to repeat. v2 no longer writes anything into `~/.claude` or `~/.grok`.
 
 How the bookshelf and the out-of-band dream pass fit together is in
 [`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
@@ -189,9 +184,9 @@ Outside `~/.config/opencode`, also untracked on purpose:
 - `~/.claude/`, `~/.cursor/`, `~/.copilot/`, `~/.grok/` — harness state, some
   of it credential-bearing. `~/.claude` also holds the login the Claude Agent
   integration borrows, so it is never linked or copied. The only managed paths
-  outside `~/.config/opencode` are `~/.claude/{CLAUDE.md,commands/*.md,skills/*,agents/*.md,settings.json}`;
-  the rest of `~/.claude` (login, projects) and all of `~/.grok` are never
-  touched.
+  outside `~/.config/opencode` are `~/.local/bin/notify-bot`; v2 writes nothing
+  into `~/.claude` or `~/.grok`, and links an earlier install left there stay
+  ask-protected until you remove them.
 
 ## Adding a file to the repo
 

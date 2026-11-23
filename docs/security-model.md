@@ -41,22 +41,16 @@ database, so `$HOME` cannot move it.
 
 `policy/permissions.json` is the single source. `policy/vectors.json` holds the
 expected decision for each sample command and path. `bin/lint-config` runs those
-vectors through every engine in CI, so the three cannot disagree unnoticed.
+vectors through both engines (the guard and opencode's rules) in CI, so they cannot disagree unnoticed.
 
-| Harness | Rules | Hook (`harness-guard`) | Source of truth for the harness |
-| --- | --- | --- | --- |
-| opencode | `opencode.json` `permissions` and the `verifier` block, rendered by `bin/sync-harness` | none; text globs only | `opencode.json` |
-| Claude Code | `permissions.deny/ask` from `~/.claude/settings.json` | `PreToolUse` hook from `~/.claude/settings.json` | `~/.claude/settings.json` |
-| Grok Build | the same `permissions.deny/ask`, read from `~/.claude/settings.json` (verified with `grok inspect`: `permissions.loaded` counted them, even in an untrusted folder) | the same `PreToolUse` hook, **only in a trusted folder** (verified with `grok inspect`: `hooks: []` untrusted; after `trusted_folders.toml` marks the folder, the hook appears with `vendor: claude`, `compatibilityStatus: enabled`) | `~/.claude/settings.json` |
-
-Native agents come from the same policy. `implementor` inherits the T3 session's
-model and tool set but disallows `Task`, `Agent`, `WebFetch` and `WebSearch`, and
-it is a dispatchable writer on purpose: it is the one bounded-task writer.
-`verifier` pins `sonnet` and keeps an explicit read+shell allowlist. `build` is
-deliberately not rendered: every file in `~/.claude/agents` is also a `Task`
-subagent, and a rendered `build` would be the dispatchable writer `AGENTS.md`
-forbids. A native main session gets the writer role from the worktree's
-`AGENTS.md`, which Claude Code loads (probed 2026-11-19).
+v2 runs opencode only (`docs/v2-plan.md`). Its rules are `opencode.json`
+`permissions` and the `verifier` block, rendered by `bin/sync-harness`, plus
+opencode's non-overridable `policies`; it has no hook, so its shell and edit calls
+are matched as text. `bin/harness-guard` is no longer rendered as anyone's hook.
+It stays as the parser behind the vectors' guard engine and `review-bundle
+--check`. A `~/.claude/settings.json` that an earlier install wrote keeps its
+`PreToolUse` hook, so a native Claude Code session on that machine is still
+guarded; nothing renders or updates that file any more.
 
 Grok Build was dropped in v2 (`docs/v2-plan.md`); `~/.grok` stays a protected,
 never-read path because it can hold credentials.
@@ -83,6 +77,9 @@ Apply it with `~/.config/opencode/bin/sync-harness` (report drift) and
 are kept, and retired rules are not removed automatically).
 
 Limits specific to this layer:
+
+The notes below record the native (Claude Code / Grok) rules as they were
+before v2 retired them; the guard parts still describe `bin/harness-guard`.
 
 - A hook missing from disk fails open in Claude Code and Grok. The native deny
   rules are the fallback, and `bin/lint-config` checks they cover the denied

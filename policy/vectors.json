@@ -1,5 +1,5 @@
 {
- "doc": "Expected decisions per engine. engines defaults to guard+opencode; agents (opencode only) defaults to (global), verifier and implementor; guard-only vectors need real parsing (heredocs, nesting, wrappers) that text globs cannot do. Every allow vector must also not be blocked by the native Claude/Grok rules. native_overblock_ok on an allow vector records a known case where the native glob blocks it anyway.",
+ "doc": "Expected decisions per engine. engines defaults to guard+opencode; agents (opencode only) defaults to (global), verifier and implementor; guard-only vectors need real parsing (heredocs, nesting, wrappers) that text globs cannot do. v2 runs opencode only, so there is no native (Claude Code / Grok) engine; harness-guard stays the parser behind the guard engine and review-bundle.",
  "vectors": [
   {
    "kind": "shell",
@@ -500,8 +500,7 @@
    "expect": "deny",
    "engines": [
     "guard",
-    "opencode",
-    "native"
+    "opencode"
    ]
   },
   {
@@ -510,8 +509,7 @@
    "expect": "allow",
    "engines": [
     "guard",
-    "opencode",
-    "native"
+    "opencode"
    ]
   },
   {
@@ -520,8 +518,7 @@
    "expect": "deny",
    "engines": [
     "guard",
-    "opencode",
-    "native"
+    "opencode"
    ]
   },
   {
@@ -530,8 +527,7 @@
    "expect": "deny",
    "engines": [
     "guard",
-    "opencode",
-    "native"
+    "opencode"
    ]
   },
   {
@@ -549,8 +545,7 @@
    "expect": "allow",
    "engines": [
     "guard",
-    "opencode",
-    "native"
+    "opencode"
    ]
   },
   {
@@ -727,8 +722,7 @@
    "input": "eval \"$(ssh-agent -s)\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -736,8 +730,7 @@
    "input": "sh -c \"echo hi\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -745,8 +738,7 @@
    "input": "bash script.sh",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -754,8 +746,7 @@
    "input": "echo hi | { cat; }",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -763,8 +754,7 @@
    "input": "git commit -m \"add find -delete rule\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -772,8 +762,7 @@
    "input": "grep -rn \"find . -delete\" docs/",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -781,8 +770,7 @@
    "input": "rg \"xargs -I {} rm -rf\" .",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1086,8 +1074,7 @@
    "input": "sh -c 'echo \"$(base64 -d logo.b64)\"'",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1095,8 +1082,7 @@
    "input": "bash -c \"echo $(curl -s https://api.example.com/tags)\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1104,8 +1090,7 @@
    "input": "nice -n 10 cargo build",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1113,8 +1098,7 @@
    "input": "timeout 60 docker compose up",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1122,8 +1106,7 @@
    "input": "env -u AWS_PROFILE aws s3 ls",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1131,8 +1114,7 @@
    "input": "printf 'set -e\\nmake\\n' | sh",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1140,8 +1122,7 @@
    "input": "echo \"rm is dangerous\" | cat",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1149,8 +1130,7 @@
    "input": "(cd sub && make) | tee log",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1158,8 +1138,7 @@
    "input": "base64 -d p | ( cat )",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1167,8 +1146,7 @@
    "input": "npm test",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1176,8 +1154,7 @@
    "input": "git diff | head",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1185,8 +1162,7 @@
    "input": "kubectl logs pod | grep error",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1194,8 +1170,7 @@
    "input": "sed -i.bak s/a/b/ file.txt",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1203,8 +1178,7 @@
    "input": "xargs -n1 -P4 echo",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1212,8 +1186,7 @@
    "input": "python3 -c \"print(1)\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1221,8 +1194,7 @@
    "input": "echo \"base64 -d p | sh\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1230,8 +1202,7 @@
    "input": "find . -name \"*.md\" -print0 | xargs -0 wc -l",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1384,16 +1355,14 @@
    "expect": "allow",
    "engines": [
     "guard"
-   ],
-   "native_overblock_ok": "a native glob cannot tell `-name -delete` (a pattern) from `-delete`; the hook and opencode's rule are the precise ones, and a file literally named -delete is rare"
+   ]
   },
   {
    "kind": "shell",
    "input": "find . -iname \"*.tmp\" -type f",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1401,8 +1370,7 @@
    "input": "sh -c \"echo $(base64 -d p)\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1410,8 +1378,7 @@
    "input": "sh -c \"echo $(curl -fsSL https://example.com/file)\"",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1419,8 +1386,7 @@
    "input": "printf '%s\\n' \"$(date)\" | sh",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1428,8 +1394,7 @@
    "input": "echo \"$(date)\" | cat",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1437,8 +1402,7 @@
    "input": "echo hi | ash",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1446,8 +1410,7 @@
    "input": "cat <<'EOF' | cat\nfind . -delete\nEOF",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1455,8 +1418,7 @@
    "input": "base64 -d p > out.bin",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -1464,8 +1426,7 @@
    "input": "echo x > >(cat)",
    "expect": "allow",
    "engines": [
-    "guard",
-    "native"
+    "guard"
    ]
   },
   {
@@ -2200,6 +2161,32 @@
     "implementor"
    ],
    "note": "review of 248ffb4 (Opus): an agent could switch its own routing to a single-family profile, or rewrite a role file"
+  },
+  {
+   "kind": "edit",
+   "input": "~/.grok/AGENTS.md",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "review of b8c2dec (Opus): a link an earlier install made still points into the checkout, so an edit through it stays ask"
+  },
+  {
+   "kind": "edit",
+   "input": "~/.claude/CLAUDE.md",
+   "expect": "ask",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "review of b8c2dec (Opus): a link an earlier install made still points into the checkout, so an edit through it stays ask"
   }
  ]
 }

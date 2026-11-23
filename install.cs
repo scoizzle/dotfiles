@@ -34,23 +34,15 @@ var repoRoot = ResolveRepoRoot();
 var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 var targetRoot = Path.Combine(home, ".config", "opencode");
 
-// Links outside ~/.config/opencode, home-relative destination -> repo path. Claude Code
-// reads ~/.claude/CLAUDE.md, so it loads the one AGENTS.md too. Skills and commands go to
-// ~/.claude/{skills,commands}, which Claude Code reads and Grok Build reads through
-// its Claude compatibility layer. These are always symlinks, even with --copy: they
-// exist to be shared. New skills and commands are picked up on the next run.
+// Links outside ~/.config/opencode, home-relative destination -> repo path. v2
+// runs opencode only, so nothing goes into ~/.claude or ~/.grok any more; a link
+// an earlier install made there is left as is (it is still an ask-protected
+// control-plane path, see policy/permissions.json).
 var homeEntries = new List<(string Dest, string Src, bool IsDir)>
 {
-    (Path.Combine(".claude", "CLAUDE.md"), "AGENTS.md", false),
     // notify-bot is the one helper agents run by name rather than by absolute path.
     (Path.Combine(".local", "bin", "notify-bot"), Path.Combine("bin", "notify-bot"), false),
 };
-if (Directory.Exists(Path.Combine(repoRoot, "skills")))
-    foreach (var dir in Directory.GetDirectories(Path.Combine(repoRoot, "skills")).OrderBy(d => d, StringComparer.Ordinal))
-        homeEntries.Add((Path.Combine(".claude", "skills", Path.GetFileName(dir)), Path.Combine("skills", Path.GetFileName(dir)), true));
-if (Directory.Exists(Path.Combine(repoRoot, "commands")))
-    foreach (var file in Directory.GetFiles(Path.Combine(repoRoot, "commands"), "*.md").OrderBy(f => f, StringComparer.Ordinal))
-        homeEntries.Add((Path.Combine(".claude", "commands", Path.GetFileName(file)), Path.Combine("commands", Path.GetFileName(file)), false));
 
 var checkOnly = args.Contains("--check");
 var copyMode = args.Contains("--copy");

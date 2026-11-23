@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "doc": "Single source for the permission policy of every harness (opencode, Claude Code, Grok Build). bin/sync-harness renders it; bin/harness-guard enforces it; bin/lint-config proves they agree on policy/vectors.json.",
+  "doc": "Single source for the permission policy of opencode (v2 runs opencode only). bin/sync-harness renders it; bin/harness-guard enforces it; bin/lint-config proves they agree on policy/vectors.json.",
   "shell": {
     "ask": [
       {
@@ -9,9 +9,6 @@
         "opencode": [
           "*git push*",
           "*git -* push*"
-        ],
-        "native": [
-          "Bash(git push:*)"
         ]
       },
       {
@@ -23,9 +20,6 @@
         "opencode": [
           "*git worktree remove*",
           "*git -* worktree remove*"
-        ],
-        "native": [
-          "Bash(git worktree remove:*)"
         ],
         "skip_agents": [
           "verifier"
@@ -61,17 +55,6 @@
           "*git push* ':*",
           "*git -* push* :*",
           "*git -* push* ':*"
-        ],
-        "native": [
-          "Bash(git push --force:*)",
-          "Bash(git push -f:*)",
-          "Bash(git push --delete:*)",
-          "Bash(git push --mirror:*)",
-          "Bash(git push * --force*)",
-          "Bash(git push * -f*)",
-          "Bash(git push * +*)",
-          "Bash(git push * --delete*)",
-          "Bash(git push * --mirror*)"
         ]
       },
       {
@@ -83,10 +66,6 @@
         "opencode": [
           "*git reset*--hard*",
           "*git -* reset*--hard*"
-        ],
-        "native": [
-          "Bash(git reset --hard:*)",
-          "Bash(git reset * --hard*)"
         ]
       },
       {
@@ -95,9 +74,6 @@
         "opencode": [
           "*git clean*",
           "*git -* clean*"
-        ],
-        "native": [
-          "Bash(git clean:*)"
         ]
       },
       {
@@ -115,11 +91,6 @@
           "*git -* stash drop*",
           "*git -* stash clear*",
           "*git -* stash pop*"
-        ],
-        "native": [
-          "Bash(git stash drop:*)",
-          "Bash(git stash clear:*)",
-          "Bash(git stash pop:*)"
         ]
       },
       {
@@ -145,13 +116,6 @@
           "*rm -r -f*",
           "*rm -f -r*",
           "*rm --recursive*"
-        ],
-        "native": [
-          "Bash(rm -rf:*)",
-          "Bash(rm -fr:*)",
-          "Bash(rm -r -f:*)",
-          "Bash(rm -f -r:*)",
-          "Bash(rm --recursive:*)"
         ]
       },
       {
@@ -162,10 +126,6 @@
         ],
         "opencode": [
           "*sudo *"
-        ],
-        "native": [
-          "Bash(sudo:*)",
-          "Bash(doas:*)"
         ]
       },
       {
@@ -176,10 +136,6 @@
         ],
         "opencode": [
           "*find*-delete*"
-        ],
-        "native": [
-          "Bash(find * -delete*)",
-          "Bash(find -delete:*)"
         ]
       },
       {
@@ -203,10 +159,6 @@
         "opencode": [
           "*xargs*rm -rf*",
           "*xargs*rm -fr*"
-        ],
-        "native": [
-          "Bash(xargs * rm -rf*)",
-          "Bash(xargs * rm -fr*)"
         ]
       },
       {
@@ -216,9 +168,6 @@
           "git restore*",
           "*git restore*",
           "*git -* restore*"
-        ],
-        "native": [
-          "Bash(git restore:*)"
         ]
       },
       {
@@ -228,9 +177,6 @@
         "opencode": [
           "*git checkout -- *",
           "*git -* checkout -- *"
-        ],
-        "native": [
-          "Bash(git checkout --:*)"
         ]
       },
       {
@@ -240,9 +186,6 @@
         "opencode": [
           "*git branch -D*",
           "*git -* branch -D*"
-        ],
-        "native": [
-          "Bash(git branch -D:*)"
         ]
       },
       {
@@ -263,9 +206,6 @@
         "opencode": [
           "*gh api*-X*DELETE*",
           "*gh -* api*-X*DELETE*"
-        ],
-        "native": [
-          "Bash(gh api -X DELETE:*)"
         ]
       },
       {
@@ -286,9 +226,6 @@
         "opencode": [
           "*gh api*--method*DELETE*",
           "*gh -* api*--method*DELETE*"
-        ],
-        "native": [
-          "Bash(gh api --method DELETE:*)"
         ]
       },
       {
@@ -306,9 +243,6 @@
         "opencode": [
           "*gh pr merge*",
           "*gh -* pr merge*"
-        ],
-        "native": [
-          "Bash(gh pr merge:*)"
         ]
       },
       {
@@ -321,8 +255,7 @@
         "matches": "(^|/)pulls/[^/?#]+/merge(?:[/?#]|$)",
         "opencode": [
           "*gh api*pulls/*/merge*"
-        ],
-        "native": []
+        ]
       },
       {
         "id": "gh-api-graphql-merge",
@@ -335,8 +268,7 @@
         "opencode": [
           "*gh api*mergePullRequest*",
           "*gh api*enablePullRequestAutoMerge*"
-        ],
-        "native": []
+        ]
       },
       {
         "id": "npm-publish",
@@ -347,9 +279,6 @@
         "opencode": [
           "*npm publish*",
           "*npm -* publish*"
-        ],
-        "native": [
-          "Bash(npm publish:*)"
         ]
       }
     ]
@@ -381,18 +310,10 @@
     ],
     "name_allow": [
       ".env.example"
-    ],
-    "native_env_files": [
-      ".env",
-      ".env.local",
-      ".env.development",
-      ".env.production",
-      ".env.test",
-      ".env.staging"
     ]
   },
   "control_plane": {
-    "doc": "Live harness configuration. install.cs links these installed paths into one checkout, so an edit through any of them is live for every session at once, before any review. bin/harness-guard asks on a resolved real path, which catches the checkout wherever it lives; bin/sync-harness renders the same paths as edit rules for opencode, which has no hook. A trailing slash is a directory.",
+    "doc": "Live harness configuration. install.cs links these installed paths into one checkout, so an edit through any of them is live for every session at once, before any review. bin/harness-guard asks on a resolved real path, which catches the checkout wherever it lives; bin/sync-harness renders the same paths as edit rules for opencode, which has no hook. A trailing slash is a directory. A link install.cs no longer creates (~/.claude/CLAUDE.md, ~/.grok/AGENTS.md) stays listed while it may still exist on a machine: it still points into the checkout, so an edit through it is live.",
     "installed": [
       "~/.config/opencode/AGENTS.md",
       "~/.config/opencode/opencode.json",
@@ -403,6 +324,7 @@
       "~/.claude/CLAUDE.md",
       "~/.claude/settings.json",
       "~/.local/bin/notify-bot",
+      "~/.grok/AGENTS.md",
       "~/.config/opencode/models.local.json",
       "~/.config/opencode/models/"
     ],
@@ -436,59 +358,5 @@
     "shell_deny_extra": [
       "*/.claude/*"
     ]
-  },
-  "readonly_agents": {
-    "doc": "Read-only agents that must never write: the reviewers, the advisor and the explore swarm. agents/<name>.md is the source; bin/sync-harness renders each into ~/.claude/agents/<name>.md (Claude Code format, which Grok Build also reads) with only these tools. Models are the native fallback; the band pin in AGENTS.md applies when the agent runs as a T3 child. reload_solution is deliberately not listed: roslynk-rules allows it only on an explicit user request, which a read-only agent never has.",
-    "tools": [
-      "Read",
-      "Grep",
-      "Glob"
-    ],
-    "roslynk_read_tools": [
-      "get_solution_status",
-      "get_diagnostics",
-      "get_symbol",
-      "get_symbol_body",
-      "get_members",
-      "search_symbols",
-      "find_definition",
-      "get_expression_info",
-      "find_references",
-      "find_reads",
-      "find_writes",
-      "get_callers",
-      "get_callees",
-      "find_implementations",
-      "get_type_hierarchy",
-      "find_dead_code",
-      "find_dead_conditionals",
-      "multi_query",
-      "get_code_actions",
-      "open_solution"
-    ],
-    "models": {
-      "review-deep": "opus",
-      "advisor": "opus",
-      "explore": "haiku"
-    }
-  },
-  "native_agents": {
-    "doc": "Agents rendered for the native harnesses beside readonly_agents. Claude Code loads them from ~/.claude/agents; Grok Build reads that directory through its Claude compatibility layer. `build` is deliberately absent: a rendered build is a dispatchable writer, which AGENTS.md forbids, and a native main session already gets its rules from the worktree's AGENTS.md. A null model or tools means the harness default, so implementor inherits the session model; verifier keeps the opencode sonnet pin and an explicit allowlist that mirrors its opencode denies (no edit, no subagent, no web) plus the Roslynk read tools. Every native agent also gets `disallowedTools` derived from its source agent's denies, so implementor loses Task/Agent/WebFetch/WebSearch while still inheriting Bash and edit. implementor is a dispatchable writer on purpose: it is the one bounded task agent; build is not. Bash stays in verifier's list, so its git boundary is the prompt, not the allowlist: Claude Code agent frontmatter has no per-command permission rules.",
-    "agents": {
-      "implementor": {
-        "model": null,
-        "tools": null
-      },
-      "verifier": {
-        "model": "sonnet",
-        "tools": [
-          "Bash",
-          "Read",
-          "Grep",
-          "Glob",
-          "Skill"
-        ]
-      }
-    }
   }
 }

@@ -3,7 +3,7 @@
 
 tests/guard_windows.py covers the Windows path normalization. This covers the
 control plane: ~/.config/opencode/{AGENTS.md,opencode.json,bin,policy,agents,
-plugins}, ~/.claude/{CLAUDE.md,settings.json} and ~/.grok/AGENTS.md are links into
+plugins}, ~/.claude/{CLAUDE.md,settings.json} (on machines an earlier install set up) are links into
 one checkout, so an edit through any of them is live for every session at once.
 The guard resolves both sides, so the same file in another checkout is not asked.
 
