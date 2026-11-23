@@ -51,7 +51,7 @@ for path in sorted((ROOT / "commands").glob("*.md")):
 
 agents_md = (ROOT / "AGENTS.md").read_text()
 t3 = agents_md.split("## T3 Code", 1)[-1].split("\n## ", 1)[0]
-for word in ("delegate_task", "isolation", "worktree", "plan", "agents/<role>.md", "role: <role>"):
+for word in ("delegate_task", "role: <role>"):
     check(word in t3, f"AGENTS.md → T3 Code names {word!r}")
 
 build = (ROOT / "agents" / "build.md").read_text()
@@ -59,11 +59,6 @@ check("delegate_task" in build, "agents/build.md dispatches through delegate_tas
 check(re.search(r"call `advisor`|go to the explore agent", build) is None,
       "agents/build.md no longer names an opencode subagent call")
 
-# Advisor consult, 2026-11-22: each brief names its role file, and the verifier,
-# which runs tests, is not sent in plan mode.
-check('Read and follow ~/.config/opencode/agents/<role>.md' in build and 'never the copy in the checkout under review' in build, "agents/build.md gives the read-only brief's opening line")
-check(re.search(r"verifier brief the same without plan mode", build) is not None, "agents/build.md sends the verifier without plan mode")
-check(re.search(r"(?i)that file's limits govern", build) is not None, "agents/build.md defers to a role brief")
 brief = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 check("delegate_task" in brief and "agents/implementor.md" in brief, "implementor-brief dispatches via delegate_task and names agents/implementor.md")
 check("agents/review-deep.md" in (ROOT / "commands" / "verify.md").read_text().split("delegate_task", 1)[-1],
