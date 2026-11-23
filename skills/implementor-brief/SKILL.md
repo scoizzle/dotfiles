@@ -11,6 +11,9 @@ The lead plans and reviews; the implementor writes one bounded task. A cheap
 implementor cannot recover a decision the brief left out, so the brief carries
 the decisions, never pointers to where they might be found.
 
+Until the Phase 6 writer eval reports (`docs/v2-plan.md`), `AGENTS.md` → Doing
+the work decides whether to dispatch at all; this skill only says how.
+
 ## The brief, in this order
 
 1. **Goal.** What is wrong or wanted, in one or two sentences. Not the how: leave
@@ -30,8 +33,8 @@ Then the mechanics, always:
 - **Files in scope**, as repo-relative paths. Anything outside them is reported,
   not edited.
 - **Base.** A delegate worktree is cut from the parent's current commit, not the
-  default branch (2026-11-21). Start with
-  `git fetch origin && git checkout -b <branch> origin/<base>`.
+  default branch (2026-11-21). The lead pushes `<base>` before dispatch, and the
+  brief starts with `git fetch origin && git checkout -b <branch> origin/<base>`.
 - **At most three issues per task.** Past about three, a DeepSeek implementor
   hits its step limit and leaves work uncommitted (2026-11-21). Split the rest.
 - **No `git stash`.** The stash is shared by every worktree; commit work in
@@ -40,6 +43,9 @@ Then the mechanics, always:
   twelve concurrent suites exhausted RAM).
 
 ## What the implementor returns
+
+It commits on its task branch and stops: it does not push or open the PR, the
+lead does, after review.
 
 - The **head SHA** of its branch, and the files it touched.
 - The **red and green commands**, each with its **exit code**.

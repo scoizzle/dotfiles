@@ -30,8 +30,11 @@ commands with exit codes, and `done`, `blocked`, `unreviewed` or `needs-answer`.
    expectation was wrong, say so. Cleaning up a duplicate or obsolete test is a
    separate task: it names the test that still covers the behaviour, and never
    removes the last test that covers one.
-4. On a thread branch, after any required review, finish the change: commit only
-   the paths you touched, `git push`, and open the PR with `gh pr create`. Link it
+4. Briefed by a lead (an `implementor-brief`): commit only the paths you touched
+   on the task branch and return; you do not push and never open the PR, the
+   lead lands it after review. Run directly, on a thread branch, after any
+   required review, finish the change: commit only the paths you touched,
+   `git push`, and open the PR with `gh pr create`. Link it
    in T3 Code; a delegated child does not watch. Never merge, never commit or push
    on the default branch, and an unreviewed sensitive change stays uncommitted and
    returns `unreviewed`.
