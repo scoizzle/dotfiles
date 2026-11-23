@@ -310,6 +310,26 @@ statistically. The result says that going native loses nothing measurable.
 Not measured: B's wall time and cost. opencode reports no cost, and the
 directory timestamps do not give a usable duration.
 
+## Phase 6 result (2026-11-22)
+
+The writer eval (`evals/run-writer.sh`), 6 cases × 3 runs per arm, run IDs 6-A/6-B/6-C:
+
+| Arm | Model | Pass | Median per case | Total |
+| --- | --- | --- | --- | --- |
+| A | `opencode-go/deepseek-v4.1-flash#low` | 18/18 | 124 s | 3,006 s |
+| B | `claude-agent/opus#medium` | 18/18 | 57 s | 1,007 s |
+| C | `opencode-go/deepseek-v4.1-flash#high` | 18/18 | 146 s | 2,953 s |
+
+What it shows: every arm passes every case, so these cases are at ceiling and
+cannot rank the writers on correctness. DeepSeek low is as correct as Opus here,
+at about 2.2× the wall time; high effort bought nothing over low. What it does
+not show: each arm got the eval's own prompt, not an Opus brief, so it measures
+DeepSeek writing alone, not the lead/implementor split, and it records no
+token cost. To measure the split, the eval needs harder cases (ones Opus fails
+some of the time) and an arm where Opus writes the brief and DeepSeek works from
+it. Until then the split stays a skill (`skills/implementor-brief`), not
+contract text, and `AGENTS.md`'s "You do the work" stands.
+
 ## v2 reimagined: one harness, roles, profiles (2026-11-22)
 
 Decided by the person, superseding Harness topology and Roles where they differ:
