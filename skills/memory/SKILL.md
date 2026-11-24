@@ -13,8 +13,10 @@ Durable memory is `~/.config/opencode/memory/`.
 
 - `INDEX.md` first: a blurb per file. Load a file only when its blurb matches the
   task.
-- `learnings/working.md`, the promoted lessons. Read it; never write it.
-- Never read `learnings/pending/`: those lines are not yet reviewed.
+- `learnings/working.md`, the promoted lessons. Read it; never write it, except
+  in a promote the person asks for (the `dream` skill).
+- Never read `learnings/pending/` (those lines are not yet reviewed), except in
+  that promote.
 
 ## Record a lesson
 
