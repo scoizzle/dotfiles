@@ -416,6 +416,29 @@ What it shows, on three writer cases and eight review cases:
 - Every arm is at ceiling again, so nothing here ranks correctness finely. The
   oracle sees only the fix's own tests, not regressions elsewhere.
 
+## Phase 9 result: the slim implementor (2026-11-24)
+
+After Phase 8 the person made DeepSeek the default implementor and approved
+slimming what an implementor loads. DeepSeek V4.1 Flash low, the three large
+Poly cases, blind, 3 runs each, with "do not download code or patches" in every
+prompt; `web_ref` counts fetch commands only. No run in any arm fetched the fix.
+
+| Arm | Correct | Scored | Median s | Tokens per run | create / interval / numeric |
+| --- | --- | --- | --- | --- | --- |
+| Slim implementor (`--role implementor`: `implementor.md` prompt, no skill list, no global `AGENTS.md`) | 9/9 | 9/9 | 711 | **9.5M** | 13.1 / 6.3 / 9.1 |
+| Skills-only (drop the skill list, keep the build prompt and `AGENTS.md`) | 9/9 | 8/9 | 700 | 12.0M | 17.4 / 9.0 / 9.6 |
+| Bare (`--bare`) | 9/9 | 8/9 | 796 | 11.7M | 19.2 / 7.3 / 8.4 |
+
+"Scored" misses are timeouts after a correct fix (30-minute limit).
+
+What it shows: the slim implementor is the cheapest and the only arm with no
+timeout, ~19% fewer tokens than bare. The saving comes from the focused prompt,
+not from dropping the skill list (skills-only is no better than bare). Phase 8's
+"the harness costs DeepSeek 2.5x bare" was mostly the leak: bare looked cheap
+(5.2M) because it fetched the fix; solved honestly it costs 11.7M. DeepSeek costs
+about a twentieth of Opus at list price on the same cases (Phase 8). Same limits
+as Phase 8: three cases, at ceiling, an oracle that sees only the fix's own tests.
+
 ## v2 reimagined: one harness, roles, profiles (2026-11-22)
 
 Decided by the person, superseding Harness topology and Roles where they differ:
