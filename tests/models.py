@@ -183,5 +183,13 @@ with tempfile.TemporaryDirectory() as raw:
     (home / ".config" / "opencode" / ".models-old" / "lead").write_text("x/y")
     check(run(home, "apply").returncode == 0, "apply recovers from a leftover .models-old")
 
+    # 13. Review, 2026-11-24: a machine that still overrides a retired role
+    # (explore, verifier) installs, with a note, instead of failing.
+    home = home_with(tmp, "retired", {"roles": {"explore": "opencode-go/deepseek-v4.1-flash#low",
+                                                "verifier": "opencode-go/deepseek-v4.1-flash#high"}})
+    r = run(home, "apply")
+    check(r.returncode == 0 and "retired" in (r.stdout + r.stderr) and not (home / ".config" / "opencode" / "models" / "explore").exists(),
+          f"a retired role in models.local.json is skipped with a note (got {r.returncode}: {(r.stdout + r.stderr).strip()[-160:]})")
+
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)

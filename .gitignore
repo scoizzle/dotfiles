@@ -18,6 +18,9 @@ memory/learnings/*
 __pycache__/
 *.py[cod]
 
+# Eval output an older checkout may still hold (evals/ was removed 2026-11-24)
+evals/canary-*/
+
 
 # Build output: AOT publish candidates, stamps, locks.
 # bin/ is deliberately NOT ignored yet — the Python tools are still tracked there and

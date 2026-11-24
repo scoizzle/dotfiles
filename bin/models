@@ -9,7 +9,7 @@ Resolution, later layers win: the repo's default profile (models/roles.json),
 then the profile the person picks, then their machine's untracked
 ~/.config/opencode/models.local.json:
 
-    {"profile": "go-only", "roles": {"explore": "..."}, "review": {"single_family": "stop"}}
+    {"profile": "go-only", "roles": {"reviewer": "..."}, "review": {"single_family": "stop"}}
 
 opencode.json reads each agent's model from ~/.config/opencode/models/<role>
 through {file:}. opencode 2.3.2 drops a model whose file is missing without a
@@ -54,6 +54,10 @@ VENDORS = (
 PROVIDER_VENDOR = {"claude-agent": "anthropic", "anthropic": "anthropic", "xai": "xai", "openai": "openai"}
 
 
+# Roles a machine may still name in models.local.json; the trim of 2026-11-24
+# removed them, so they are skipped with a note rather than refused.
+RETIRED_ROLES = ("explore", "verifier")
+
 class Refused(Exception):
     pass
 
@@ -96,6 +100,9 @@ def resolve(home: Path) -> dict:
         raise Refused(f"no profile {name!r} (have: {known})")
     chosen = dict(load(profile_path).get("roles", {}))
     for role, model in (local.get("roles") or {}).items():
+        if role in RETIRED_ROLES:
+            print(f"{local_path}: role {role!r} is retired; ignoring it (remove it from the file)", file=sys.stderr)
+            continue
         if role not in roles:
             raise Refused(f"{local_path}: unknown role {role!r} (have: {', '.join(roles)})")
         chosen[role] = model

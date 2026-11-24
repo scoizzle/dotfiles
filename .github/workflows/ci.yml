@@ -119,6 +119,9 @@ jobs:
           test -f "$HOME/.config/opencode/memory/core/safety.md"
           test -f "$HOME/.config/opencode/memory/learnings/README.md"
 
+      - name: vendored skills match their pin
+        run: cd skills && shasum -a 256 -c UPSTREAM.sha256
+
       - name: python tools still parse
         run: python3 -m py_compile bin/review-bundle bin/review-log bin/models bin/dream bin/sync-harness bin/notify-bot bin/setup-bot-webhooks
 

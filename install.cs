@@ -226,8 +226,15 @@ foreach (var name in new[] { "evals" })
         Console.WriteLine($"  would   remove {name} (retired)");
         continue;
     }
-    DeleteLink(dst);
-    Console.WriteLine($"  removed {name} (retired)");
+    try
+    {
+        DeleteLink(dst);
+        Console.WriteLine($"  removed {name} (retired)");
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        Console.WriteLine($"  warn    {name} (retired) left in place: {ex.Message}");
+    }
 }
 
 // bin/harness-guard is gone, so the Claude Code PreToolUse hook an earlier
@@ -277,7 +284,7 @@ if (File.Exists(claudeSettings))
             }
         }
     }
-    catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException)
+    catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
     {
         Console.WriteLine($"  warn    ~/.claude/settings.json left as is: {ex.Message}");
     }

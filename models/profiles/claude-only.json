@@ -1,5 +1,5 @@
 {
-  "doc": "A Claude subscription only. One family: Opus leads and reviews in a fresh context, Sonnet implements, Haiku explores.",
+  "doc": "A Claude subscription only. One family: Opus leads and reviews in a fresh context, Sonnet implements.",
   "roles": {
     "lead": "claude-agent/opus#medium",
     "implementor": "claude-agent/sonnet#medium",

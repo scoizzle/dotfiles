@@ -129,6 +129,10 @@ def main() -> int:
         check(r.get("id") == "harness-guard", "the plugin's id is harness-guard")
         r = run(tmp, [{"action": "shell", "resources": ["echo hi"], "effect": "ask"}])
         check(r["results"][:1] == [{"effect": "ask", "message": None}], "the plugin never loosens an ask to allow")
+        # Review, 2026-11-24: the kept rule that an ask in a role session is a deny.
+        r = run(tmp, [{"action": "shell", "resources": ["x"], "effect": "ask"}], messages=[user("role: implementor\nFix it.")])
+        check(r["results"][:1] and r["results"][0]["effect"] == "deny" and "needs-answer" in (r["results"][0]["message"] or ""),
+              "in a role session an ask becomes a deny that says needs-answer")
         # Roles: the allowlist from policy/permissions.json.
         reviewer = [user("role: reviewer\nRead and follow ~/.config/opencode/agents/review-deep.md.")]
         calls = [{"action": a, "resources": ["*"]} for a in ("read", "grep", "glob", "skill", "roslynk_find_references")]

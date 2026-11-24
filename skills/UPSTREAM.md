@@ -21,10 +21,9 @@ frontmatter).
 
 `platform-detection/references/command-mode.md` ships with its skill and is vendored too.
 
-`UPSTREAM.sha256` pins every vendored file. `tests/skills.py` fails when a pinned
-file is edited in place, a pinned file goes missing, a vendored skill gains an
-unpinned file, a skill header does not match its directory, or a skill names a
-`references/` path it does not ship.
+`UPSTREAM.sha256` pins every vendored file. CI runs `shasum -a 256 -c
+UPSTREAM.sha256` in `skills/`, which fails when a pinned file is edited in place
+or goes missing.
 
 ## Known gaps
 
@@ -56,7 +55,7 @@ done
 shasum -a 256 run-tests/SKILL.md platform-detection/SKILL.md \
   platform-detection/references/command-mode.md \
   test-anti-patterns/SKILL.md assertion-quality/SKILL.md
-python3 tests/skills.py
+(cd skills && shasum -a 256 -c UPSTREAM.sha256)
 ```
 
 Read the diff of a re-vendor like any other change: a skill may gain a dependency on a sibling

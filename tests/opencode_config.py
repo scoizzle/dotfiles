@@ -6,6 +6,7 @@ writes outside the checkout do not ask; every agent reads its model from its
 role file. Everything else agents may do (the person: "ENABLE the agents").
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,12 @@ agents = config.get("agents", config.get("agent", {}))
 for name, role in roles["agents"].items():
     model = (agents.get(name) or {}).get("model")
     check(model == "{file:~/.config/opencode/models/%s}" % role, f"agent {name} reads its model from the {role} role file")
+# Review, 2026-11-24: agent frontmatter outranks the global rule, so no agent
+# may re-allow opencode's own dispatch.
+for path in sorted((ROOT / "agents").glob("*.md")):
+    front = path.read_text().split("\n---\n", 1)[0]
+    blocks = re.findall(r"- action: subagent\n(?:\s+\w+: .*\n)*?\s+effect: (\w+)", front + "\n")
+    check(all(b == "deny" for b in blocks), f"agents/{path.name} does not re-allow subagent")
 for path in (ROOT / "agents").glob("*.md"):
     check(path.stem in agents or path.stem in ("build",), f"agents/{path.name} is rendered into opencode.json")
 
