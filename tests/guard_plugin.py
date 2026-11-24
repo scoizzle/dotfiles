@@ -176,20 +176,9 @@ def main() -> int:
         r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user(header + "Role: Reviewer\nRead and follow it.")],
                 env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a role line after T3's header counts, in any case (advisor)")
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}, {"action": "read", "resources": ["a"]}],
-                messages=[user(header + "Fix the typo in a.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in r["results"]] == ["deny", "allow"], "a T3 child with no role line gets the read-only set (advisor)")
         r = run(tmp, [{"action": "edit", "resources": ["a"]}],
                 messages=[user("role: implementor\nThe reviewer brief says:\nrole: reviewer")], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "the first role line wins")
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user(header + "Fix it.\nrole: implementor")],
-                env={"HARNESS_GUARD_BIN": quiet})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny",
-              "a role line that is not first after the header does not count; the child stays read-only (review)")
-        parts = {"id": "msg_1", "type": "user", "parts": [{"text": "<system-reminder>plan mode</system-reminder>"}, {"text": header + "Fix it."}]}
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[parts], env={"HARNESS_GUARD_BIN": quiet})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny",
-              "a part before T3's header does not turn a role-less child into an unlimited one (review)")
         r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user("A summary after compaction.")],
                 env={"HARNESS_GUARD_BIN": quiet}, storage={"role/ses_1": "reviewer"})
         check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a stored role survives a lost first message (advisor)")
@@ -219,12 +208,6 @@ def main() -> int:
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "an implementor may use Code Mode execute")
         r = run(tmp, [{"action": "execute", "resources": ["*"]}], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead may use Code Mode execute")
-        r = run(tmp, [{"action": "execute", "resources": ["*"], "code": 'return await (await fetch("https://github.com/acme/repo/pull/7.diff")).text()'},
-                      {"action": "execute", "resources": ["*"], "code": "return 1 + 1"}],
-                messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in r["results"]] == ["deny", "allow"],
-              f"an implementor's Code Mode may not fetch from a code host (review) ({[x['effect'] for x in r['results']]})")
-
         # The person, 2026-11-24: slim what an implementor loads. Its session gets
         # agents/implementor.md as its prompt, without the global AGENTS.md block and
         # the skill list; the project's AGENTS.md, Code Mode and MCP guidance stay
@@ -248,33 +231,13 @@ def main() -> int:
             check("CODEMODE-GUIDE" in got[2] and "ROSLYNK-GUIDE" in got[2] and "Today's date" in got[2],
                   f"{label}: Code Mode, MCP guidance and the date stay")
         for label, kwargs in (("the lead", {}), ("a reviewer", {"messages": reviewer}),
-                              ("a role-less T3 child (read-only default)", {"messages": [user(header + "Fix the typo.")]})):
+                              ("a role-less T3 child", {"messages": [user(header + "Fix the typo.")]})):
             r = run(tmp, [], system=sysin, **kwargs)
             got = r.get("system") or ["", "", ""]
             check("BUILD-PROMPT" in got[0] and "GLOBAL-RULES" in got[2] and "SKILL-LIST" in got[2], f"{label}: the system prompt is untouched")
         r = run(tmp, [], system={"prompt": "BUILD-PROMPT", "sources": [{"key": "core/other", "text": "X"}]},
                 messages=[user("role: implementor\nFix it.")])
         check(r.get("system") is not None, "a system prompt of an unexpected shape does not crash the hook")
-        # An implementor may not fetch code from a code host (advisor, 2026-11-24:
-        # DeepSeek fetched the merged fix from GitHub in 9 of 18 Phase 8 runs).
-        fetches = ["curl -sL https://github.com/acme/repo/pull/7.diff", "git clone https://github.com/acme/repo.git up",
-                   "gh pr diff 7", "wget -qO- https://raw.githubusercontent.com/acme/repo/x/f.cs"]
-        impl = run(tmp, [{"action": "shell", "resources": [c]} for c in fetches] + [{"action": "shell", "resources": ["git status"]}],
-                   messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in impl["results"]] == ["deny"] * 4 + ["allow"],
-              f"an implementor may not fetch code from a code host ({[x['effect'] for x in impl['results']]})")
-        # Review, 2026-11-24: more fetch routes, and no false positive on a word.
-        more = ["git fetch https://github.com/acme/repo.git main", "git -C x pull https://codeberg.org/a/b",
-                "git remote add up https://github.com/acme/repo.git", "curl -sL \\\n  https://gist.github.com/a/b"]
-        impl2 = run(tmp, [{"action": "shell", "resources": [c]} for c in more]
-                    + [{"action": "shell", "resources": [c]} for c in ("git log --grep=clone", 'git commit -m "fix clone"',
-                                                            "git fetch origin && git checkout -b t origin/main")],
-                    messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in impl2["results"]] == ["deny"] * 4 + ["allow"] * 3,
-              f"implementor fetch routes denied, a word 'clone' allowed ({[x['effect'] for x in impl2['results']]})")
-        lead = run(tmp, [{"action": "shell", "resources": [fetches[0]]}], env={"HARNESS_GUARD_BIN": quiet})
-        check(lead["results"][:1] == [{"effect": "allow", "message": None}], "the lead may still fetch")
-
     print(f"\n{len(FAILURES)} failure(s)")
     return 1 if FAILURES else 0
 

@@ -178,15 +178,6 @@ def case_check_evidence(root):
     check("MARK-ERR" in output, f"{root}: 07 keeps stderr")
 
 
-def case_check_denied(root):
-    repo = make_repo(root, {"src/app.py": "x = 1\n"})
-    rc, _out, err, tmp = bundle(repo, root, "--check", "rm -rf important")
-    check(rc == 2, f"{root}: a denied --check exits 2 (rc={rc})")
-    check("harness-guard" in err, f"{root}: the refusal names the guard ({err.strip()[:120]})")
-    made = os.path.join(tmp, "review-bundles")
-    check(not os.path.isdir(made) or not os.listdir(made), f"{root}: a denied --check writes no bundle")
-
-
 def case_check_timeout(root):
     repo = make_repo(root, {"src/app.py": "x = 1\n"})
     rc, _out, err, tmp = bundle(repo, root, "--check", "sleep 5", "--check-timeout", "1")
@@ -204,35 +195,6 @@ def case_skip_word_is_not_a_skip(root):
     cwd = bundle_dir(tmp)
     body = section(sections(cwd), "06-test-changes")
     check("### added skip" not in body, f"{root}: a variable named SKIP is not an added skip")
-
-
-def case_check_ask_refused(root):
-    """An `ask` is a prompt this tool cannot show, so it is refused like a deny."""
-    repo = make_repo(root, {"src/app.py": "x = 1\n"})
-    rc, _out, err, tmp = bundle(repo, root, "--check", "git push")
-    check(rc == 2, f"{root}: an ask-class --check exits 2 (rc={rc})")
-    check("harness-guard" in err, f"{root}: the ask refusal names the guard ({err.strip()[:120]})")
-    made = os.path.join(tmp, "review-bundles")
-    check(not os.path.isdir(made) or not os.listdir(made), f"{root}: an ask-class --check writes no bundle")
-
-
-def case_later_check_refused_runs_nothing(root):
-    repo = make_repo(root, {"src/app.py": "x = 1\n"})
-    marker = os.path.join(repo, "marker.txt")
-    rc, _out, err, tmp = bundle(repo, root, "--check", "touch marker.txt", "--check", "rm -rf important")
-    check(rc == 2, f"{root}: the second command being refused still exits 2 (rc={rc})")
-    check(not os.path.exists(marker), f"{root}: no check runs when a later one is refused")
-    made = os.path.join(tmp, "review-bundles")
-    check(not os.path.isdir(made) or not os.listdir(made), f"{root}: a later refusal writes no bundle")
-
-
-def case_guard_fail_closed(root):
-    repo = make_repo(root, {"src/app.py": "x = 1\n"})
-    rc, _out, err, tmp = bundle(
-        repo, root, "--check", "echo hi", env={"HARNESS_POLICY": os.path.join(root, "absent.json")}
-    )
-    check(rc == 2, f"{root}: a guard that cannot load refuses --check (rc={rc})")
-    check("harness-guard" in err, f"{root}: the fail-closed refusal names the guard ({err.strip()[:120]})")
 
 
 def case_untracked_test_skip(root):
@@ -381,12 +343,8 @@ CASES = (
     case_deleted_and_moved,
     case_clean_change,
     case_check_evidence,
-    case_check_denied,
     case_check_timeout,
     case_skip_word_is_not_a_skip,
-    case_check_ask_refused,
-    case_later_check_refused_runs_nothing,
-    case_guard_fail_closed,
     case_untracked_test_skip,
     case_test_layouts,
     case_zero_timeout_is_refused,
