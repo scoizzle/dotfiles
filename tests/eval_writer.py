@@ -151,6 +151,21 @@ def main():
               leaked.returncode != 0,
               f"refs/heads/leak exists in the fixture repo: {leaked.stdout}")
 
+        # The fix must not be reachable from the writer's clone (review of PR #57,
+        # 2026-11-23: writers ran `git show HEAD~1:<file>` and copied it).
+        probe_log = os.path.join(root, "history.txt")
+        write(os.path.join(stubs, "history.sh"),
+              "#!/bin/sh\n"
+              f"{{ git rev-parse --verify -q HEAD~1 >/dev/null && echo parent; "
+              f"git log --all --oneline | wc -l | tr -d ' '; "
+              f"git cat-file -e '{git(os.path.join(root, 'repo'), 'rev-parse', 'HEAD').strip()}' 2>/dev/null && echo base-object; "
+              f"git remote | wc -l | tr -d ' '; }} > '{probe_log}'\n"
+              "printf 'fixed\\n' > app.txt\n", mode=0o755)
+        result = run(root, cases, checks, os.path.join(stubs, "history.sh"))
+        seen = open(probe_log).read().split() if os.path.exists(probe_log) else ["missing"]
+        check("the writer's clone has one commit, no parent, no remote, and not the fixed base's objects",
+              result.returncode == 0 and seen == ["1", "0"], f"probe={seen}\n{result.stdout}")
+
         # --blind and --lead (v2 Phase 6b): the default prompt hands the writer
         # each case's cause notes, so every arm scored 18/18. --blind drops
         # them; --lead runs a lead first, which writes .eval-brief.md and must not
@@ -279,6 +294,60 @@ def main():
             check(f"the writer agent is {want}",
                   result.returncode == 0 and agent == want,
                   f"rc={result.returncode} agent={agent}\n{result.stdout}\n{result.stderr}")
+
+        # --bare (the person, 2026-11-23: "is bare t3/opencode better than what I
+        # have?"): the writer runs with an empty opencode config and no Claude Code
+        # compatibility, so no AGENTS.md, skills, plugin, policy or MCP servers load.
+        env_log = os.path.join(root, "opencode-env.txt")
+        write(os.path.join(fake_bin, "opencode"),
+              "#!/bin/sh\n"
+              f"printf 'XDG=%s\\nDISABLE=%s\\n' \"$XDG_CONFIG_HOME\" \"$OPENCODE_DISABLE_CLAUDE_CODE\" > '{env_log}'\n"
+              f"printf '%s\\n' \"$@\" > '{argv_log}'\n"
+              "ls \"$XDG_CONFIG_HOME/opencode\" 2>/dev/null | wc -l | tr -d ' ' >> '" + env_log + "'\n"
+              "printf 'fixed\\n' > app.txt\n", mode=0o755)
+        env = dict(os.environ)
+        env.pop("EVAL_WRITER_CMD", None)
+        env.update({"EVAL_CASES_DIR": cases, "EVAL_WRITER_CHECKS": checks,
+                    "EVAL_WORK_ROOT": os.path.join(root, "work"), "EVAL_CASE_TIMEOUT": "120",
+                    "PATH": fake_bin + os.pathsep + env.get("PATH", "")})
+        result = subprocess.run(["bash", RUN_WRITER, "-m", "test/model", "-c", "demo", "--bare"],
+                                env=env, capture_output=True, text=True)
+        seen = open(env_log).read().split("\n") if os.path.exists(env_log) else []
+        xdg = seen[0][4:] if seen and seen[0].startswith("XDG=") else ""
+        check("--bare runs opencode with an empty config and Claude Code compatibility off",
+              result.returncode == 0 and xdg and xdg != os.path.join(os.path.expanduser("~"), ".config")
+              and len(seen) > 2 and seen[1] == "DISABLE=1" and seen[2] == "0",
+              f"rc={result.returncode} seen={seen}\n{result.stdout}\n{result.stderr}")
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        newest = max(logs, key=os.path.getmtime) if logs else None
+        tail = open(newest).read().strip().splitlines()[-1] if newest else ""
+        check("a --bare run is marked bare=1", " bare=1" in tail, tail)
+        # --no-project (the person, 2026-11-23: "is poly's agent stuff crap too?"):
+        # also skip the repository's own AGENTS.md, to isolate it.
+        write(os.path.join(fake_bin, "opencode"),
+              "#!/bin/sh\n"
+              f"printf 'PROJECT=%s\\n' \"$OPENCODE_DISABLE_PROJECT_CONFIG\" > '{env_log}'\n"
+              "printf 'fixed\\n' > app.txt\n", mode=0o755)
+        result = subprocess.run(["bash", RUN_WRITER, "-m", "test/model", "-c", "demo", "--bare", "--no-project"],
+                                env=env, capture_output=True, text=True)
+        seen = open(env_log).read().split("\n") if os.path.exists(env_log) else []
+        check("--no-project skips the project's AGENTS.md", result.returncode == 0 and seen[:1] == ["PROJECT=1"],
+              f"rc={result.returncode} {seen}\n{result.stderr}")
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("a --no-project run is marked project=0", " project=0" in tail, tail)
+        # The fixture repository is still on disk; a writer that reads it is marked
+        # (review, 2026-11-23), so a leak shows in the results instead of hiding.
+        repo_path = os.path.join(root, "repo")
+        write(os.path.join(stubs, "peek.sh"), f"#!/bin/sh\necho 'looking at {repo_path}'\nprintf 'fixed\\n' > app.txt\n", mode=0o755)
+        result = run(root, cases, checks, os.path.join(stubs, "peek.sh"))
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("a writer that names the fixture repository is marked fixture_ref=1", " fixture_ref=1" in tail, tail)
+        result = run(root, cases, checks, os.path.join(stubs, "fix.sh"))
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("an honest writer is fixture_ref=0", " fixture_ref=0" in tail, tail)
 
     return 1 if failures else 0
 

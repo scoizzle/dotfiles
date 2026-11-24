@@ -8,8 +8,8 @@
 # The writer runs as the `build` agent, the default agent whose pin this eval
 # measures; -a names another. -m overrides that agent's configured model.
 #
-# Every case in evals/writer-checks.json clones the fixture repo at its base
-# commit, applies the case patch (which reverts only the production files, so
+# Every case in evals/writer-checks.json exports the fixture repo's base
+# commit into a fresh repository (no history, no remote), applies the case patch (which reverts only the production files, so
 # the fix's own tests stay in the tree and fail), commits that state inside the
 # scratch clone, and runs the writer there. A run passes only when the check
 # exits 0 and no protected path differs from the committed bugged state.
@@ -36,6 +36,13 @@
 # findings. The line records pre_pass (the writer's first attempt scored
 # right), verdict, sup=ok|catch|false_alarm|miss, and sup_cost/sup_tokens for
 # the supervisor's sessions alone. EVAL_SUPERVISOR_CMD replaces its opencode run.
+#
+# --bare runs the writer on bare opencode: an empty config directory as
+# XDG_CONFIG_HOME and OPENCODE_DISABLE_CLAUDE_CODE=1, so no AGENTS.md (nor the
+# ~/.claude/CLAUDE.md fallback), harness skills, plugins, policy or MCP servers
+# load (the person, 2026-11-23: "is bare t3/opencode better than what I have?").
+# Skills the person installed outside this repo (~/.agents/skills) still load in
+# both arms.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -46,6 +53,8 @@ MODEL=""
 LEAD=""
 SUPERVISOR=""
 BLIND=0
+BARE=0
+PROJECT=1
 AGENT="build"
 ONLY=""
 RUNS=1
@@ -56,7 +65,7 @@ PASSED=0
 CASE_TIMEOUT="${EVAL_CASE_TIMEOUT:-900}"
 
 usage() {
-  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]] [--supervise provider/model[#variant]]" >&2
+  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]] [--supervise provider/model[#variant]] [--bare] [--no-project]" >&2
   exit 2
 }
 
@@ -69,6 +78,8 @@ while [ $# -gt 0 ]; do
     --blind) BLIND=1; shift ;;
     --lead) [ $# -ge 2 ] || usage; LEAD="$2"; BLIND=1; shift 2 ;;
     --supervise) [ $# -ge 2 ] || usage; SUPERVISOR="$2"; BLIND=1; shift 2 ;;
+    --bare) BARE=1; shift ;;
+    --no-project) PROJECT=0; shift ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -117,6 +128,18 @@ expand_home() {
 
 # $$ keeps concurrent invocations apart, exactly as run.sh does.
 WORK="$WORK_ROOT/${EVAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}-writer-$$"
+WRITER_ENV=(env)
+if [ "$BARE" -eq 1 ]; then
+  mkdir -p "$WORK/bare-config/opencode"
+  # Unset any config a launching shell carries, or the harness reaches the bare arm (review, 2026-11-23).
+  WRITER_ENV=(env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR -u OPENCODE_CONFIG_CONTENT XDG_CONFIG_HOME="$WORK/bare-config" OPENCODE_DISABLE_CLAUDE_CODE=1)
+fi
+# --no-project also sets OPENCODE_DISABLE_PROJECT_CONFIG=1, skipping the
+# repository's own AGENTS.md, so bare vs bare --no-project measures the
+# project's agent layer (the person, 2026-11-23: "is poly's agent stuff crap too?").
+if [ "$PROJECT" -eq 0 ]; then
+  WRITER_ENV+=(OPENCODE_DISABLE_PROJECT_CONFIG=1)
+fi
 mkdir -p "$WORK/co" "$WORK/results"
 printf '%s\n' "$MODEL" > "$WORK/model"
 
@@ -180,21 +203,17 @@ Run the check yourself before you finish. Do not launch subagents."
     mkdir -p "$outdir"
     rm -rf "$co"
 
-    if ! git clone --shared --no-checkout -q "$repo" "$co"; then
-      mark_failed "clone failed"
+    # The writer gets the base's files in a fresh repository whose only commit
+    # is the bugged state: no parent, no remote, no fixture objects. A clone
+    # kept the fixed base as HEAD~1, and writers copied the fix from it (review
+    # of PR #57, 2026-11-23). With no remote, a push has nowhere to go either.
+    mkdir -p "$co"
+    if ! git -C "$repo" archive --format=tar "$base" | tar -x -C "$co"; then
+      mark_failed "export failed"
       k=$((k+1)); continue
     fi
-    if ! git -C "$co" checkout -q "$base"; then
-      mark_failed "checkout failed"
-      k=$((k+1)); continue
-    fi
-    # The writer has shell and runs with --auto, which approves a push. The
-    # clone's only remote is the fixture repository itself, so point it at a
-    # path that does not exist; the shared object store does not use the URL.
-    # (`git remote remove` also deletes every remote-tracking ref, which fails
-    # on a fixture whose branch names collide on a case-insensitive disk.)
-    if ! git -C "$co" remote set-url origin "$co/.git/eval-no-remote"; then
-      mark_failed "remote disable failed"
+    if ! git -C "$co" init -q; then
+      mark_failed "init failed"
       k=$((k+1)); continue
     fi
     if ! git -C "$co" apply "$dir$patch"; then
@@ -254,7 +273,7 @@ Run the check yourself before you finish. Do not launch subagents."
       ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_WRITER_CMD" "$writer_prompt" ) > "$outdir/writer.txt" 2>&1
       wrc=$?
     else
-      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$writer_prompt" ) > "$outdir/writer.txt" 2>&1
+      ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "${WRITER_ENV[@]}" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$writer_prompt" ) > "$outdir/writer.txt" 2>&1
       wrc=$?
     fi
 
@@ -313,7 +332,7 @@ $(tail -n +2 "$outdir/verdict.md")"
         if [ -n "${EVAL_WRITER_CMD:-}" ]; then
           ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$EVAL_WRITER_CMD" "$fix_prompt" ) >> "$outdir/writer.txt" 2>&1
         else
-          ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$fix_prompt" ) >> "$outdir/writer.txt" 2>&1
+          ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "${WRITER_ENV[@]}" opencode run --standalone --agent "$AGENT" --model "$MODEL" --auto "$fix_prompt" ) >> "$outdir/writer.txt" 2>&1
         fi
         wrc=$?
       fi
@@ -348,6 +367,8 @@ $(tail -n +2 "$outdir/verdict.md")"
       reason="${reason:+$reason; }touched tests (${touched# })"
     fi
 
+    # The fixture repository stays on disk; mark a writer that names it.
+    if grep -q -F -- "$repo" "$outdir/writer.txt" 2>/dev/null; then fixture_ref=1; else fixture_ref=0; fi
     usage_line="$(python3 -I - "$co" "$start_ms" "$sup_start_ms" "$sup_end_ms" <<'PY'
 import os, sqlite3, sys
 co, since, s0, s1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
@@ -364,8 +385,8 @@ except Exception:
 print(f"cost={cost:.4f} tokens={tokens} sup_cost={scost:.4f} sup_tokens={stokens}")
 PY
 )"
-    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s\n' \
-      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" >> "$outdir/writer.txt"
+    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s bare=%s project=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s fixture_ref=%s\n' \
+      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$BARE" "$PROJECT" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" "$fixture_ref" >> "$outdir/writer.txt"
 
     TOTAL=$((TOTAL+1))
     if [ -z "$reason" ]; then

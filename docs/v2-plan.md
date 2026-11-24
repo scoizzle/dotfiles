@@ -312,6 +312,8 @@ directory timestamps do not give a usable duration.
 
 ## Phase 6 result (2026-11-22)
 
+> **Contaminated (found 2026-11-23, review of PR #57).** Each writer's clone kept the fixed base as `HEAD~1`, and writers copied the fix from it (`git show HEAD~1:<file>`, `git checkout HEAD~1 -- <file>`): 2 of 18 runs in arm A, 5 in B, 1 in C. The pass rates below do not measure diagnosis. The harness now gives the writer a one-commit repository; see Phase 8.
+
 The writer eval (`evals/run-writer.sh`), 6 cases × 3 runs per arm, run IDs 6-A/6-B/6-C:
 
 | Arm | Model | Pass | Median per case | Total |
@@ -331,6 +333,8 @@ it. Until then the split stays a skill (`skills/implementor-brief`), not
 contract text, and `AGENTS.md`'s "You do the work" stands.
 
 ## Phase 6b result (2026-11-23)
+
+> **Contaminated (found 2026-11-23, review of PR #57).** As in Phase 6, writers copied the fix from `HEAD~1`: 2 of 18 runs in arm A, 10 in B, 4 in C, 2 in D. The pass rates and per-run costs below do not measure diagnosis, and D's 0 catches are uninformative (the supervisor cannot tell a copied fix from an honest one). See Phase 8.
 
 Phase 6 handed every writer the cause notes, so a second round ran blind
 (`run-writer.sh --blind`: claim, check and protected paths only), 6 cases × 3

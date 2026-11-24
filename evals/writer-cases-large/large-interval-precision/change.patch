@@ -1,0 +1,662 @@
+diff --git a/Poly.Mcp/Docs/poly-dsl-guide.md b/Poly.Mcp/Docs/poly-dsl-guide.md
+index ae0bd4f5d..016b1b7ca 100644
+--- a/Poly.Mcp/Docs/poly-dsl-guide.md
++++ b/Poly.Mcp/Docs/poly-dsl-guide.md
+@@ -1717,14 +1717,10 @@ diverging:
+   `invoke`, a `create` or a `create in` on its path: that assign is judged by the action's
+   other `require` gates and every policy of its stage, as before `require not` narrowed.
+ - **Silence means verified (Q4)** — with one exception: a call-chain postcondition whose
+-  value range is not known (below). An interval comes from a literal, a ranged property or
+-  parameter (narrowed by a `require` gate, an `if`, or a stage policy), `+`, `-`, `*` and
+-  `/` (a quotient only when the divisor's whole range excludes 0; #502 owns the zero case),
+-  a `match` (the hull of its arms and its required `else`, only when every one has an
+-  interval), and a Text's length (below). A write analysis cannot
+-  decide — a bare property or parameter with no bound, a call, a `%`, a relationship leaf,
+-  a division by a range that includes 0, a `match` with an unbounded arm, or a constraint
+-  kind with no flow decision — is a **`DMCS003` warning** naming the write, the property and the constraint.
++  value range is not known (below). A write analysis cannot
++  decide — a bare property or parameter with no bound, an operator the
++  interval flow does not model (`/`, a call, `match`), or a constraint kind with no flow
++  decision — is a **`DMCS003` warning** naming the write, the property and the constraint.
+   So with
+   `A: Number range(0, 10)` and `B: Number range(5, 20)`, `assign A to B` warns
+   (`DMEFF008`, "can fall outside"), and `assign A to U + 1` with an unbounded `U` warns
+@@ -1745,15 +1741,10 @@ diverging:
+   against the declared ranges, as is a create outside an action body.
+   `range(...)`, `length(...)`, `pattern(...)` and `equals(...)` are the kinds the runtime enforces
+   on a write, and the kinds decided against a computed value on an `assign` or an initializer.
+-  A `length` is decided against the value's **length interval**: a Text's own `length(...)`
+-  (a Text with none is `[0, +∞)`), `+` with a literal or another bounded Text (the two lengths
+-  added), or a `match` over such values. A copy or a concatenation that lies inside the target's
+-  length is verified; one that does not is a `DMEFF008` warning naming the interval
+-  (`[3, 5] can fall outside length(1, 3)`) — never an error yet, because row V-08 owns the error
+-  side of a length. A `pattern` or `equals` is proven only when the value carries
+-  the identical declared one. Anything else is unverified: a Text whose length the walk cannot
+-  name (a relationship leaf, a call), a different pattern. A literal assigned directly is still
+-  checked outright and is an
++  A `length` is proven only when the value's own `length(...)` lies inside the target's
++  (a copy of a shorter-bounded Text property); a `pattern` or `equals` only when the value carries
++  the identical declared one. Anything else is unverified: `S + "xx"`, a Text with no
++  such bound, a different pattern. A literal assigned directly is still checked outright and is an
+   error when it fails. Excluded: `unique` (it depends on stored state, not the written value, so a
+   proof about one write cannot cover it), `required` (`DMEFF014` owns it) and enum membership
+   (the type check owns it). The **call chain** decides
+diff --git a/Poly.Tests/DomainModeling/Analysis/ExactIntervalTests.cs b/Poly.Tests/DomainModeling/Analysis/ExactIntervalTests.cs
+index f486002bb..376db0859 100644
+--- a/Poly.Tests/DomainModeling/Analysis/ExactIntervalTests.cs
++++ b/Poly.Tests/DomainModeling/Analysis/ExactIntervalTests.cs
+@@ -449,15 +449,11 @@ public class ExactIntervalTests {
+     /// <summary>T12: a node with no transfer row is unknown, and a registered row still transfers.</summary>
+     [Test]
+     public async Task IntervalTransfers_UnregisteredNode_IsUnknown() {
+-        // A call has no row; `/` got one in #1040, so it is no longer the example.
+-        var call = DomainExpression.Call("f", []);
+-        await Assert.That(IntervalTransfers.Transfer(call, [Range(4m, 4m), Range(2m, 2m)])).IsNull();
++        var divide = DomainExpression.Divide(DomainExpression.Literal(4m), DomainExpression.Literal(2m));
++        await Assert.That(IntervalTransfers.Transfer(divide, [Range(4m, 4m), Range(2m, 2m)])).IsNull();
+ 
+         var add = DomainExpression.Add(DomainExpression.Literal(1m), DomainExpression.Literal(2m));
+         await Assert.That(IntervalTransfers.Transfer(add, [Range(1m, 1m), Range(2m, 2m)])!.Min).IsEqualTo(3m);
+-
+-        var divide = DomainExpression.Divide(DomainExpression.Literal(4m), DomainExpression.Literal(2m));
+-        await Assert.That(IntervalTransfers.Transfer(divide, [Range(4m, 4m), Range(2m, 2m)])!.Max).IsEqualTo(2m);
+     }
+ 
+     // ── V-05b fix round 1 ─────────────────────────────────────────────────
+@@ -591,119 +587,4 @@ public class ExactIntervalTests {
+     [Test]
+     public async Task CallChain_ViolatedStageBeforeUndecidedStage_IsReportedAsError() =>
+         await AssertViolatedWins(TwoStageChainDomain(violatedStageFirst: true));
+-
+-    // ── Divide (#1040): the corner-quotient hull ─────────────────────────
+-    //
+-    // The transfer does not know whether the operands are Number (C# integer division, truncating
+-    // toward zero) or Decimal (exact), so the row covers BOTH: the hull of the four exact corner
+-    // quotients, with a positive lower and a negative upper endpoint moved onto the integral lattice
+-    // (`trunc` is monotone, so that is the only place truncation can leave the exact hull). Truncating
+-    // every corner instead would be narrower and wrong: `5 / 2` into `Decimal range(0, 2)` would read
+-    // `[2, 2]` and prove a 2.5. A corner quotient decimal rounds is widened by one unit in its last
+-    // place, so a rounded endpoint is never the one a `proven` rests on.
+-
+-    private static ValueRange? Divide(decimal? min, decimal? max, decimal? divisorMin, decimal? divisorMax) =>
+-        IntervalTransfers.Transfer(
+-            DomainExpression.Divide(DomainExpression.Property("A"), DomainExpression.Property("B")),
+-            [Range(min, max), Range(divisorMin, divisorMax)]);
+-
+-    /// <summary>The issue's own example: <c>X / 2</c> with <c>X range(0, 10)</c> is <c>[0, 5]</c>.</summary>
+-    [Test]
+-    public async Task Divide_BoundedByPositiveLiteral_IsTheQuotientHull() {
+-        var quotient = Divide(0m, 10m, 2m, 2m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(0m);
+-        await Assert.That(quotient.Max).IsEqualTo(5m);
+-    }
+-
+-    /// <summary>A negative divisor keeps the four-corner rule: the interval frame flips.</summary>
+-    [Test]
+-    public async Task Divide_NegativeDivisor_FlipsTheQuotientHull() {
+-        var quotient = Divide(0m, 10m, -2m, -2m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(-5m);
+-        await Assert.That(quotient.Max).IsEqualTo(0m);
+-    }
+-
+-    /// <summary>Two negative operands: the quotient is positive, and every corner is whole.</summary>
+-    [Test]
+-    public async Task Divide_TwoNegativeOperands_IsPositiveAndWhole() {
+-        var quotient = Divide(-10m, -6m, -2m, -1m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(3m);
+-        await Assert.That(quotient.Max).IsEqualTo(10m);
+-    }
+-
+-    /// <summary>A positive lower endpoint moves down to the integer division it can produce:
+-    /// <c>[3, 4] / [2, 3]</c> is <c>[1, 2]</c> (3 / 2 = 1).</summary>
+-    [Test]
+-    public async Task Divide_IntegerDivision_PutsThePositiveLowerBoundOnTheLattice() {
+-        var quotient = Divide(3m, 4m, 2m, 3m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(1m);
+-        await Assert.That(quotient.Max).IsEqualTo(2m);
+-    }
+-
+-    /// <summary>A negative upper endpoint moves up to the integer division it can produce.</summary>
+-    [Test]
+-    public async Task Divide_IntegerDivision_PutsTheNegativeUpperBoundOnTheLattice() {
+-        var quotient = Divide(-5m, -4m, 2m, 3m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(-2.5m);
+-        await Assert.That(quotient.Max).IsEqualTo(-1m);
+-    }
+-
+-    /// <summary>
+-    /// The soundness pin for the Decimal half: <c>5 / 2</c> is 2 for a Number operand and 2.5 for a
+-    /// Decimal one, so the row must span both. Truncating every corner would answer <c>[2, 2]</c>.
+-    /// </summary>
+-    [Test]
+-    public async Task Divide_DecimalQuotient_KeepsTheFractionUntruncated() {
+-        var quotient = Divide(5m, 5m, 2m, 2m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        await Assert.That(quotient!.Min).IsEqualTo(2m);
+-        await Assert.That(quotient.Max).IsEqualTo(2.5m);
+-    }
+-
+-    /// <summary>A corner quotient decimal rounds must not be the endpoint: <c>1 / 3</c>'s upper bound is
+-    /// one unit in the last place ABOVE the rounded quotient, so a target whose maximum is that rounded
+-    /// decimal is never proved from a quotient that is not exact.</summary>
+-    [Test]
+-    public async Task Divide_InexactQuotient_WidensTheUpperBoundPastTheRoundedDecimal() {
+-        var rounded = 1m / 3m;
+-        var quotient = Divide(1m, 1m, 3m, 3m);
+-
+-        await Assert.That(quotient).IsNotNull();
+-        var min = quotient!.Min!.Value;
+-        var max = quotient.Max!.Value;
+-        // Integer division of 1 / 3 is 0, so the lower bound lands on the lattice.
+-        await Assert.That(min).IsEqualTo(0m);
+-        await Assert.That(max).IsGreaterThan(rounded);
+-        // One unit in the last place, not a whole unit: the widening stays tight.
+-        await Assert.That(max - rounded).IsLessThan(0.000001m);
+-    }
+-
+-    /// <summary>A divisor whose interval includes 0 has no quotient range: division by zero is #502's,
+-    /// and a hull cannot exclude it. A connected interval spanning both signs includes 0 by definition.</summary>
+-    [Test]
+-    public async Task Divide_DivisorIncludingZero_IsUnknown() {
+-        await Assert.That(Divide(1m, 5m, -1m, 1m)).IsNull();
+-        await Assert.That(Divide(1m, 5m, 0m, 0m)).IsNull();
+-        await Assert.That(Divide(1m, 5m, 0m, 10m)).IsNull();
+-        await Assert.That(Divide(1m, 5m, -10m, 0m)).IsNull();
+-    }
+-
+-    /// <summary>An open endpoint on either side leaves a corner uncomputable, so the row answers unknown.</summary>
+-    [Test]
+-    public async Task Divide_OpenOperand_IsUnknown() {
+-        await Assert.That(Divide(0m, null, 2m, 2m)).IsNull();
+-        await Assert.That(Divide(0m, 10m, null, -2m)).IsNull();
+-        await Assert.That(Divide(null, 10m, 2m, 2m)).IsNull();
+-    }
+ }
+\ No newline at end of file
+diff --git a/Poly/DomainModeling/Analysis/EffectAnalyzer.Ranges.cs b/Poly/DomainModeling/Analysis/EffectAnalyzer.Ranges.cs
+index 9a5834b25..ab9827de0 100644
+--- a/Poly/DomainModeling/Analysis/EffectAnalyzer.Ranges.cs
++++ b/Poly/DomainModeling/Analysis/EffectAnalyzer.Ranges.cs
+@@ -3,7 +3,6 @@ using Poly.DomainModeling.Ontology;
+ 
+ using Action = Poly.DomainModeling.Ontology.Action;
+ using Add = Poly.DomainModeling.Ontology.Add;
+-using Divide = Poly.DomainModeling.Ontology.Divide;
+ using Multiply = Poly.DomainModeling.Ontology.Multiply;
+ using Negate = Poly.DomainModeling.Ontology.Negate;
+ using Subtract = Poly.DomainModeling.Ontology.Subtract;
+@@ -15,8 +14,7 @@ internal sealed partial class EffectAnalyzer {
+     private static readonly DomainDslPrinter WritePrinter = new();
+ 
+     /// <summary>One constraint decided against one stage context's value.</summary>
+-    private readonly record struct WriteFinding(
+-        WriteVerdict Verdict, Constraint Constraint, AbstractValue? Value, ValueRange? Length);
++    private readonly record struct WriteFinding(WriteVerdict Verdict, Constraint Constraint, AbstractValue? Value);
+ 
+     /// <summary>
+     /// The unverified-write channel (Q4) for an assign whose value is not a literal or a bare parameter.
+@@ -43,7 +41,7 @@ internal sealed partial class EffectAnalyzer {
+         ValidateWrittenValue(
+             context, domain, assign, assign.Value,
+             $"assign {targetProp.Name} to {WritePrinter.PrintExpressionText(assign.Value)}",
+-            targetProp, values, TextLengths.Of(assign.Value, entity, action, domain));
++            targetProp, values);
+     }
+ 
+     /// <summary>
+@@ -68,8 +66,7 @@ internal sealed partial class EffectAnalyzer {
+         ValidateWrittenValue(
+             context, domain, initializer, initializer.Expression,
+             $"create {targetEntity.Name} {{ {targetProp.Name}: {WritePrinter.PrintExpressionText(initializer.Expression)} }}",
+-            targetProp, InitializerValues(context, initializer, creatorEntity, action),
+-            TextLengths.Of(initializer.Expression, creatorEntity, action, domain));
++            targetProp, InitializerValues(context, initializer, creatorEntity, action));
+     }
+ 
+     /// <summary>
+@@ -88,9 +85,7 @@ internal sealed partial class EffectAnalyzer {
+             .ToList();
+     }
+ 
+-    /// <summary>The shared decision: every write-relevant constraint against every value, worst wins.
+-    /// <paramref name="length"/> is the assigned expression's length interval (null when it is not a
+-    /// bounded Text), which a <c>length(...)</c> target is decided against.</summary>
++    /// <summary>The shared decision: every write-relevant constraint against every value, worst wins.</summary>
+     private static void ValidateWrittenValue(
+         AnalysisContext context,
+         Domain domain,
+@@ -98,13 +93,12 @@ internal sealed partial class EffectAnalyzer {
+         DomainExpression valueExpression,
+         string writeText,
+         Property targetProp,
+-        IReadOnlyList<AbstractValue?> values,
+-        ValueRange? length) {
++        IReadOnlyList<AbstractValue?> values) {
+         WriteFinding? worst = null;
+         foreach (var constraint in targetProp.Constraints) {
+             if (!ConstraintValidation.IsWriteRelevant(constraint)) continue;
+             foreach (var value in values) {
+-                var finding = new WriteFinding(DecideWrite(constraint, value, valueExpression, length), constraint, value, length);
++                var finding = new WriteFinding(DecideWrite(constraint, value, valueExpression), constraint, value);
+                 // A strictly worse verdict replaces the current one; on an equal rank the FIRST
+                 // decided value wins, consistent with WriteVerdict.Worst returning `this` on a tie.
+                 // (Ranks order the Unverified reasons too, so the outcome does not depend on the
+@@ -139,26 +133,13 @@ internal sealed partial class EffectAnalyzer {
+             .ToList();
+     }
+ 
+-    private static WriteVerdict DecideWrite(
+-        Constraint constraint, AbstractValue? value, DomainExpression assigned, ValueRange? length) {
++    private static WriteVerdict DecideWrite(Constraint constraint, AbstractValue? value, DomainExpression assigned) {
+         if (ConstraintKinds.Of(constraint) is null)
+             return WriteVerdict.Unverified(
+                 UnverifiedReason.NonFlowCheckedKind, DomainModelDiagnosticCodes.ConstraintUndecided);
+         if (value is null)
+             return WriteVerdict.Unverified(UnverifiedReason.UnknownBound, DomainModelDiagnosticCodes.ConstraintUndecided);
+-        var decision = ConstraintValidation.Decide(constraint, value);
+-        // A known length interval decides a Text target the value's own length does not: inside is
+-        // verified, and anything else is a known length that can fall outside. Row V-08 still owns the
+-        // error side, so a disjoint interval is a warning, never Violated. The value's own length wins
+-        // when it proves containment — a stage policy narrowing it makes it the narrower truth.
+-        if (decision != ConstraintVerdict.Satisfied
+-            && constraint is LengthConstraint lengthTarget && length is { } declaredLength) {
+-            decision = WriteVerification.DecideLength(lengthTarget, declaredLength);
+-            if (decision != ConstraintVerdict.Satisfied)
+-                return WriteVerdict.Unverified(
+-                    UnverifiedReason.PossibleViolation, DomainModelDiagnosticCodes.EffectConstraintViolation);
+-        }
+-        switch (decision) {
++        switch (ConstraintValidation.Decide(constraint, value)) {
+             case ConstraintVerdict.Satisfied:
+                 return WriteVerdict.Satisfied;
+             case ConstraintVerdict.Violated:
+@@ -178,16 +159,14 @@ internal sealed partial class EffectAnalyzer {
+ 
+     /// <summary>
+     /// Why an expression with no usable range could not be bounded: an operator the interval flow does
+-    /// not model anywhere in the tree (a call, a remainder, an existential, ...) is named first;
+-    /// otherwise the modelled node simply lost its bound because an operand has none.
++    /// not model anywhere in the tree (division, a call, a match, ...) is named first; otherwise the
++    /// modelled node simply lost its bound because an operand has none.
+     /// </summary>
+     private static UnverifiedReason OpaqueReason(DomainExpression assigned) =>
+-        HasUnmodelledValue(assigned) ? UnverifiedReason.UnsupportedOperator : UnverifiedReason.UnknownBound;
++        HasUnmodelledOperator(assigned) ? UnverifiedReason.UnsupportedOperator : UnverifiedReason.UnknownBound;
+ 
+     /// <summary>True when any node of the expression is an operator the interval flow does not model (pre-order).
+-    /// The one purity gate: the shared evaluator's X − X cancellation uses it (B7).
+-    /// A division and a match are still operators it will not duplicate or cancel — a division can throw,
+-    /// a match can read a leaf — even though both now carry a value interval (#1040).</summary>
++    /// The one purity gate: the shared evaluator's X − X cancellation and the opaque-reason text use it (B7).</summary>
+     internal static bool HasUnmodelledOperator(DomainExpression expression) => expression switch {
+         Add add => HasUnmodelledOperator(add.Left) || HasUnmodelledOperator(add.Right),
+         Subtract sub => HasUnmodelledOperator(sub.Left) || HasUnmodelledOperator(sub.Right),
+@@ -197,21 +176,6 @@ internal sealed partial class EffectAnalyzer {
+         _ => true,
+     };
+ 
+-    /// <summary>True when any VALUE node of the expression has no interval transfer of its own — a call, a
+-    /// remainder, an existential, …: the reason the write has no range names an operator rather than a
+-    /// missing bound. Division and match have transfers since #1040, so this walk recurses through them; a
+-    /// division whose divisor can be 0 is a missing bound (#502 owns the zero case), not an unmodelled
+-    /// operator.</summary>
+-    internal static bool HasUnmodelledValue(DomainExpression expression) => expression switch {
+-        Add add => HasUnmodelledValue(add.Left) || HasUnmodelledValue(add.Right),
+-        Subtract sub => HasUnmodelledValue(sub.Left) || HasUnmodelledValue(sub.Right),
+-        Multiply mul => HasUnmodelledValue(mul.Left) || HasUnmodelledValue(mul.Right),
+-        Divide divide => HasUnmodelledValue(divide.Left) || HasUnmodelledValue(divide.Right),
+-        MatchExpr match => match.Arms.Any(a => HasUnmodelledValue(a.Value)) || HasUnmodelledValue(match.Else),
+-        PropertyAccess or ParameterAccess or RelationshipNavigation or Literal => false,
+-        _ => true,
+-    };
+-
+     private static void ReportWrite(
+         AnalysisContext context, Node errorNode, string writeText, Property targetProp, WriteFinding finding) {
+         var constraint = finding.Constraint;
+@@ -234,14 +198,6 @@ internal sealed partial class EffectAnalyzer {
+                     $"constraint {described} on property '{targetProp.Name}'.",
+                     finding.Verdict.Code!);
+                 break;
+-            case WriteOutcome.Unverified when finding.Verdict.Reason == UnverifiedReason.PossibleViolation
+-                && constraint is LengthConstraint && finding.Length is { } length:
+-                context.ReportWarning(
+-                    errorNode,
+-                    $"Assigned expression length [{FormatLengthBound(length.Min, lower: true)}, {FormatLengthBound(length.Max, lower: false)}] can fall outside " +
+-                    $"constraint {described} on property '{targetProp.Name}'.",
+-                    finding.Verdict.Code!);
+-                break;
+             case WriteOutcome.Unverified:
+                 context.ReportWarning(
+                     errorNode,
+@@ -252,13 +208,6 @@ internal sealed partial class EffectAnalyzer {
+         }
+     }
+ 
+-    /// <summary>A length endpoint as text. A string's length cannot exceed <see cref="int.MaxValue"/>, so
+-    /// that is the exact open side a Text with no <c>length(...)</c> carries; it prints as <c>+∞</c>.</summary>
+-    private static string FormatLengthBound(decimal? bound, bool lower) =>
+-        bound is not { } value ? (lower ? "0" : "+∞")
+-        : !lower && value >= int.MaxValue ? "+∞"
+-        : FormatRangeValue(value);
+-
+     private static bool IsRangeSubsumed(RangeConstraint inner, RangeConstraint outer) {
+         // #367: a bound that is not a number is never ordered, so it is never subsumed (the old
+         // Convert.ToDouble path threw and answered false). A numeric bound keeps master's fallback.
+diff --git a/Poly/DomainModeling/Analysis/EffectInvariantAnalyzer.cs b/Poly/DomainModeling/Analysis/EffectInvariantAnalyzer.cs
+index 39660c204..15cd92747 100644
+--- a/Poly/DomainModeling/Analysis/EffectInvariantAnalyzer.cs
++++ b/Poly/DomainModeling/Analysis/EffectInvariantAnalyzer.cs
+@@ -3,7 +3,6 @@ using Poly.DomainModeling.Ontology;
+ using Action = Poly.DomainModeling.Ontology.Action;
+ using Add = Poly.DomainModeling.Ontology.Add;
+ using And = Poly.DomainModeling.Ontology.And;
+-using Divide = Poly.DomainModeling.Ontology.Divide;
+ using Multiply = Poly.DomainModeling.Ontology.Multiply;
+ using Negate = Poly.DomainModeling.Ontology.Negate;
+ using Not = Poly.DomainModeling.Ontology.Not;
+@@ -508,11 +507,6 @@ internal sealed class EffectInvariantAnalyzer : INodeAnalyzer {
+                     operand => Eval(operand, entity, action, env, paramEnv, targetEntity, domain));
+             case FunctionCall call:
+                 return EvalCall(call, operand => Eval(operand, entity, action, env, paramEnv, targetEntity, domain), domain);
+-            case Divide divide:
+-                return EvalArithmetic(divide, divide.Left, divide.Right,
+-                    operand => Eval(operand, entity, action, env, paramEnv, targetEntity, domain));
+-            case MatchExpr match:
+-                return EvalMatch(match, operand => Eval(operand, entity, action, env, paramEnv, targetEntity, domain));
+             default:
+                 return AbstractValue.Unknown;
+         }
+@@ -585,22 +579,6 @@ internal sealed class EffectInvariantAnalyzer : INodeAnalyzer {
+             ? AbstractValue.From([range])
+             : AbstractValue.Unknown;
+ 
+-    /// <summary>
+-    /// A <c>match</c>'s interval (#608, #1040): the hull of the values it can produce, which is its
+-    /// arms and its required <c>else</c>. An arm with no interval — an unbounded read, a call — leaves
+-    /// the whole match unknown rather than guessing; an arm the analysis cannot reach still widens the
+-    /// hull, which is sound. The arms' conditions do not narrow it: a wider hull is never a false proof.
+-    /// </summary>
+-    private static AbstractValue EvalMatch(MatchExpr match, Func<DomainExpression, AbstractValue> eval) {
+-        ValueRange? hull = null;
+-        foreach (var arm in match.Arms.Select(a => a.Value).Append(match.Else)) {
+-            if (eval(arm).NumericRange is not { } range) return AbstractValue.Unknown;
+-            hull = hull is null ? range : hull.Join(range);
+-            if (hull is null) return AbstractValue.Unknown;
+-        }
+-        return hull?.ToRangeConstraint() is { } constraint ? AbstractValue.From([constraint]) : AbstractValue.Unknown;
+-    }
+-
+     /// <summary>A literal's numeric value exactly, or null when it is not a number or has no exact form.</summary>
+     private static decimal? DeclaredBound(object? value) => ExactNumber.TryFrom(value)?.ToDecimal();
+ 
+@@ -928,14 +906,6 @@ internal sealed class EffectInvariantAnalyzer : INodeAnalyzer {
+             case Negate negate:
+                 return EvalUnary(negate, negate.Operand,
+                     operand => EvalForEachBinding(operand, binder, iterated, caller, action, env, paramEnv, domain));
+-            case Divide divide:
+-                return EvalArithmetic(divide, divide.Left, divide.Right,
+-                    operand => EvalForEachBinding(operand, binder, iterated, caller, action, env, paramEnv, domain));
+-            case MatchExpr match:
+-                // A match in a binding evaluates its arms in the BINDING's scope: falling through to
+-                // Eval would resolve a binder-rooted read against the caller's same-named navigation.
+-                return EvalMatch(match,
+-                    operand => EvalForEachBinding(operand, binder, iterated, caller, action, env, paramEnv, domain));
+         }
+         return Eval(expr, caller, action, env, paramEnv, domain: domain);
+     }
+diff --git a/Poly/DomainModeling/Analysis/IntervalTransfers.cs b/Poly/DomainModeling/Analysis/IntervalTransfers.cs
+index 5f503b71b..02c5ae30c 100644
+--- a/Poly/DomainModeling/Analysis/IntervalTransfers.cs
++++ b/Poly/DomainModeling/Analysis/IntervalTransfers.cs
+@@ -3,7 +3,6 @@ using System.Collections.Frozen;
+ using Poly.DomainModeling.Ontology;
+ 
+ using Add = Poly.DomainModeling.Ontology.Add;
+-using Divide = Poly.DomainModeling.Ontology.Divide;
+ using Multiply = Poly.DomainModeling.Ontology.Multiply;
+ using Negate = Poly.DomainModeling.Ontology.Negate;
+ using Subtract = Poly.DomainModeling.Ontology.Subtract;
+@@ -25,7 +24,6 @@ internal static class IntervalTransfers {
+                 // An unknown operand still multiplies by exactly [0, 0] to 0 (0 · ±∞ = 0).
+                 ? (IsZero(left) || IsZero(right) ? new ValueRange(0m, 0m) : null)
+                 : left.Mul(right),
+-            [typeof(Divide)] = static (left, right) => Quotient(left, right),
+         }.ToFrozenDictionary();
+ 
+     private static readonly FrozenDictionary<Type, Func<ValueRange?, ValueRange?>> UnaryRows =
+@@ -97,74 +95,4 @@ internal static class IntervalTransfers {
+         left is null ? null : op(left, right);
+ 
+     private static bool IsZero(ValueRange? range) => range is { Min: 0m, Max: 0m };
+-
+-    /// <summary>
+-    /// The interval of a quotient, or null when it has none: an unknown operand, an open endpoint (a
+-    /// corner is then uncomputable), or a divisor interval that includes 0 — a hull cannot exclude it,
+-    /// and division by zero is #502's question, not a range.
+-    /// <para>
+-    /// The four corner quotients bound an exact (<c>Decimal</c>) division. A <c>Number</c> division is
+-    /// C#'s integer division, which truncates toward zero; <c>trunc</c> is monotone, so widening the
+-    /// exact hull to <c>trunc</c> at a positive lower and a negative upper endpoint is the smallest hull
+-    /// that holds both answers. Truncating every corner instead would be narrower and unsound: then
+-    /// <c>5 / 2</c> reads <c>[2, 2]</c> and proves a 2.5 into <c>range(0, 2)</c>. A corner quotient that
+-    /// decimal rounds outward-widens by one unit in its last place, so an endpoint no exact quotient
+-    /// reaches is never the one a <c>proven</c> rests on.
+-    /// </para>
+-    /// </summary>
+-    private static ValueRange? Quotient(ValueRange? left, ValueRange? right) {
+-        if (left is not { Min: { } leftMin, Max: { } leftMax }
+-            || right is not { Min: { } rightMin, Max: { } rightMax })
+-            return null;
+-        if (rightMin <= 0m && rightMax >= 0m) return null;
+-
+-        var lower = decimal.MaxValue;
+-        var upper = decimal.MinValue;
+-        foreach (var (dividend, divisor) in new[] {
+-                     (leftMin, rightMin), (leftMin, rightMax), (leftMax, rightMin), (leftMax, rightMax) }) {
+-            if (Corner(dividend, divisor) is not { } corner) return null;
+-            lower = Math.Min(lower, corner.Low);
+-            upper = Math.Max(upper, corner.High);
+-        }
+-        if (lower > 0m) lower = decimal.Truncate(lower);
+-        if (upper < 0m) upper = decimal.Truncate(upper);
+-        return new ValueRange(lower, upper);
+-    }
+-
+-    /// <summary>One corner quotient, widened by one unit in its last place on each side when decimal
+-    /// rounded it; an exact quotient is its own interval. Null when the quotient is beyond decimal's
+-    /// range: that endpoint is unrepresentable, which is unknown, never a wrapping or a crash.</summary>
+-    private static (decimal Low, decimal High)? Corner(decimal dividend, decimal divisor) {
+-        if (QuotientMayNotFit(dividend, divisor)) return null;
+-        var quotient = dividend / divisor;
+-        if (IsExactQuotient(dividend, divisor, quotient)) return (quotient, quotient);
+-        var unit = UnitInLastPlace(quotient);
+-        return (
+-            quotient > decimal.MinValue ? quotient - unit : quotient,
+-            quotient < decimal.MaxValue ? quotient + unit : quotient);
+-    }
+-
+-    /// <summary>True when the quotient may not fit <see cref="decimal"/>, which the row answers as
+-    /// unknown instead of letting the division throw. The screen is a <see cref="double"/> ratio compared
+-    /// against <c>1e28</c> — a representability test, never a bound: it sits about eight times below
+-    /// <see cref="decimal.MaxValue"/> (~7.9e28), so every quotient it lets through is representable and a
+-    /// true ratio above the limit cannot slip under it (double is accurate to ~1e-16 relative here).</summary>
+-    private static bool QuotientMayNotFit(decimal dividend, decimal divisor) {
+-        var ratio = Math.Abs((double)dividend / (double)divisor);
+-        return !double.IsFinite(ratio) || ratio >= 1e28;
+-    }
+-
+-    /// <summary><c>quotient · divisor == dividend</c> exactly; false when the product itself is inexact,
+-    /// which keeps the answer on the widening side.</summary>
+-    private static bool IsExactQuotient(decimal dividend, decimal divisor, decimal quotient) =>
+-        ExactNumber.TryFrom(dividend) is { } d
+-        && ExactNumber.TryFrom(divisor) is { } v
+-        && ExactNumber.TryFrom(quotient) is { } q
+-        && q.TryMultiply(v) is { } product
+-        && product.Equals(d);
+-
+-    /// <summary>One unit in the last place of <paramref name="value"/>'s decimal scale (<c>10^-scale</c>),
+-    /// which bounds decimal's division rounding at that scale.</summary>
+-    private static decimal UnitInLastPlace(decimal value) =>
+-        new(1, 0, 0, false, (byte)((decimal.GetBits(value)[3] >> 16) & 0xFF));
+ }
+\ No newline at end of file
+diff --git a/Poly/DomainModeling/Analysis/TextLengths.cs b/Poly/DomainModeling/Analysis/TextLengths.cs
+deleted file mode 100644
+index 9fdc5d52c..000000000
+--- a/Poly/DomainModeling/Analysis/TextLengths.cs
++++ /dev/null
+@@ -1,86 +0,0 @@
+-using Poly.DomainModeling.Ontology;
+-
+-using Action = Poly.DomainModeling.Ontology.Action;
+-using Add = Poly.DomainModeling.Ontology.Add;
+-
+-namespace Poly.DomainModeling.Analysis;
+-
+-/// <summary>
+-/// The length interval of a Text-valued expression (#1040): what a <c>length(...)</c> write is decided
+-/// against. A Text carries its declared <c>length(...)</c>; a Text with no such constraint is
+-/// <c>[0, 2147483647]</c>, and that upper bound is exact rather than a guess — a string's length is an
+-/// <see cref="int"/>. <c>+</c> is concatenation, so it adds the two intervals, and a <c>match</c> hulls
+-/// its arms. Anything else is <c>null</c> (unknown): a value that is not Text, a Text the walk cannot
+-/// name (a relationship leaf, a call), or a match with an arm it cannot bound.
+-/// <para>
+-/// The walk reads DECLARED constraints, in the scope the expression is written in. Its lower bound is
+-/// what the runtime guarantees: a member that can be absent contributes 0, because C# string
+-/// concatenation treats a null operand as <c>""</c> (<c>A + "!"</c> with a null <c>A</c> is
+-/// <c>"!"</c>) and the runtime length guard applies to a present value only. A declared minimum is
+-/// therefore used only for a required member read inside an action body.
+-/// </para>
+-/// </summary>
+-internal static class TextLengths {
+-    /// <summary>A length is an <see cref="int"/>: this is the exact upper bound, not an infinity, and it
+-    /// is also how a declared <c>length(0, 2147483647)</c> is written.</summary>
+-    private const decimal MaxLength = int.MaxValue;
+-
+-    /// <summary>The length interval of <paramref name="expression"/>, or null when it is not a bounded Text.</summary>
+-    internal static ValueRange? Of(DomainExpression expression, Entity entity, Action? action, Domain domain) {
+-        ArgumentNullException.ThrowIfNull(expression);
+-        ArgumentNullException.ThrowIfNull(entity);
+-        ArgumentNullException.ThrowIfNull(domain);
+-        // The same type system the emitted guards ask, so "is this Text" cannot disagree with them.
+-        return Of(expression, entity, action, RuntimeAnalysisCache.Session(domain).TargetTypeSystem);
+-    }
+-
+-    private static ValueRange? Of(
+-        DomainExpression expression, Entity entity, Action? action, Poly.Introspection.ITypeSystem system) =>
+-        expression switch {
+-            Literal { Value: string text } => new ValueRange(text.Length, text.Length),
+-            PropertyAccess property => Declared(
+-                entity.Properties.FirstOrDefault(p => string.Equals(p.Name, property.Name, StringComparison.Ordinal)),
+-                system, action),
+-            ParameterAccess parameter => Declared(
+-                action?.Parameters.FirstOrDefault(p => string.Equals(p.Name, parameter.Name, StringComparison.Ordinal)),
+-                system, action),
+-            Add concatenation => Concat(
+-                Of(concatenation.Left, entity, action, system), Of(concatenation.Right, entity, action, system)),
+-            MatchExpr match => Hull(match, entity, action, system),
+-            _ => null,
+-        };
+-
+-    /// <summary>A Text member's declared length, else <c>[0, int.MaxValue]</c>; null for a member that is
+-    /// absent or is not a Text type (a length is not one of its constraints). The lower bound is the
+-    /// declared minimum only for a required member in an action body — the one case the runtime
+-    /// guarantees it is present.</summary>
+-    private static ValueRange? Declared(Property? property, Poly.Introspection.ITypeSystem system, Action? action) {
+-        if (property is null || !system.LengthApplies(property.Type.TypeName)) return null;
+-        var declared = property.Constraints.OfType<LengthConstraint>().FirstOrDefault();
+-        var present = action is not null && EntityStructureAnalyzer.IsRequired(property);
+-        return new ValueRange(present ? declared?.MinLength ?? 0 : 0, declared?.MaxLength ?? MaxLength);
+-    }
+-
+-    /// <summary>The concatenation of two known Texts, or unknown when either side is not one.</summary>
+-    private static ValueRange? Concat(ValueRange? left, ValueRange? right) {
+-        if (left is not { Min: { } leftMin, Max: { } leftMax }
+-            || right is not { Min: { } rightMin, Max: { } rightMax })
+-            return null;
+-        return new ValueRange(
+-            Math.Min(leftMin + rightMin, MaxLength),
+-            Math.Min(leftMax + rightMax, MaxLength));
+-    }
+-
+-    /// <summary>The hull of the match's arm lengths and its required <c>else</c>; unknown when any of them
+-    /// has none.</summary>
+-    private static ValueRange? Hull(
+-        MatchExpr match, Entity entity, Action? action, Poly.Introspection.ITypeSystem system) {
+-        ValueRange? hull = null;
+-        foreach (var arm in match.Arms.Select(a => a.Value).Append(match.Else)) {
+-            if (Of(arm, entity, action, system) is not { } length) return null;
+-            hull = hull is null ? length : hull.Join(length);
+-            if (hull is null) return null;
+-        }
+-        return hull;
+-    }
+-}
+\ No newline at end of file
+diff --git a/Poly/DomainModeling/Analysis/WriteVerification.cs b/Poly/DomainModeling/Analysis/WriteVerification.cs
+index 807d38cc3..93d8efc84 100644
+--- a/Poly/DomainModeling/Analysis/WriteVerification.cs
++++ b/Poly/DomainModeling/Analysis/WriteVerification.cs
+@@ -66,26 +66,12 @@ internal static class WriteVerification {
+         ArgumentNullException.ThrowIfNull(target);
+         ArgumentNullException.ThrowIfNull(value);
+ 
+-        return value.Constraints.OfType<LengthConstraint>().FirstOrDefault() is { } length
+-            ? DecideLength(target, new ValueRange(length.MinLength, length.MaxLength))
++        var length = value.Constraints.OfType<LengthConstraint>().FirstOrDefault();
++        return length is not null && length.MinLength >= target.MinLength && length.MaxLength <= target.MaxLength
++            ? ConstraintVerdict.Satisfied
+             : ConstraintVerdict.Undecided;
+     }
+ 
+-    /// <summary>
+-    /// Decides a length against the value's length <paramref name="interval"/> (#1040), which is what
+-    /// <see cref="TextLengths"/> computes for a Text expression: a declared <c>length(...)</c>, a
+-    /// concatenation, a match. Satisfied only when the whole interval is inside the target's; a disjoint
+-    /// interval stays Undecided for the reason above, so no length write is reported as an error yet.
+-    /// </summary>
+-    internal static ConstraintVerdict DecideLength(LengthConstraint target, ValueRange length) {
+-        ArgumentNullException.ThrowIfNull(target);
+-        ArgumentNullException.ThrowIfNull(length);
+-
+-        var lowerOk = length.Min is { } min && min >= target.MinLength;
+-        var upperOk = length.Max is { } max && max <= target.MaxLength;
+-        return lowerOk && upperOk ? ConstraintVerdict.Satisfied : ConstraintVerdict.Undecided;
+-    }
+-
+     /// <summary>
+     /// Decides a write against a Text <paramref name="target"/> pattern: <see cref="ConstraintVerdict.Satisfied"/>
+     /// only when the value carries the IDENTICAL declared pattern (it was already enforced when the value was
+diff --git a/docs/CORE.md b/docs/CORE.md
+index 662af0991..d75b86c70 100644
+--- a/docs/CORE.md
++++ b/docs/CORE.md
+@@ -134,7 +134,7 @@ Domain expression typing is the single acceptance gate for the domain layer: `Ex
+ 
+ **The lowered tree states an arithmetic node's result type through the provider (T-17):** `TypeAndMemberResolutionPass` asks `GetOperator` of the operands with their nullable unwrapped and lifts a value-type result (the lift stays in the pass until T-06); a pair the provider defines no operator for has no type, and `PromoteNumeric`, `GetNumericRank` and `ResolveAddType` are gone. Comparison and logical nodes keep a fixed `bool` arm (pinned equal to the provider wherever it answers; enum and null equality have no provider answer). One interim rule is shared with the compatibility rewrite: `DateOffsetRule` (`Date ± number` is stamped with its left type, the type the `AddDays` rewrite produces, so an enclosing node is checked as before; T-10b removes it). `ConstantFoldingProviderTests` pins the fold grid against the binder, Roslyn and the unfolded VM; the folds that disagree with the VM are derived from the ledger's value-wrong cells (T-21 inverts them).
+ 
+-**The lambda bridge reads the provider inside a fence (T-19).** A module lambda passed where a CLR parameter is `Expression<D>` is quoted by `AbiEmitter.LambdaBridge` into a pure `System.Linq.Expressions` tree. Inside the fence, an operand that is `bool`, `char`, an integer or floating type, `nint`/`nuint` or `decimal` (or `Nullable<>` of one; `IsGoverned`), the bridge decides from the provider: every operator is `GetOperator`'s over the operands with their nullable unwrapped, the operands converted to its parameter types and lifted to `Nullable<P>` when one is nullable (a lifted comparison stays `bool`), after T-18's `ConstantOperandRule`; a conditional's type is `GetCommonType` over its arms (a nullable arm as C# 12.18 types it); a return or an argument converts only through an implicit `ResolveConversionFrom`, lifted to a nullable target; `a ?? b` is typed by C# 12.15 from the same conversions; a null literal converts to a reference or `Nullable<>` target; what the provider leaves undefined, or what the Expression API cannot build, is a positioned `VM compile rejected: lambda bridge` refusal (a raw Expression API exception from the body compile becomes one too), and every exception raised while the bridge checks or quotes a lambda carries `Data[AbiEmitter.LambdaBridgeExceptionKey]`. `PromoteNumeric`, `IsSmallInteger` and `PromoteShiftLeft` are gone. Outside the fence the bridge still uses the Expression API's own rules (identity, a typed null, assignability, a user-defined operator): enum arithmetic and bitwise (T-25); temporal operators (T-10b); string concatenation with a non-string, Guid, reference and null equality, and `TypeCast`, `TypeAs`, `TypeIs` and `Default` (T-23). A constant beside a `uint` or into an unsigned or narrower parameter takes the provider's answer, not C# 10.2.11's (T-26). A literal lambda passed directly where the resolved parameter is `Expression<D>`, of a CLR method, a module method or a module constructor, has no function-table entry, so the bridge alone decides its body (T-19b): one function, `CallParameterType`, answers the parameter type for `EmitInvoke`, `EmitAstArguments` and the pre-pass `CollectQuoteOnlyLambdas`; a stored lambda, one also used as a delegate and one nested in a quoted lambda keep their entry, and `EmitLambda` refuses a quote-only lambda reached as a closure at compile time. `LambdaBridgeProviderTests` pins the bridge over the ledger's 13 CLR numeric, char and Boolean operands (8,792 cells: nullable shapes one by one, conditionals, returns, coalesce, constants) against the C# runtime binder and the provider, plus 732 `nint`/`nuint` cells judged by what the provider defines; the cells where it differs from the main emitter are a subset of the ledger's VM-divergence cells. `Poly.Tests/DomainModeling/Analysis/OperatorOracleTests.cs` is the operator cross-check ledger: every operator cell over 24 operand definitions (10,464 cells; T-18b added `nint` and `nuint`) in three columns (the interface's answer with the operand conversions; the lowered-tree analysis's resolved type; what the VM executes, run with typed parameters and probe values that expose 32-bit wrap, 2^53+1, decimal exactness and integer truncation), four divergence kinds (`analyzer-disagrees`, `lowered-analysis-disagrees`, `abi-diverges-from-tree`, `abi-rejects-defined`), each owned by the row that removes it (T-06, T-07, T-10, T-21), except `Text + X` for a CLR `X`, which the platform defines and Poly's language policy rejects: a permanent T-07 rule; a fifth kind, `policy-defines-what-csharp-rejects`, holds the shift-count policy's cells, a permanent T-22 rule; each divergence has exactly one owning rule and each rule pins its matched-cell count and a checksum of which cells it owns (never the values the VM computed), so an unowned divergence, a divergence two rules claim, a stale rule, growth and shrinkage all fail the test (a fixing slice edits the count or deletes the rule); T-04 quotes it. Declared range bounds are exact at parse and in the assign guard: a `Number`/`Int`/`Int64` bound is a `long`, a `Decimal` or any other non-Number-family bound is a `decimal`, and neither is ever a `double`. Analysis-time bound arithmetic is exact (V-05b): `ValueRange(decimal? Min, decimal? Max)` (null endpoint = open) carries `Add`/`Sub`/`Mul`/`Divide`/`Join`/`TryMeet`/`Below`/`Above` through the immutable `IntervalTransfers` table, `ProvableTruth.Decide` answers a comparison over intervals as true/false/unknown, and `ConstraintMerge.TryCompare` orders mixed numeric bounds through `ExactNumber` exactly when representable, else master's double; `Poly/DomainModeling/Analysis/ExactNumber.cs` is the decimal-backed exact primitive (internal). `ConstraintMerge.TryCompare` keeps a `double` fallback only for a public API-built `new RangeConstraint(double, double)` bound. `Divide` (#1040) is null unless both operands are closed and the divisor's interval excludes 0, and it is sound for both C# integer division (truncating toward zero, so a positive lower and a negative upper endpoint move onto the lattice) and exact `Decimal` division (the four corner quotients, a rounded corner widened one unit in its last place) — a `match`'s interval is the hull of its arm and `else` values, and only when every one has an interval. A derived bound beyond `long` is not wrap-modelled (#624, `KnownUnsound`). Rules, provenance and the per-slice interim state: [`decisions/2026-11-11-domain-type-model-and-numeric-rules.md`](decisions/2026-11-11-domain-type-model-and-numeric-rules.md).
++**The lambda bridge reads the provider inside a fence (T-19).** A module lambda passed where a CLR parameter is `Expression<D>` is quoted by `AbiEmitter.LambdaBridge` into a pure `System.Linq.Expressions` tree. Inside the fence, an operand that is `bool`, `char`, an integer or floating type, `nint`/`nuint` or `decimal` (or `Nullable<>` of one; `IsGoverned`), the bridge decides from the provider: every operator is `GetOperator`'s over the operands with their nullable unwrapped, the operands converted to its parameter types and lifted to `Nullable<P>` when one is nullable (a lifted comparison stays `bool`), after T-18's `ConstantOperandRule`; a conditional's type is `GetCommonType` over its arms (a nullable arm as C# 12.18 types it); a return or an argument converts only through an implicit `ResolveConversionFrom`, lifted to a nullable target; `a ?? b` is typed by C# 12.15 from the same conversions; a null literal converts to a reference or `Nullable<>` target; what the provider leaves undefined, or what the Expression API cannot build, is a positioned `VM compile rejected: lambda bridge` refusal (a raw Expression API exception from the body compile becomes one too), and every exception raised while the bridge checks or quotes a lambda carries `Data[AbiEmitter.LambdaBridgeExceptionKey]`. `PromoteNumeric`, `IsSmallInteger` and `PromoteShiftLeft` are gone. Outside the fence the bridge still uses the Expression API's own rules (identity, a typed null, assignability, a user-defined operator): enum arithmetic and bitwise (T-25); temporal operators (T-10b); string concatenation with a non-string, Guid, reference and null equality, and `TypeCast`, `TypeAs`, `TypeIs` and `Default` (T-23). A constant beside a `uint` or into an unsigned or narrower parameter takes the provider's answer, not C# 10.2.11's (T-26). A literal lambda passed directly where the resolved parameter is `Expression<D>`, of a CLR method, a module method or a module constructor, has no function-table entry, so the bridge alone decides its body (T-19b): one function, `CallParameterType`, answers the parameter type for `EmitInvoke`, `EmitAstArguments` and the pre-pass `CollectQuoteOnlyLambdas`; a stored lambda, one also used as a delegate and one nested in a quoted lambda keep their entry, and `EmitLambda` refuses a quote-only lambda reached as a closure at compile time. `LambdaBridgeProviderTests` pins the bridge over the ledger's 13 CLR numeric, char and Boolean operands (8,792 cells: nullable shapes one by one, conditionals, returns, coalesce, constants) against the C# runtime binder and the provider, plus 732 `nint`/`nuint` cells judged by what the provider defines; the cells where it differs from the main emitter are a subset of the ledger's VM-divergence cells. `Poly.Tests/DomainModeling/Analysis/OperatorOracleTests.cs` is the operator cross-check ledger: every operator cell over 24 operand definitions (10,464 cells; T-18b added `nint` and `nuint`) in three columns (the interface's answer with the operand conversions; the lowered-tree analysis's resolved type; what the VM executes, run with typed parameters and probe values that expose 32-bit wrap, 2^53+1, decimal exactness and integer truncation), four divergence kinds (`analyzer-disagrees`, `lowered-analysis-disagrees`, `abi-diverges-from-tree`, `abi-rejects-defined`), each owned by the row that removes it (T-06, T-07, T-10, T-21), except `Text + X` for a CLR `X`, which the platform defines and Poly's language policy rejects: a permanent T-07 rule; a fifth kind, `policy-defines-what-csharp-rejects`, holds the shift-count policy's cells, a permanent T-22 rule; each divergence has exactly one owning rule and each rule pins its matched-cell count and a checksum of which cells it owns (never the values the VM computed), so an unowned divergence, a divergence two rules claim, a stale rule, growth and shrinkage all fail the test (a fixing slice edits the count or deletes the rule); T-04 quotes it. Declared range bounds are exact at parse and in the assign guard: a `Number`/`Int`/`Int64` bound is a `long`, a `Decimal` or any other non-Number-family bound is a `decimal`, and neither is ever a `double`. Analysis-time bound arithmetic is exact (V-05b): `ValueRange(decimal? Min, decimal? Max)` (null endpoint = open) carries `Add`/`Sub`/`Mul`/`Join`/`TryMeet`/`Below`/`Above` through the immutable `IntervalTransfers` table, `ProvableTruth.Decide` answers a comparison over intervals as true/false/unknown, and `ConstraintMerge.TryCompare` orders mixed numeric bounds through `ExactNumber` exactly when representable, else master's double; `Poly/DomainModeling/Analysis/ExactNumber.cs` is the decimal-backed exact primitive (internal). `ConstraintMerge.TryCompare` keeps a `double` fallback only for a public API-built `new RangeConstraint(double, double)` bound. A derived bound beyond `long` is not wrap-modelled (#624, `KnownUnsound`). Rules, provenance and the per-slice interim state: [`decisions/2026-11-11-domain-type-model-and-numeric-rules.md`](decisions/2026-11-11-domain-type-model-and-numeric-rules.md).
+ 
+ **The analyzer on the type model (T-04).** `ExpressionTypeAnalyzer` (core, `ExpressionTypeInference.cs`, `ExpressionTypeRules.cs`, `ExpressionTypeAnalyzer.Binary.cs` and the `Arms.*` partials) infers an `ExprType` per expression and accepts exactly what it accepted before: the move changed no verdict (every analyzer verdict grid is recorded in `AnalyzerVerdictGrids.txt` and compared by `AnalyzerVerdictGridTests`, #965 C4; T-04 leaves the ledger's analyzer column at its 245 cells: 107, 96, 6, 6, 4, 8, 11, 7; T-24 adds 16 permanent A1 cells, `analyzer rejects, tree String` (T-07), for 261). The representation: a whole-number literal, `Count`, `Sum`, arithmetic results and Text + Text carry no domain name (`DomainName` null) over a family definition; a decimal literal carries `"Decimal"`; a declared or allowlisted name carries that name; `Compatible` applies the name rule only when both names are non-null. One derived key (`Family(ExprType)`, a pure function of the definition: numeric family = Int32, Int64, Float32, Float64, Decimal; date family = DateOnly and DateTime; an entity, a value type and Binary are families compared by name) serves `Compatible`, match-arm `MergeArmTypes` and the arithmetic arms; acceptance never calls `Assign` or `GetOperator`. A type with no definition has no family and is never compatible (T-05b, below). A declared Date, Time, DateTime or Duration primitive is typed by its meaning when no temporal map applies (`DomainTypeDefinitionProvider`, T-05b A3), so a hand-built `Date` stays a date.
+ 
+@@ -193,7 +193,7 @@ Expand to **generic** Syntax (no domain opcodes). StageTransition / self-invoke
+ 
+ **Diagnostic allowance.** There is no contradiction gate over flow diagnostics. A reader-found copy is an `ObservedFlow` (`SessionBuilder.WithObservedFlows`, frozen on `DomainSession.ObservedFlows`) checked by the existing assign checks: `EffectAnalyzer` calls `IsConstraintSubsumed` for a `length` pair and `WriteVerification.DecideRange` for a `range` pair (`DMEFF008` on the target property) and reports an optional source flowing into a required target (`DMEFF014`, #439), and `ExpressionTypeAnalyzer` calls `CheckCompatible` (`DMSEM003` on the target property); an unresolvable or self path is `DMSEM005` on the domain. Nothing is inserted into the tree. Unacknowledged flow diagnostics are errors and block through `ThrowIfHasErrors`, the gate over the severities analysis reports; `WarningPromotion.Apply` is not a second gate — it runs after the report and copies the list (below). A `DiagnosticAllowance` (`SessionBuilder.WithDiagnosticAllowances`, frozen on `DomainSession.DiagnosticAllowances`) names a diagnostic code and the finding's element path (`Domain/Entity/Property`) plus non-blank provenance ids; a match downgrades only a `DMEFF008` or `DMSEM003` flow diagnostic (or a contract finding, below) to a warning, which stays in the report and does not stop Lower. **`DMEFF014` is not acknowledgeable (#444):** `ProvableGuards` reports a copy of an optional property or optional parameter into a required property, on the assign, unless a provable guard clears it. The four guards are a dominating `if` presence check (an intervening assign that may null the source drops the fact), an action `require` whose policy proves presence, an entry policy (every transition into a non-initial stage is on an action whose policies prove presence, and no action that can run in the stage can re-null it), and a stage `require` (written in the stage header before `{`, like an action's; `Stage.Policies`, the invariant: an action that can null a property the stage proves present is `DMEFF015`; an entity-level action counts for every stage). Entry, exit and subscription bodies are never cleared, and a transition there is an unguarded entry. An observed flow has no action and no stage, so no guard site clears it. An allowance naming a reported `DMEFF014` is the `DMALW002` error and consumes nothing. An allowance no analysis arm consumed (wrong code or path, stale after the flow became compatible, blank provenance) is the `DMALW001` error. `WithDomain` copies both lists on both branches. ADR: [`docs/decisions/2026-11-08-diagnostic-allowance.md`](decisions/2026-11-08-diagnostic-allowance.md).
+ 
+-**Unverified writes (Q4).** Silence from a write check means verified — with one exception, below: a call-chain postcondition with no known value range. Every write to a property carrying a `range` constraint — `assign`, entry/exit and `when` bodies, and `create`/`create in` initializers (evaluated in the creator's scope, with the creating action's parameters in scope, against declared ranges only: no `require` narrowing and no stage invariants, unlike an assign) — gets exactly one `WriteVerdict`: `Satisfied` is silent and counted, `Violated` is a `DMEFF008` error ("entirely outside"), and `Undecided` is a `DMEFF008` warning when the value has a known range or length interval ("can fall outside") or a `DMCS003` warning otherwise (no usable bound, an operator the interval flow does not model, or a constraint kind with no flow decision). `ConstraintKind.WriteRelevant` is the kind's own claim that a computed value can be decided; it is set for `Range`, `Length`, `Pattern` and `Equality` (V-08a: a Text value is `Satisfied` only when its length interval — its declared `length(...)`, `[0, +∞)` for a Text with none, a `+` of such values, or a `match` over them (#1040) — is inside the target's, a pattern or `equals` only when the value carries the identical one, else `Undecided`, never `Violated`, and `poly_check` takes its verdict from `GetVerification`, so any unverified write reads `unknown`). `unique` (stored state), `required` (DMEFF014) and enum membership (the type check) are excluded, and an unregistered kind is fail-closed. A write-relevant pair is also decided on an observed flow and in the parameter arm, which compare declared bounds; the call chain (`ValidateCallChainPostconditions`) decides through the same `DecideRange` and records every non-`Satisfied` outcome through `WriteRecorder`, deduplicated per effect node (V-05b); a postcondition with no value range is still skipped silently. `WriteVerificationFacts` (`Analysis/WriteVerification.cs`) is the analysis-side record on the `Domain`: one entry per unverified write plus a `Verified` count, never one per constraint, and never "proven" while a write is unverified. `DMEFF008` itself is unchanged.
++**Unverified writes (Q4).** Silence from a write check means verified — with one exception, below: a call-chain postcondition with no known value range. Every write to a property carrying a `range` constraint — `assign`, entry/exit and `when` bodies, and `create`/`create in` initializers (evaluated in the creator's scope, with the creating action's parameters in scope, against declared ranges only: no `require` narrowing and no stage invariants, unlike an assign) — gets exactly one `WriteVerdict`: `Satisfied` is silent and counted, `Violated` is a `DMEFF008` error ("entirely outside"), and `Undecided` is a `DMEFF008` warning when the value has a known range ("can fall outside") or a `DMCS003` warning otherwise (no usable bound, an operator the interval flow does not model, or a constraint kind with no flow decision). `ConstraintKind.WriteRelevant` is the kind's own claim that a computed value can be decided; it is set for `Range`, `Length`, `Pattern` and `Equality` (V-08a: a Text value is `Satisfied` only when its own length range is inside the target's, a pattern or `equals` only when the value carries the identical one, else `Undecided`, never `Violated`, and `poly_check` takes its verdict from `GetVerification`, so any unverified write reads `unknown`). `unique` (stored state), `required` (DMEFF014) and enum membership (the type check) are excluded, and an unregistered kind is fail-closed. A write-relevant pair is also decided on an observed flow and in the parameter arm, which compare declared bounds; the call chain (`ValidateCallChainPostconditions`) decides through the same `DecideRange` and records every non-`Satisfied` outcome through `WriteRecorder`, deduplicated per effect node (V-05b); a postcondition with no value range is still skipped silently. `WriteVerificationFacts` (`Analysis/WriteVerification.cs`) is the analysis-side record on the `Domain`: one entry per unverified write plus a `Verified` count, never one per constraint, and never "proven" while a write is unverified. `DMEFF008` itself is unchanged.
+ 
+ **Guard narrowing (V-02).** `EffectInvariantAnalyzer` narrows the abstract environment an action's effects run in by its guards (`require`'d policies, `if` conditions with their negation in the else-branch, a callee's guards and a `for … where` policy) through one refiner pair, `Refine`/`RefineNegated`: a comparison of a property with a literal (either side) or with another property (a relation), `and`, `or` (the hull of the arms; a dead arm is skipped, both dead leave the environment as it came in, and no relation is recorded inside an arm) and `not` (the complement; De Morgan over `and`/`or`); any other leaf narrows nothing, positively or negated. Integrality comes from `DomainTypeModelMetadata` (read at the Domain node, failing closed when absent): on a property whose `KindOf(OfProperty(p))` is `Integer64`, `x < v` is `x <= ceil(v) - 1` and `x > v` is `x >= floor(v) + 1`, and `x != v` moves an endpoint equal to an integral `v` in by one; on any other axis a strict bound stays inclusive (OQ-5) and `!=` narrows nothing. A point range `x != v` is empty on any axis. The integral set is per entity, so a callee's guard uses the callee entity's. Ranges describe present values: a comparison is false for a null value except `!=`, so a leaf that holds for null (a positive `!=` or a negated comparison) narrows an optional property's present values but never empties it, nor keeps a relation that would contradict it. A guard no value satisfies is the existing unsatisfiable-precondition error (`DMCS001`). **Policy guard facts (V-18).** `PolicyGuardFacts` (`Poly/DomainModeling/Analysis/PolicyGuardFacts.cs`, internal) is the one seam through which a `require`'d policy narrows the environment, at action entry and on a self, cross-entity or fan-out invoke: `Guards(action, stage)` lists the action's policies (its `require not P` markers included) and the stage's, except a stage policy the action negates, whose gate the lowered body suppresses (`EmitStagePolicyGuards`); `EffectAnalyzer`'s exit-block target check reads that list too: an entity-level hop whose action requires a policy the stage requires the negation of is refused before any effect runs, so it is not a hop that leaves the stage (`DMEFF017`, #802). `Refine` narrows by one guard, a `not_P` marker by the owner's policy `P` found by name (as the runtime calls it) and negated once, never the marker's own expression, and narrows nothing when the owner has no `P`. F-09 supplies only a `PolicyInstantiator` delegate and the arguments; arguments with no instantiator throw. `CollectPreconditions` stays the public precondition and export set (`ActionStageInvariant.Preconditions`, `InternalDomainProducer.ExportPreconditions`). Create and create-in initializers read the walk's environment at the create (`ActionStageInvariant.InitializerValues`, the context action's own creates only), which `EffectAnalyzer.ValidateInitializerValue` decides per stage context; the environment is trusted for an initializer only while every effect on that path is one the walk models (assign, `if`, composite, an entered self-invoke), so a create in or after a loop, after a transition, a cross-entity or fan-out invoke, a create or a create-in (it can notify a subscription on the creator), and a context with no record, keep the declared-range path (#863 owns the loop environment). An assign recorded on such a path takes its value from a second walk over `PolicyGuardFacts.PreconditionGuards` (the guards before V-18: no `require not`, no stage-gate lift), so this narrowing never composes with the loop or write-back environment into a new clean.
+ 

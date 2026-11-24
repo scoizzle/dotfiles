@@ -1,0 +1,18 @@
+{
+  "id": "large-numeric-builtins",
+  "tier": "T2",
+  "repo": "~/Projects/Poly/Poly",
+  "base": "eb0bce7f6e64564f22e2f2817a2d697c815a3075",
+  "patch": "change.patch",
+  "claim": "Round/Abs/Min/Max/Floor/Ceiling run as built-in numeric functions (#547)",
+  "source": "scoizzle/Poly#1088, integration merge eb0bce7f6",
+  "reverted_files": 12,
+  "reverted_lines": 356,
+  "expected": [
+    {
+      "id": "fix",
+      "severity": "🟠",
+      "notes": "`Round`, `Abs`, `Min`, `Max`, `Floor` and `Ceiling` were not declared anywhere, so every call was `DMFUN001 Call to unknown function`. `FunctionAnalysis.Find` resolves only `Domain.Functions`, and the lowering of a call only binds a declared function's parameters — there was no builtin table and no lowering arm. A bank fee (`Balance * 0.015`) therefore could not be rounded to cents: no legal money amount could be produced."
+    }
+  ]
+}

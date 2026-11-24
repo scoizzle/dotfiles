@@ -209,6 +209,51 @@ same cases at both variants, several runs each, and report `k/N` per case:
 
 One run of one case is a smoke test, not a result; the pair is the measurement.
 
+### Large cases (`writer-cases-large/`)
+
+The cases above are single-cause fixes every arm solves (Phase 6, 6b), so they
+cannot show whether an Opus supervisor saves Opus over Opus working alone, or
+whether the harness beats bare opencode. `writer-cases-large/` holds
+multi-file changes mined from merged Poly PRs by `build-large-cases.py`: the base
+is the integration merge, and the patch reverts every file it changed except the
+behavioural oracle tests. Test edits that pin implementation names or exact
+results are reverted with the fix, so a correct fix with a different design can
+pass.
+
+| Case | Source | Reverted | Oracle, red with the patch |
+| --- | --- | --- | --- |
+| `large-numeric-builtins` | Poly#1088 | 12 files, 356 lines | `NumericBuiltinParityTests`: 22 of 23 fail |
+| `large-create-entry-notify` | Poly#1053 | 24 files, 1,115 lines | `CreateEntryNotificationParityTests`: 1 of 1 fails |
+| `large-interval-precision` | Poly#1112 | 8 files, 435 lines | `UnverifiedWriteTests`: 16 of 50; `VerificationSummaryTests`: 2 of 31 |
+
+Each class was seen red on its own (2026-11-23), with test failures and no
+compile error, in a clone with one commit; a writer that reverse-applies the
+patch passes all three without touching the oracle. Known limits: seven
+`NumericBuiltinParityTests` rows pin the printed `System.Math` call and the
+analyzer's message text, which is the PR's spec; the `create-entry-notify` claim
+(the PR title) names the design; and kept test comments mention where the fix
+goes. Every arm sees the same text.
+
+**History leak, fixed 2026-11-23.** Until then each writer got a clone whose
+`HEAD~1` was the fixed base, and writers copied it (`git show HEAD~1:<file>`,
+`git checkout HEAD~1 -- <file>`): 1–10 of 18 runs per arm in Phase 6 and 6b. Those
+results are not a measure of diagnosis. The writer now gets the base's files in a
+fresh repository whose only commit is the bugged state (`tests/eval_writer.py`).
+
+Run them, and compare the harness with bare opencode (`--bare`: an empty config
+and `OPENCODE_DISABLE_CLAUDE_CODE=1`, so no `AGENTS.md`, harness skills, plugin,
+policy or MCP servers). Skills installed outside this repo (`~/.agents/skills`, e.g. `antigravity2.0`,
+`pre-ship-review`) still load in both arms, so "bare" means bare opencode plus those skills. `--no-project`
+also skips the repository's own `AGENTS.md`. The fixture repository stays on disk, so each run records
+`fixture_ref=1` when the writer named it:
+
+```sh
+export EVAL_CASES_DIR=evals/writer-cases-large EVAL_WRITER_CHECKS=evals/writer-cases-large/writer-checks.json EVAL_CASE_TIMEOUT=1800
+./run-writer.sh -m claude-agent/opus#medium --blind --runs 3
+./run-writer.sh -m claude-agent/opus#medium --blind --bare --runs 3
+./run-writer.sh -m claude-agent/opus#medium --blind --bare --no-project --runs 3
+```
+
 ## Three ways to add a case
 
 **Un-fix a real fix.** Most durable: a real defect with a real fix as its answer.

@@ -20,6 +20,9 @@
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+CASES="${EVAL_CASES_DIR:-$HERE/cases}"
+BARE=0
+PROJECT=1
 WORK_ROOT="${EVAL_WORK_ROOT:-/private/var/folders/cy/4_ykzyn94plgzgh4v_vwhzrh0000gn/T/opencode/evals-run}"
 MODEL=""
 ONLY=""
@@ -30,7 +33,7 @@ RAN=0
 CASE_TIMEOUT="${EVAL_CASE_TIMEOUT:-900}"
 
 usage() {
-  echo "usage: $0 [-m provider/model[#variant]] [-c case-id] [-a agent] [-t T0|T1|T2]" >&2
+  echo "usage: $0 [-m provider/model[#variant]] [-c case-id] [-a agent] [-t T0|T1|T2] [--bare] [--no-project]" >&2
   exit 2
 }
 
@@ -40,6 +43,8 @@ while [ $# -gt 0 ]; do
     -c) [ $# -ge 2 ] || usage; ONLY="$2"; shift 2 ;;
     -a) [ $# -ge 2 ] || usage; AGENT="$2"; shift 2 ;;
     -t|--tier) [ $# -ge 2 ] || usage; TIER="$2"; shift 2 ;;
+    --bare) BARE=1; shift ;;
+    --no-project) PROJECT=0; shift ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -68,7 +73,7 @@ expand_home() {
   esac
 }
 
-for cfg in "$HERE"/cases/*/case.json; do
+for cfg in "$CASES"/*/case.json; do
   tier="$(field "$cfg" tier)"
   case "$tier" in
     T0|T1|T2) ;;
@@ -90,6 +95,20 @@ done
 # $$ keeps concurrent invocations apart: a second-resolution timestamp alone
 # collides, and colliding runs share their scratch checkouts and clobber each other.
 WORK="$WORK_ROOT/${EVAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}-$$"
+# --bare (2026-11-23): bare opencode, an empty config and no Claude Code
+# compatibility, so no AGENTS.md, harness skills, plugin, policy or MCP servers.
+# macOS bash 3.2 errors on an empty array under set -u, so always start with env.
+RUN_ENV=(env)
+if [ "$BARE" -eq 1 ]; then
+  mkdir -p "$WORK/bare-config/opencode"
+  RUN_ENV=(env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR -u OPENCODE_CONFIG_CONTENT XDG_CONFIG_HOME="$WORK/bare-config" OPENCODE_DISABLE_CLAUDE_CODE=1)
+fi
+# --no-project also sets OPENCODE_DISABLE_PROJECT_CONFIG=1, skipping the
+# repository's own AGENTS.md, so bare vs bare --no-project measures the
+# project's agent layer (the person, 2026-11-23: "is poly's agent stuff crap too?").
+if [ "$PROJECT" -eq 0 ]; then
+  RUN_ENV+=(OPENCODE_DISABLE_PROJECT_CONFIG=1)
+fi
 mkdir -p "$WORK/co" "$WORK/results"
 printf '%s\n' "${MODEL:-${AGENT:-default}}" > "$WORK/model"
 
@@ -102,7 +121,7 @@ mark_failed() {
   FAILED=1
 }
 
-for dir in "$HERE"/cases/*/; do
+for dir in "$CASES"/*/; do
   id="$(basename "$dir")"
   if [ -n "$ONLY" ] && [ "$ONLY" != "$id" ]; then continue; fi
 
@@ -131,7 +150,9 @@ for dir in "$HERE"/cases/*/; do
     exit 2
   fi
 
-  if [ -n "$AGENT" ]; then
+  if [ "$BARE" -eq 1 ]; then
+    agent="build"
+  elif [ -n "$AGENT" ]; then
     agent="$AGENT"
   elif [ "$artifact" = "plan" ]; then
     agent="verifier"
@@ -183,7 +204,8 @@ $(cat "$dir$plan_file")
       prompt="Verify the uncommitted change in this repository. The artifact is a CHANGE. Collect the evidence yourself: run git status, git diff HEAD, and the repository's build and changed-area tests as its AGENTS.md names them. Do not run the full suite; the parent owns it at the pre-ship gate. Begin with the coverage block from your instructions."
       if [ -n "$claim" ]; then prompt="$prompt The author describes it as: ${claim}"; fi
     else
-      prompt="Review the uncommitted changes in this repository. The artifact is a CHANGE. The diff is provided below; you have no shell and cannot run git.
+      if [ "$BARE" -eq 1 ]; then shell_note="The diff is provided below."; else shell_note="The diff is provided below; you have no shell and cannot run git."; fi
+      prompt="Review the uncommitted changes in this repository. The artifact is a CHANGE. ${shell_note}
 
 --- STATUS ---
 $(git -C "$co" status --short)
@@ -198,15 +220,21 @@ $(git -C "$co" diff HEAD)
     continue
   fi
 
-  prompt="$prompt Do not launch subagents. Do not modify any file in the repository. Report your findings directly in your final message, in the severity format from your instructions, with file and line references."
+  if [ "$BARE" -eq 1 ]; then
+    # Bare opencode has no review prompt: name the markers score.py reads.
+    format="marking each finding 🔴 (breaks or unsafe), 🟠 (likely bug or missing required coverage), 🟡 (worth fixing, not blocking) or 🟢 (nit)"
+  else
+    format="in the severity format from your instructions"
+  fi
+  prompt="$prompt Do not launch subagents. Do not modify any file in the repository. Report your findings directly in your final message, ${format}, with file and line references."
 
   mkdir -p "$WORK/results/$id"
   out="$WORK/results/$id/$(printf '%s' "${MODEL:-$agent}" | tr '#/' '__').txt"
   start=$(date +%s)
   if [ -n "$MODEL" ]; then
-    ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$agent" --model "$MODEL" --auto "$prompt" ) > "$out" 2>&1
+    ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "${RUN_ENV[@]}" opencode run --standalone --agent "$agent" --model "$MODEL" --auto "$prompt" ) > "$out" 2>&1
   else
-    ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" opencode run --standalone --agent "$agent" --auto "$prompt" ) > "$out" 2>&1
+    ( cd "$co" && perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "${RUN_ENV[@]}" opencode run --standalone --agent "$agent" --auto "$prompt" ) > "$out" 2>&1
   fi
   rc=$?
   end=$(date +%s)

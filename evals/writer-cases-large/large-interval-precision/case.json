@@ -1,0 +1,18 @@
+{
+  "id": "large-interval-precision",
+  "tier": "T2",
+  "repo": "~/Projects/Poly/Poly",
+  "base": "5122652fa06451b9ea548431378abd913168f7da",
+  "patch": "change.patch",
+  "claim": "Interval analysis decides '/', Text length and match arms (#1040)",
+  "source": "scoizzle/Poly#1112, integration merge 5122652fa",
+  "reverted_files": 8,
+  "reverted_lines": 435,
+  "expected": [
+    {
+      "id": "fix",
+      "severity": "🟠",
+      "notes": "`poly_check` answered `Unknown` for three forms it could decide. #579, #582 and #608 were closed because the *false* `proven` was gone; what remained was precision: `/` had no `IntervalTransfers` row, a Text's length was only readable as the value's own `length(...)` constraint (so a copy proved and a `+` never did), and `match` fell through `Eval` to `Unknown`. The interval analysis therefore could not say \"this always fits\" or \"this always fails\" for forms the language already lowers and executes."
+    }
+  ]
+}

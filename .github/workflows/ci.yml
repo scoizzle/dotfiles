@@ -147,6 +147,7 @@ jobs:
           python3 tests/dispatch_t3.py
           python3 tests/guard_plugin.py
           python3 tests/session_stats.py
+          python3 tests/eval_review_bare.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
