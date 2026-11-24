@@ -357,6 +357,13 @@ def main():
         logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
         tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
         check("a writer that reaches GitHub is marked web_ref=1", " web_ref=1" in tail, tail)
+        # Phase 9: a grep that prints repository docs with GitHub links is not a fetch.
+        write(os.path.join(stubs, "doclink.sh"),
+              "#!/bin/sh\necho './docs/x.md:3: see [#659](https://github.com/acme/repo/issues/659)'\nprintf 'fixed\\n' > app.txt\n", mode=0o755)
+        result = run(root, cases, checks, os.path.join(stubs, "doclink.sh"))
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("a GitHub link printed by grep is not web_ref", " web_ref=0" in tail, tail)
         # --role NAME runs the writer as a T3 brief would: its prompt opens with
         # `role: NAME`, so the plugin applies that role (2026-11-24: the slim
         # implementor, measured as production runs it).

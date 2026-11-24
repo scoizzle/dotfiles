@@ -386,12 +386,12 @@ Costs are list price from the session store.
 | Opus, harness + Poly | 9/9 | 595 | 4.4M / 26k | 1.99 |
 | Opus, bare + Poly | 9/9 (1 scored a timeout after a correct fix, re-running the full suite) | 659 | 3.6M / 25k | 1.81 |
 | Opus, bare, no Poly | 9/9 | 752 | 2.8M / 24k | 1.53 |
-| DeepSeek, harness + Poly | 5/5 clean runs (4 of 9 fetched the fix from GitHub) | 568–1386 clean | 13.2M / 47k | 0.10 |
-| DeepSeek, bare + Poly | 4/4 clean runs (5 of 9 fetched it; all 3 on `create-entry-notify`) | 534–727 clean | 5.2M / 24k | 0.05 |
+| DeepSeek, harness + Poly | 7/7 clean runs (2 of 9 fetched the fix from GitHub) | 970 | 13.2M / 47k | 0.10 |
+| DeepSeek, bare + Poly | 5/5 clean runs (4 of 9 fetched it) | 534 | 5.2M / 24k | 0.05 |
 
 No Opus run reached GitHub or the fixture repository. DeepSeek runs did
 (`curl .../pull/1053.diff`, `git clone https://github.com/scoizzle/Poly`); those
-are excluded above, and runs now record `web_ref`.
+are excluded above, and runs now record `web_ref`. (Corrected 2026-11-24: the first count, 4 and 5 of 9, also counted GitHub links printed when a writer grepped the repository's own docs; `web_ref` now counts only fetch commands.)
 
 **Review** (recall of 9 seeded findings; the clean case must draw no 🔴/🟠)
 

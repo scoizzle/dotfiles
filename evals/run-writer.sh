@@ -377,7 +377,9 @@ $(tail -n +2 "$outdir/verdict.md")"
     if grep -q -F -- "$repo" "$outdir/writer.txt" 2>/dev/null; then fixture_ref=1; else fixture_ref=0; fi
     # The merged fix is public: mark a writer that reached a code host (Phase 8c,
     # DeepSeek ran `curl .../pull/<n>.diff` and cloned the repository).
-    if grep -q -E "github\.com|githubusercontent\.com|api\.github|gh (pr|repo|api) " "$outdir/writer.txt" 2>/dev/null; then web_ref=1; else web_ref=0; fi
+    # A fetch command naming a code host, not any URL: a grep of the repository's own
+    # docs prints GitHub links too (Phase 9 false positive).
+    if grep -q -E "(curl|wget|aria2c|fetch\(|git( -[^ ]+)* (clone|fetch|pull|remote add))[^|;]*(github\.com|githubusercontent\.com|gitlab\.com|codeberg\.org)|gh (pr (diff|view|checkout)|repo clone|api) " "$outdir/writer.txt" 2>/dev/null; then web_ref=1; else web_ref=0; fi
     usage_line="$(python3 -I - "$co" "$start_ms" "$sup_start_ms" "$sup_end_ms" <<'PY'
 import os, sqlite3, sys
 co, since, s0, s1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
