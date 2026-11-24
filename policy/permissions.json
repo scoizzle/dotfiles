@@ -1,375 +1,8 @@
 {
   "version": 1,
-  "doc": "Single source for the permission policy of opencode (v2 runs opencode only). bin/sync-harness renders it; bin/harness-guard enforces it; bin/lint-config proves they agree on policy/vectors.json.",
-  "shell": {
-    "ask": [
-      {
-        "id": "git-push",
-        "git": "push",
-        "opencode": [
-          "*git push*",
-          "*git -* push*"
-        ],
-        "doc": "Asks only in a role session, where the plugin makes it a deny (children do not push); dropped everywhere else by guard_allow and not rendered into opencode.json."
-      },
-      {
-        "id": "git-push-default-branch",
-        "git": "push",
-        "branch_targets": [
-          "main",
-          "master"
-        ],
-        "opencode": [
-          "*git push*main*",
-          "*git push*master*",
-          "*git -* push*main*",
-          "*git -* push*master*",
-          "*git push*--all*",
-          "*git push*--branches*",
-          "*git -* push*--all*",
-          "*git -* push*--branches*"
-        ],
-        "doc": "A push naming main or master as its target asks in every session: AGENTS.md says never on the default branch (advisor, 2026-11-23). A bare `git push` while on main is not detected. --all and --branches push it too. A target given through a variable or $(...) is not detected.",
-        "all_flags": [
-          "--all",
-          "--branches"
-        ]
-      },
-      {
-        "id": "git-worktree-remove",
-        "git": "worktree",
-        "subargs": [
-          "remove"
-        ],
-        "opencode": [
-          "*git worktree remove*",
-          "*git -* worktree remove*"
-        ],
-        "skip_agents": [
-          "verifier"
-        ]
-      }
-    ],
-    "deny": [
-      {
-        "id": "git-push-destructive",
-        "git": "push",
-        "flags": [
-          "--force",
-          "--force-with-lease",
-          "--force-if-includes",
-          "--delete",
-          "--mirror",
-          "--prune"
-        ],
-        "short": "fd",
-        "refspec": true,
-        "opencode": [
-          "*git push*--force*",
-          "*git -* push*--force*",
-          "*git push* -f*",
-          "*git -* push* -f*",
-          "*git push* +*",
-          "*git -* push* +*",
-          "*git push*--delete*",
-          "*git -* push*--delete*",
-          "*git push*--mirror*",
-          "*git -* push*--mirror*",
-          "*git push* :*",
-          "*git push* ':*",
-          "*git -* push* :*",
-          "*git -* push* ':*"
-        ]
-      },
-      {
-        "id": "git-reset-hard",
-        "git": "reset",
-        "flags": [
-          "--hard"
-        ],
-        "opencode": [
-          "*git reset*--hard*",
-          "*git -* reset*--hard*"
-        ]
-      },
-      {
-        "id": "git-clean",
-        "git": "clean",
-        "opencode": [
-          "*git clean*",
-          "*git -* clean*"
-        ]
-      },
-      {
-        "id": "git-stash-drop",
-        "git": "stash",
-        "subargs": [
-          "drop",
-          "clear",
-          "pop"
-        ],
-        "opencode": [
-          "*git stash drop*",
-          "*git stash clear*",
-          "*git stash pop*",
-          "*git -* stash drop*",
-          "*git -* stash clear*",
-          "*git -* stash pop*"
-        ]
-      },
-      {
-        "id": "rm-recursive-force",
-        "program": "rm",
-        "all_of": [
-          {
-            "short": "rR",
-            "long": [
-              "--recursive"
-            ]
-          },
-          {
-            "short": "f",
-            "long": [
-              "--force"
-            ]
-          }
-        ],
-        "opencode": [
-          "*rm -rf*",
-          "*rm -fr*",
-          "*rm -r -f*",
-          "*rm -f -r*",
-          "*rm --recursive*"
-        ]
-      },
-      {
-        "id": "privilege-escalation",
-        "program": [
-          "sudo",
-          "doas"
-        ],
-        "opencode": [
-          "*sudo *"
-        ]
-      },
-      {
-        "id": "find-delete",
-        "program": "find",
-        "tokens": [
-          "-delete"
-        ],
-        "opencode": [
-          "*find*-delete*"
-        ]
-      },
-      {
-        "id": "xargs-remove",
-        "program": "xargs",
-        "after": "rm",
-        "all_of": [
-          {
-            "short": "rR",
-            "long": [
-              "--recursive"
-            ]
-          },
-          {
-            "short": "f",
-            "long": [
-              "--force"
-            ]
-          }
-        ],
-        "opencode": [
-          "*xargs*rm -rf*",
-          "*xargs*rm -fr*"
-        ]
-      },
-      {
-        "id": "git-restore",
-        "git": "restore",
-        "opencode": [
-          "git restore*",
-          "*git restore*",
-          "*git -* restore*"
-        ]
-      },
-      {
-        "id": "git-checkout-pathspec",
-        "git": "checkout",
-        "pathspec": true,
-        "opencode": [
-          "*git checkout -- *",
-          "*git -* checkout -- *"
-        ]
-      },
-      {
-        "id": "git-branch-force-delete",
-        "git": "branch",
-        "short": "D",
-        "opencode": [
-          "*git branch -D*",
-          "*git -* branch -D*"
-        ]
-      },
-      {
-        "id": "gh-api-delete",
-        "program": "gh",
-        "value_flags": [
-          "-R",
-          "--repo",
-          "--hostname"
-        ],
-        "leading": [
-          "api"
-        ],
-        "tokens": [
-          "-X",
-          "DELETE"
-        ],
-        "opencode": [
-          "*gh api*-X*DELETE*",
-          "*gh -* api*-X*DELETE*"
-        ]
-      },
-      {
-        "id": "gh-api-delete-long",
-        "program": "gh",
-        "value_flags": [
-          "-R",
-          "--repo",
-          "--hostname"
-        ],
-        "leading": [
-          "api"
-        ],
-        "tokens": [
-          "--method",
-          "DELETE"
-        ],
-        "opencode": [
-          "*gh api*--method*DELETE*",
-          "*gh -* api*--method*DELETE*"
-        ]
-      },
-      {
-        "id": "gh-pr-merge",
-        "program": "gh",
-        "value_flags": [
-          "-R",
-          "--repo",
-          "--hostname"
-        ],
-        "leading": [
-          "pr",
-          "merge"
-        ],
-        "opencode": [
-          "*gh pr merge*",
-          "*gh -* pr merge*"
-        ]
-      },
-      {
-        "id": "gh-api-merge",
-        "doc": "the REST route to the merge gh-pr-merge denies; reading a PR through gh api stays allowed",
-        "program": "gh",
-        "leading": [
-          "api"
-        ],
-        "matches": "(^|/)pulls/[^/?#]+/merge(?:[/?#]|$)",
-        "opencode": [
-          "*gh api*pulls/*/merge*"
-        ]
-      },
-      {
-        "id": "gh-api-graphql-merge",
-        "doc": "the GraphQL route to the same merge (mergePullRequest, enablePullRequestAutoMerge); lifted with self-merge in v2.1",
-        "program": "gh",
-        "leading": [
-          "api"
-        ],
-        "matches": "mergePullRequest|enablePullRequestAutoMerge",
-        "opencode": [
-          "*gh api*mergePullRequest*",
-          "*gh api*enablePullRequestAutoMerge*"
-        ]
-      },
-      {
-        "id": "npm-publish",
-        "program": "npm",
-        "tokens": [
-          "publish"
-        ],
-        "opencode": [
-          "*npm publish*",
-          "*npm -* publish*"
-        ]
-      }
-    ]
-  },
-  "protected": {
-    "doc": "Credential stores. A trailing slash is a directory. Never listed: a harness's own working state (for example ~/.claude/projects), which that harness must be able to read.",
-    "paths": [
-      "~/.ssh/",
-      "~/.aws/",
-      "~/.gnupg/",
-      "~/.config/gh/",
-      "~/.config/bot-webhooks/",
-      "~/.netrc",
-      "~/.claude/.credentials.json",
-      "~/.claude.json",
-      "~/.grok/auth.json",
-      "~/.grok/config.toml",
-      "~/.local/share/opencode/auth.json",
-      "~/.t3/userdata/statev2*"
-    ],
-    "names": [
-      "service.json",
-      "auth.json",
-      ".netrc"
-    ],
-    "name_globs": [
-      ".env",
-      ".env.*"
-    ],
-    "name_allow": [
-      ".env.example"
-    ]
-  },
-  "control_plane": {
-    "doc": "Live harness configuration. install.cs links these installed paths into one checkout, so an edit through any of them is live for every session at once, before any review. bin/harness-guard asks on a resolved real path, which catches the checkout wherever it lives; bin/sync-harness renders the same paths as edit rules for opencode, which has no hook. A trailing slash is a directory. A link install.cs no longer creates (~/.claude/CLAUDE.md, ~/.grok/AGENTS.md) stays listed while it may still exist on a machine: it still points into the checkout, so an edit through it is live.",
-    "installed": [
-      "~/.config/opencode/AGENTS.md",
-      "~/.config/opencode/opencode.json",
-      "~/.config/opencode/bin/",
-      "~/.config/opencode/policy/",
-      "~/.config/opencode/agents/",
-      "~/.config/opencode/plugins/",
-      "~/.claude/CLAUDE.md",
-      "~/.claude/settings.json",
-      "~/.local/bin/notify-bot",
-      "~/.grok/AGENTS.md",
-      "~/.config/opencode/models.local.json",
-      "~/.config/opencode/models/"
-    ],
-    "checkouts": [
-      "~/dotfiles"
-    ],
-    "repo_paths": [
-      "AGENTS.md",
-      "opencode.json",
-      "bin/",
-      "policy/",
-      "agents/",
-      "plugins/",
-      "models/"
-    ]
-  },
-  "no_edit": [
-    "memory/core"
-  ],
+  "doc": "The permission policy of opencode. bin/sync-harness renders `opencode` into opencode.json; plugins/harness-guard.js enforces `roles`. The person, 2026-11-24 ('ENABLE the agents'): no shell, read or edit rules; only the read-only roles are limited.",
   "opencode": {
-    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22), so opencode's own dispatch is off and plain opencode has none. tool_allow: opencode tools allowed for every agent. external_directory: the person turned off its prompt (2026-11-23, 'pretty much anything is fine'); protected read denies and control-plane edit asks still apply.",
+    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22). tool_allow: opencode tools allowed for every agent; external_directory does not prompt (2026-11-23). skill_deny: skills no session loads.",
     "tool_deny": [
       "subagent"
     ],
@@ -379,19 +12,10 @@
     "skill_deny": [
       "antigravity2.0",
       "pre-ship-review"
-    ],
-    "read_deny_extra": [
-      "~/.claude/*",
-      "~/.grok/*",
-      "~/.cursor/*",
-      "~/.copilot/*"
-    ],
-    "shell_deny_extra": [
-      "*/.claude/*"
     ]
   },
   "roles": {
-    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it in tool execute.before against the same allowlist; a read-only role may not use it. An agent run as itself (opencode run --agent X) takes its role from models/roles.json `agents`. reviewer, advisor and explore (not the verifier) allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree (it still may not edit there). In a full-access T3 thread an ask reaches the person as an approval request; guard_allow keeps the common ones off (2026-11-23). A session's role line and its agent's role both apply: a call must pass every one, so neither loosens the other.",
+    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; 2026-11-22). A session's role is the first line `role: <name>` in its first user message (after T3's header and preamble), stored per session the first time it is seen and never relaxed. No role line: no limit. An unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it against the same allowlist; a read-only role may not use it. reviewer and advisor allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree. implementor: everything but T3 tools and question; its context is the slim prompt.",
     "read_only": [
       "read",
       "grep",
@@ -431,7 +55,6 @@
       "t3-code-*_t3_worktree_list"
     ],
     "unknown_role": "reviewer",
-    "child_default": "reviewer",
     "roles": {
       "reviewer": {
         "allow": [
@@ -445,28 +68,12 @@
           "external_directory"
         ]
       },
-      "explore": {
-        "allow": [
-          "@read_only",
-          "webfetch",
-          "websearch",
-          "external_directory"
-        ]
-      },
-      "verifier": {
-        "allow": [
-          "@read_only",
-          "shell"
-        ]
-      },
       "implementor": {
         "allow": [
           "*"
         ],
         "deny": [
           "t3-code-*",
-          "webfetch",
-          "websearch",
           "question"
         ],
         "context": {
@@ -476,23 +83,8 @@
             "core/skill-guidance"
           ],
           "drop_global_agents": true
-        },
-        "deny_commands": [
-          "\\b(curl|wget|http|aria2c)\\b[\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)",
-          "\\bgit\\b(\\s+\\S+)*?\\s+(clone|fetch|pull|remote\\s+add|submodule\\s+add)\\b[\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)",
-          "\\bgh\\s+(pr\\s+(diff|view|checkout)|repo\\s+clone|api|gist\\s+view)\\b",
-          "\\bfetch\\s*\\([\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)"
-        ],
-        "deny_commands_doc": "Shell commands and Code Mode code an implementor may not run: fetching code from a code host (advisor and review, 2026-11-24: DeepSeek fetched the merged fix from GitHub in 9 of 18 Phase 8 runs). A git command needs a code-host URL to match, so `git fetch origin` passes."
-      },
-      "drafter": {
-        "allow": []
+        }
       }
     }
-  },
-  "guard_allow": [
-    "git-push",
-    "heredoc-program"
-  ],
-  "guard_allow_doc": "Ask ids that are off in the person's own sessions (2026-11-23: too many prompts in full-access threads). harness-guard drops them unless HARNESS_GUARD_STRICT=1, which the plugin sets in a role session, so a child still gets the ask and the role makes it a deny. sync-harness does not render their opencode globs. Only ask ids may be listed; lint fails on a deny id."
+  }
 }

@@ -4,7 +4,7 @@ description: Ask the read-only reviewer to check the current change
 
 Review the current uncommitted change.
 
-Bundle: !`~/.config/opencode/bin/review-bundle . --show AGENTS.md --show docs/rules.md --show agents/review-deep.md`
+Bundle: !`~/.config/opencode/bin/review-bundle . --show AGENTS.md --show agents/review-deep.md`
 
 The bundle's `06-test-changes-NN.txt` is what the diff did to tests: removed
 declarations and assertions, added skips, deleted and moved test files. It is a
@@ -12,8 +12,7 @@ heuristic, not a proof: its `none` line names the paths it looked at and the foc
 markers it does not check. When the
 change ran a check, run the bundle yourself with `--check '<cmd>'` (same `--show`
 flags) so `07-checks-NN.txt` holds that command, its exit code, and its output. A
-bundle without `07-checks` gives the reviewer a claim instead of a run. `--check`
-refuses anything `harness-guard` would deny or ask about, because it cannot prompt.
+bundle without `07-checks` gives the reviewer a claim instead of a run.
 
 Contract / scope (what "done" means; may be empty): $ARGUMENTS
 
@@ -33,7 +32,7 @@ git repository, say so and use the changed file list instead.
 
 When the bundle has `04-show-*`, it holds the base copies of `AGENTS.md` and
 `agents/review-deep.md`. If the diff touches either, or `agents/*`, `bin/*`,
-`commands/*`, `policy/*`, `evals/cases/*`, or `skills/*`, tell the
+`commands/*`, `policy/*`, or `skills/*`, tell the
 reviewer to treat the base copies as the governing rules, compare the new wording
 against them, and report a check this diff weakens or removes as 🔴 for a person
 to decide — not as a finding it may waive. For the gate paths with no `04-show-*`

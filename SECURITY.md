@@ -3,12 +3,12 @@
 ## What this repo is
 
 Personal configuration: opencode agent prompts, a review workflow, an installer
-(`install.cs`, `setup.sh`), a bootstrap (`bootstrap.sh`), and an eval harness.
+(`install.cs`, `setup.sh`) and a bootstrap (`bootstrap.sh`).
 It holds **no credentials**.
 
 Machine-local state is deliberately untracked and gitignored: `service.json`
-(a generated password), `cli.json`, `reviews.jsonl`, and generated eval output
-under `evals/canary-*/`. Those live only in `~/.config/opencode`.
+(a generated password), `cli.json` and `reviews.jsonl`. Those live only in
+`~/.config/opencode`.
 
 ## Reporting
 
@@ -24,12 +24,14 @@ for anything sensitive. Please do not open a public issue for it.
   is reset to the token-free URL so it is not left in `.git/config`.
 - `install.cs` never deletes data. Anything already at a destination is moved to
   `~/.config/opencode.bak-<stamp>/` before being replaced, and symlinks are
-  created over it.
+  created over it. It removes only links it made into this checkout, and the
+  retired `harness-guard` hook in `~/.claude/settings.json` after a backup.
 - `--check` on both `bootstrap.sh` and `install.cs` performs no writes.
-- `opencode.json` denies `edit` on `memory/core/` (edit, write, and patch) for
-  relative paths and for absolute paths that contain `/memory/core/`. Shell
-  rules match the command text, so a redirection into core is forbidden by
-  the Memory section of `AGENTS.md` rather than by a path-shaped shell rule.
+- Agents run without command, read or edit rules (the person, 2026-11-24:
+  "ENABLE the agents"). What remains enforced: opencode's `subagent` tool is
+  denied (dispatch is T3), and `plugins/harness-guard.js` keeps a `role:
+  reviewer` or `role: advisor` session read-only. `memory/core/` is protected
+  by the Memory section of `AGENTS.md`, not by a rule.
 - `bin/dream` appends only to `memory/learnings/YYYY-MM-DD.md`. It refuses a
   path that resolves under `memory/core/`. `dream --promote` also rewrites
   only `memory/learnings/working.md` (a compaction of the dated archive), and

@@ -5,7 +5,7 @@
 #   ./setup.sh --install  install missing system packages (needs sudo), then continue
 #   ./setup.sh --dry-run  print the plan, change nothing
 #
-# Why this is not C#: it bootstraps the SDK that runs C#. See docs/plan-csharp-native-migration.md.
+# Why this is not C#: it bootstraps the SDK that runs C#.
 # shellcheck disable=SC1007  # empty CDPATH= prefix is intentional: ignore CDPATH
 # shellcheck disable=SC2086  # $MISSING_PKGS is a space-separated package list, split on purpose
 

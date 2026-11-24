@@ -5,8 +5,6 @@
     "implementor": "claude-agent/sonnet#medium",
     "reviewer": "claude-agent/opus#medium",
     "advisor": "claude-agent/opus#medium",
-    "verifier": "claude-agent/sonnet#high",
-    "explore": "claude-agent/haiku",
     "drafter": "claude-agent/haiku"
   }
 }

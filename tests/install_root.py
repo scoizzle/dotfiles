@@ -13,6 +13,7 @@ of it and installs into a throwaway HOME. DOTNET_CLI_HOME and NUGET_PACKAGES sta
 at the real home so the SDK does not do a first-run restore per case; that
 writes the SDK's own sentinels under the real ~/.dotnet, and nothing else.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -153,6 +154,32 @@ def main() -> int:
         check(r.returncode == 0, f"apply from ~/dotfiles succeeds by default (got {r.returncode}: {r.stderr.strip()[-200:]})")
         r = run(os.path.join(stray, "install.cs"), fresh_home(tmp, "home-default-stray"))
         check(r.returncode == 3, f"by default another clone is refused (got {r.returncode})")
+
+        # 8. bin/harness-guard is gone (2026-11-24), so the PreToolUse hook an earlier
+        # install wrote into ~/.claude/settings.json would point at nothing: the
+        # install removes exactly that entry, keeps the rest, and backs the file up.
+        home = fresh_home(tmp, "home-settings")
+        claude = os.path.join(home, ".claude")
+        os.makedirs(claude)
+        guard = os.path.join(home, ".config", "opencode", "bin", "harness-guard")
+        settings = {"model": "opus", "hooks": {
+            "PreToolUse": [{"matcher": "Bash|Edit", "hooks": [{"type": "command", "command": guard, "timeout": 10}]},
+                           {"matcher": "Write", "hooks": [{"type": "command", "command": "/opt/mine/check.sh"}]}],
+            "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "bash", "args": ["/x/t.sh"]}]}]}}
+        with open(os.path.join(claude, "settings.json"), "w") as handle:
+            json.dump(settings, handle)
+        r = run(os.path.join(canonical, "install.cs"), home, canonical=canonical)
+        after = json.load(open(os.path.join(claude, "settings.json")))
+        pre = after.get("hooks", {}).get("PreToolUse", [])
+        check(r.returncode == 0 and not any(h.get("command") == guard for e in pre for h in e.get("hooks", [])),
+              f"install removes the harness-guard hook (got {r.returncode}: {pre})")
+        check(any(h.get("command") == "/opt/mine/check.sh" for e in pre for h in e.get("hooks", []))
+              and after["hooks"].get("PostToolUse") and after.get("model") == "opus",
+              "install keeps every other hook and setting")
+        check(any(n.startswith("settings.json.bak-") for n in os.listdir(claude)), "install backs settings.json up first")
+        r = run(os.path.join(canonical, "install.cs"), home, canonical=canonical)
+        check(len([n for n in os.listdir(claude) if n.startswith("settings.json.bak-")]) == 1,
+              "a second install leaves settings.json alone (no second backup)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

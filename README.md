@@ -1,23 +1,24 @@
 # dotfiles
 
-My opencode configuration — agents, commands, helper scripts, evals and the
+My opencode configuration — agents, commands, skills, helper scripts and the
 global `AGENTS.md` workflow — tracked so it can be reproduced on another machine.
 
 Managed by `install.cs` (.NET 10 file-based app, executable via shebang).
 
 ## Workflow
 
-`AGENTS.md` is the contract every harness loads. The default agent does the work.
-All dispatch goes through T3 Code's `delegate_task`; opencode's own `subagent`
-tool is denied. A broad lookup may go to the explore role. One read-only review is for a
-sensitive change (auth, secrets, a schema or data migration, or a public
-contract), when you ask, or after the same check has failed twice. Ordinary
-edits are not dispatched.
+`AGENTS.md` is the contract opencode loads. The lead plans, supervises and
+reviews; implementation with a failing test or a clear oracle goes to the
+`implementor` role. All dispatch goes through T3 Code's `delegate_task`;
+opencode's own `subagent` tool is denied. A sensitive change (auth, secrets, a
+schema or data migration, or a public contract) gets one fresh read-only review.
 
-Permissions come from one policy, `policy/permissions.json`, rendered for opencode
-by `bin/sync-harness` and checked by `bin/lint-config` in CI. opencode is the one harness; Grok Build and the Claude Code
-sandbox profile were dropped in v2 (`docs/v2-plan.md`). The limits of each layer
-are in [`docs/security-model.md`](docs/security-model.md).
+Agents run without command, read or edit rules. `policy/permissions.json` holds
+what is left: the `subagent` deny, two skill denies, and the roles, which
+`plugins/harness-guard.js` enforces: a T3 brief whose first line is `role:
+reviewer` or `role: advisor` is read-only, and `role: implementor` gets no T3
+tools and a slim prompt. `bin/sync-harness` renders the policy into
+`opencode.json`. opencode is the one harness.
 
 ## Default agent
 
@@ -106,18 +107,16 @@ The repo is the single source for opencode.
 | `agents/`       | agent prompts (opencode format), one primary and the rest subagents; each names its model through a role (`models/roles.json`) | opencode |
 | `commands/`     | slash commands | opencode |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode |
-| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally; `harness-guard.js` runs every shell and edit call through `bin/harness-guard` and enforces a T3 brief's `role:` line | opencode (`~/.config/opencode/plugins`) |
-| `policy/`       | the permission policy and its test vectors | `bin/sync-harness` renders them into `opencode.json`; `bin/lint-config` checks them |
+| `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally; `harness-guard.js` enforces a T3 brief's `role:` line | opencode (`~/.config/opencode/plugins`) |
+| `policy/`       | the permission policy | `bin/sync-harness` renders it into `opencode.json`; the plugin reads its roles |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle`, `review-log`, `models`, `dream`, `lint-config`, `harness-guard`, `sync-harness`, `notify-bot` | by absolute path; `notify-bot` also links to `~/.local/bin` |
-| `evals/`        | eval harness (`run.sh`, `score.py`, `cases/`)      | |
+| `bin/`          | `review-bundle`, `review-log`, `models`, `dream`, `sync-harness`, `notify-bot`, `setup-bot-webhooks` | by absolute path; `notify-bot` also links to `~/.local/bin` |
 
 `install.cs` makes the links and writes each role's model file; `bin/sync-harness
---apply` re-renders `opencode.json` and the verifier block from the policy. Both
-are safe to repeat. v2 no longer writes anything into `~/.claude` or `~/.grok`.
-
-How the bookshelf and the out-of-band dream pass fit together is in
-[`docs/memory-and-dreaming.md`](docs/memory-and-dreaming.md).
+--apply` re-renders `opencode.json` from the policy. Both are safe to repeat.
+v2 writes nothing into `~/.claude` or `~/.grok`, except that `install.cs` removes
+the retired `harness-guard` hook from `~/.claude/settings.json` (after a backup).
+The memory bookshelf and the `dream` pass: `commands/dream.md` and `dream --help`.
 
 ## Bot webhook callbacks
 
@@ -141,9 +140,8 @@ the environment only for those names, never for any other webhook variable.
 Values live outside git in `~/.config/bot-webhooks/env` (mode 0600, directory
 0700). `bin/setup-bot-webhooks` writes one managed block into the shell rc files;
 it adds `~/.local/bin` to `PATH` and sources the file (the values are exported to
-child shells), and a re-run replaces that block instead of appending another. The
-file is a `protected.paths` entry in the permission policy, so the agents' read and
-shell rules deny it. The URL is treated as a secret too.
+child shells), and a re-run replaces that block instead of appending another.
+Treat the URL as a secret too.
 
 ```sh
 notify-bot JARVIS done "PR #123 merged" <thread-id>
@@ -165,10 +163,9 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `service.json` — holds a generated password. Never commit this.
 - `cli.json` — TUI state (theme, layout, verbosity). Written by opencode itself;
   add it to `entries` in `install.cs` with `--copy` if you want it to travel.
-- `reviews/` — one JSON record per review, consult or verifier run, written by
+- `reviews/` — one JSON record per review or consult, written by
   `bin/review-log`; `review-log summary` flags a gate with no record in 30 days.
 - `reviews.jsonl` — the legacy single-file log (to 2026-11-14), read, never rewritten.
-- `evals/canary-*/` — recorded model output from past eval runs.
 
 `memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored; that
 includes the generated `working.md`, which is local-only like the dated files. With
@@ -186,8 +183,8 @@ Outside `~/.config/opencode`, also untracked on purpose:
   of it credential-bearing. `~/.claude` also holds the login the Claude Agent
   integration borrows, so it is never linked or copied. The only managed paths
   outside `~/.config/opencode` are `~/.local/bin/notify-bot`; v2 writes nothing
-  into `~/.claude` or `~/.grok`, and links an earlier install left there stay
-  ask-protected until you remove them.
+  into `~/.claude` or `~/.grok`; links an earlier install left there stay until
+  you remove them.
 
 ## Adding a file to the repo
 
@@ -217,7 +214,7 @@ those processes are running.
 ## Models for your subscription
 
 The repo names roles, never models: `lead`, `implementor`, `reviewer`,
-`advisor`, `verifier`, `explore`, `drafter` (`models/roles.json`). A profile in
+`advisor`, `drafter` (`models/roles.json`). A profile in
 `models/profiles/` fills every role for one subscription bundle:
 
 | Profile | For | Review |
@@ -230,7 +227,7 @@ Pick one, and override any role, in an untracked
 `~/.config/opencode/models.local.json`:
 
 ```json
-{"profile": "go-only", "roles": {"explore": "opencode-go/deepseek-v4.1-flash#high"}}
+{"profile": "go-only", "roles": {"reviewer": "opencode-go/deepseek-v4.1-flash#high"}}
 ```
 
 Log in to each provider your profile uses **before** the first `./install.cs`:
@@ -251,23 +248,6 @@ metered normally.
 If you cloned somewhere other than `~/dotfiles`, set `DOTFILES_DIR` to the clone
 before the first `./install.cs`.
 
-### Experimental Code Mode (opt-in, not managed)
-
-Claude Code has an experimental Code Mode behind
-`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`. It is **interactive-terminal only**:
-`claude -p` prints that it "isn't available ... only works in the interactive
-terminal" and falls back to ordinary tools. T3's native `claudeAgent` sessions
-are non-interactive, so treat Code Mode as unavailable there too (probe before
-relying on it). It is deliberately **not** rendered into
-`~/.claude/settings.json`: Code Mode runs tool calls through a `REPL` tool, which
-`harness-guard`'s PreToolUse matcher and the `Read(...)`/`Edit(...)` rules do not
-match, so enabling it would take those calls outside the guard and the file
-denies. Opt in per session, in a plain terminal, when you accept that:
-
-```sh
-CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude
-```
-
 ## Platforms
 
 Works on macOS and on Linux (Arch / [Omarchy](https://omarchy.org)). Same
@@ -278,7 +258,7 @@ supported only through WSL2, via `bootstrap-wsl.ps1`.
 ./install.cs --doctor   # check prerequisites for this machine
 ```
 
-`--doctor` verifies the .NET 10 SDK, `python3` (needed by `bin/` and `evals/`),
+`--doctor` verifies the .NET 10 SDK, `python3` (needed by `bin/`),
 `git`, `opencode`, the `roslynk` tool, and that `~/.dotnet/tools` is on `PATH`.
 It prints the exact fix for the platform it finds.
 
@@ -317,9 +297,8 @@ Fix on a machine that hits it: run `./setup.sh` (it puts the dotnetup-managed SD
   server rather than a hardcoded path, so the same tracked file resolves
   correctly under `/Users/...` and `/home/...`. (`dotnet tool install -g` puts
   tools in `$HOME/.dotnet/tools` on both.) Verify with `opencode debug config`.
-- Everything in `bin/` and `evals/` is Python, except `evals/run.sh` which only
-  uses `bash`, `dirname`, and `python3` — no `sed -i ''`, `stat -f`, `pbcopy`, or
-  other BSD-only idioms.
+- Everything in `bin/` is Python: no `sed -i ''`, `stat -f`, `pbcopy`, or other
+  BSD-only idioms.
 - `.gitattributes` forces LF. A CRLF shebang (`#!/usr/bin/env dotnet\r`) makes
   the scripts unrunnable on Linux.
 - No filename differs only by case, which macOS tolerates and Linux does not.
@@ -334,8 +313,3 @@ Fix on a machine that hits it: run `./setup.sh` (it puts the dotnetup-managed SD
   Dependabot cannot see are checked weekly by `.github/workflows/tools.yml`.
 - Security reports: see [`SECURITY.md`](SECURITY.md).
 
-## Known machine-specific bits
-
-- `evals/cases/*/case.json` point at `~/Projects/Poly/Poly` for their fixture
-  repos. Adjust per machine if Poly lives elsewhere — these are eval fixtures,
-  not part of the installed config. `run.sh` expands a leading `~/` or `$HOME/`.

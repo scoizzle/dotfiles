@@ -17,8 +17,8 @@ decision); but it states the goal and the check, not the lead's theory of the
 fix.
 
 `AGENTS.md` → Doing the work decides whether to dispatch: implementation with a
-failing test or a clear oracle goes to an implementor, whatever its size (Phase 8,
-`docs/v2-plan.md`). This skill only says how.
+failing test or a clear oracle goes to an implementor, whatever its size. This
+skill only says how.
 
 ## The brief, in this order
 
@@ -46,7 +46,7 @@ Then the mechanics, always:
   model from `models.resolved.json`. The child runs as `build`, so the brief's
   first line is `role: implementor` and its second "Read and follow
   ~/.config/opencode/agents/implementor.md". `plugins/harness-guard.js` enforces
-  the role: no T3 tools, web or questions, and an ask (a push) becomes a deny.
+  the role: no T3 tools or questions, and an ask becomes a deny.
 - **At most three issues per task.** Past about three, a DeepSeek implementor
   hits its step limit and leaves work uncommitted (2026-11-21). Split the rest.
 - **No `git stash`.** The stash is shared by every worktree; commit work in
@@ -56,8 +56,8 @@ Then the mechanics, always:
 
 ## What the implementor returns
 
-It commits on its task branch and stops: it does not push or open the PR, the
-lead does, after review.
+It commits on its task branch (it may push it) and stops: it does not open the
+PR, the lead does, after review.
 
 - The **head SHA** of its branch, and the files it touched.
 - The **red and green commands**, each with its **exit code**.

@@ -47,7 +47,7 @@ no repository has to opt in. Before using it:
 
 ## Read-only agents: read-only tools only
 
-`review-deep` and `explore` are read-only by
+`review-deep` is read-only by
 this repo's `AGENTS.md`. Roslynk's write tools are therefore **out of scope for them**,
 even though the upstream instructions say to prefer Roslynk over hand edits.
 

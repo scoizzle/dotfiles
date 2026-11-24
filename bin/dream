@@ -12,7 +12,7 @@
     dream --t3-db PATH            # override the T3 store
     dream --model provider/model  # drafting model
 
-The opencode store is the one evals/scoreboard.py uses:
+The opencode store:
 ~/.local/share/opencode/opencode.db, table session_v2, messages in
 session_message. A missing store prints that path and appends nothing.
 
@@ -58,9 +58,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Same default as evals/scoreboard.py. --db overrides it. Do not invent a
-# second location; XDG and OPENCODE_DB are opencode's own knobs, and the
-# scoreboard does not read them.
+# opencode's default store. --db overrides it. Do not invent a
+# second location; XDG and OPENCODE_DB are opencode's own knobs, and dream
+# does not read them.
 DEFAULT_DB = "~/.local/share/opencode/opencode.db"
 DEFAULT_T3_DB = "~/.t3/userdata/statev2.sqlite"
 DEFAULT_MEMORY = "~/.config/opencode/memory"
@@ -170,7 +170,7 @@ def now_utc() -> datetime.datetime:
 
 
 def parse_since(value: str, now: datetime.datetime) -> int:
-    """Return a UTC epoch-millisecond lower bound. Matches scoreboard's time_created unit."""
+    """Return a UTC epoch-millisecond lower bound. Matches the store's time_created unit."""
     match = SINCE_DURATION.fullmatch(value.strip())
     if match:
         count = int(match.group(1))
@@ -535,7 +535,7 @@ def load_sessions(
     else:
         raise SystemExit(
             "session store has neither session_v2 nor session. "
-            f"Expected the schema evals/scoreboard.py reads ({DEFAULT_DB})."
+            f"Expected opencode's schema ({DEFAULT_DB})."
         )
 
     available = columns(connection, table)
@@ -1622,7 +1622,7 @@ def main(argv: list[str] | None = None) -> int:
             schema_parts.append(schema)
         elif args.source == "opencode":
             print(f"no session store at {db_path}")
-            print(f"expected location matches evals/scoreboard.py: {DEFAULT_DB}")
+            print(f"expected location: {DEFAULT_DB}")
             print("nothing to append")
             return 0
         else:

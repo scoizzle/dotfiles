@@ -34,9 +34,8 @@ and listed in 99-omitted.txt. 07-checks output is the exception: it is the comma
 you named, recorded verbatim, so a check that prints a secret puts it in the bundle.
 
 --check '<cmd>' runs one command and records it as evidence. It is the only mode
-that runs anything beyond git, so each command goes through bin/harness-guard first
-and a denied or ask-class one aborts before a bundle is written: this tool cannot
-show a prompt, so an ask is a refusal. The command runs with /bin/sh in the repo
+that runs anything beyond git, and it runs what it is given, as the lead would
+(the person, 2026-11-24: no command rules). The command runs with /bin/sh in the repo
 and its exit code is recorded, not judged, so a failing check still produces a
 bundle. It is killed after --check-timeout seconds (default 900) together with its
 process group, and the run is recorded as timed out. A check whose shell exits but
@@ -61,8 +60,6 @@ the run rather than emitting an empty section.
 import datetime
 import fnmatch
 import hashlib
-import importlib.machinery
-import importlib.util
 import json
 import os
 import re
@@ -203,11 +200,9 @@ T1_MAX_LINES = 400
 ALWAYS = (
     ".github/*",
     "AGENTS.md",
-    "docs/rules.md",
     "agents/*",
     "bin/*",
     "commands/*",
-    "evals/cases/*",
     "policy/*",
     "skills/*",
     "memory/core/*",
@@ -450,54 +445,6 @@ def test_change_evidence(repo, ref, diff):
     return "".join(out)
 
 
-def guard_refusal(commands, repo):
-    """Return (command, reason) for the first --check the guard denies or would ask about.
-
-    review-bundle runs what it is told, which would otherwise be a second spelling
-    of a command harness-guard already refused, or a way to run an `ask` with nobody
-    to answer it: a control-plane write, a fetch piped into a shell, a push. This
-    tool cannot show a prompt, so an ask is a refusal. The guard is loaded from
-    beside this script so the policy is the live one, and a guard that cannot load
-    refuses the run rather than allowing it.
-    """
-    try:
-        loader = importlib.machinery.SourceFileLoader(
-            "harness_guard", os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness-guard")
-        )
-        spec = importlib.util.spec_from_loader(loader.name, loader)
-        module = importlib.util.module_from_spec(spec)
-        loader.exec_module(module)
-    except Exception as error:
-        return commands[0], f"cannot check it against harness-guard ({type(error).__name__}: {error})"
-    # Unattended, so the strict view: an ask the person turned off for their own
-    # sessions (policy guard_allow, e.g. git push) still refuses here (2026-11-23).
-    strict_before = os.environ.get("HARNESS_GUARD_STRICT")
-    os.environ["HARNESS_GUARD_STRICT"] = "1"
-    try:
-        return _refusal(module, commands, repo)
-    finally:
-        if strict_before is None:
-            os.environ.pop("HARNESS_GUARD_STRICT", None)
-        else:
-            os.environ["HARNESS_GUARD_STRICT"] = strict_before
-
-
-def _refusal(module, commands: list[str], repo: str):
-    for command in commands:
-        try:
-            found = module.decide({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": repo})
-        except Exception as error:
-            return command, f"harness-guard could not check it ({type(error).__name__}: {error})"
-        for decision in sorted(found, key=lambda d: d.kind != "deny"):
-            if decision.kind == "deny":
-                return command, f"harness-guard denies it ({decision.reason})"
-            if decision.kind == "ask":
-                return command, (
-                    f"harness-guard would ask a person ({decision.reason}), and --check cannot prompt"
-                )
-    return None
-
-
 def checks_evidence(repo, commands, timeout):
     """Run each --check command and record its command, exit code, and output.
 
@@ -626,13 +573,6 @@ def main(argv):
     if git(repo, ["rev-parse", "--is-inside-work-tree"]).returncode != 0:
         print(f"not a git repo: {repo}", file=sys.stderr)
         return 2
-
-    if checks:
-        refusal = guard_refusal(checks, repo)
-        if refusal is not None:
-            command, reason = refusal
-            print(f"refusing --check {command!r}: {reason}", file=sys.stderr)
-            return 2
 
     base_sha = None
     if base_rev is not None:

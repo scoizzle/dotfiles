@@ -1,31 +1,24 @@
-// Enforces policy/permissions.json in every opencode session, T3 children
-// included. A T3 child always runs as `build` (delegate_task has no agent
-// selector; probe, 2026-11-22), so agent frontmatter cannot limit it. This
-// plugin hooks opencode's permission evaluation instead:
+// Enforces policy/permissions.json `roles` in every opencode session, T3
+// children included. A T3 child always runs as `build` (delegate_task has no
+// agent selector; probe, 2026-11-22), so agent frontmatter cannot limit it. This
+// plugin hooks opencode's permission evaluation instead.
 //
-// - shell and edit calls go through bin/harness-guard, which parses what the
-//   text globs in opencode.json cannot (heredocs, `sh -c`, git global options,
-//   decode-to-shell). A crash, a timeout or a missing guard denies. opencode
-//   evaluates a shell permission per segment, with `cd` dropped (probe,
-//   2026-11-22), so shell is checked whole in tool `execute.before`, which runs
-//   first: a deny throws there, an ask is held for that call's evaluation.
-// - a session's role is the first non-blank line of its first user message
-//   after T3's header line and its `Act as the … sub-agent` line, when it reads
-//   `role: <name>`. It gets that role's allowlist
-//   from policy/permissions.json `roles`; any other action is denied. A T3 child
-//   with no role line, or an unknown role, gets the read-only set. The role is
-//   stored per session the first time it is seen and never relaxed, so a
-//   compaction or a restart cannot drop it. In a role session an ask becomes a
-//   deny: a child returns needs-answer rather than waiting on a prompt.
+// A session's role is the first non-blank line of its first user message after
+// T3's header line and its `Act as the … sub-agent` line, when it reads
+// `role: <name>`. It gets that role's allowlist; any other action is denied. No
+// role line: no limit (the person, 2026-11-24: "ENABLE the agents"). An unknown
+// role gets the read-only set. The role is stored per session the first time it
+// is seen and never relaxed, so a compaction or a restart cannot drop it. In a
+// role session an ask becomes a deny: a child returns needs-answer rather than
+// waiting on a prompt. Code Mode `execute` is never evaluated as a permission,
+// so the role gates it in tool `execute.before`. An implementor session also
+// loads a slim prompt (the context hook).
 //
 // It only tightens: allow can become ask or deny, ask can become deny, never
-// the reverse. A configured deny never reaches it. Reads are left to the
-// opencode rules, which already cover the protected paths. Code Mode `execute`
-// is not evaluated itself (only the tools it calls), so its `fetch` is a gap.
+// the reverse. A configured deny never reaches it.
 //
 // The default export is a plain { id, setup } so tests can import it without
 // the host package; opencode 2 reads only those two fields.
-import { spawn } from "node:child_process"
 import { readFileSync, realpathSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -49,11 +42,10 @@ function loadRoles(policyPath) {
     roles[name] = {
       allow: expand(role.allow).map(globToRegExp),
       deny: expand(role.deny).map(globToRegExp),
-      denyCommands: (role.deny_commands ?? []).map((r) => new RegExp(r)),
       context: role.context ?? null,
     }
   }
-  return { roles, unknown: spec.unknown_role, childDefault: spec.child_default }
+  return { roles, unknown: spec.unknown_role }
 }
 
 function tighten(event, effect, message) {
@@ -61,53 +53,6 @@ function tighten(event, effect, message) {
     event.effect = effect
     event.message = message
   }
-}
-
-function runGuard(bin, payload, timeoutMs, strict = false) {
-  return new Promise((resolve) => {
-    let out = ""
-    let err = ""
-    let done = false
-    const finish = (result) => {
-      if (!done) {
-        done = true
-        clearTimeout(timer)
-        resolve(result)
-      }
-    }
-    let child
-    try {
-      // A role session runs the guard strictly: policy guard_allow is off there,
-      // so an ask the person turned off for themselves still reaches the role,
-      // which makes it a deny (advisor, 2026-11-23).
-      child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"], env: strict ? { ...process.env, HARNESS_GUARD_STRICT: "1" } : process.env })
-    } catch (error) {
-      return finish({ effect: "deny", message: `harness-guard could not start (${error.message}); denied. It needs python3; to run without it, remove ~/.config/opencode/plugins/harness-guard.js` })
-    }
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL")
-      finish({ effect: "deny", message: `harness-guard timed out after ${timeoutMs} ms; denied` })
-    }, timeoutMs)
-    child.stdout.on("data", (d) => (out += d))
-    child.stderr.on("data", (d) => (err += d))
-    child.on("error", (error) => finish({ effect: "deny", message: `harness-guard could not start (${error.message}); denied. It needs python3; to run without it, remove ~/.config/opencode/plugins/harness-guard.js` }))
-    child.on("close", (code) => {
-      let reply = null
-      try {
-        reply = out.trim() ? JSON.parse(out.trim().split("\n").pop()).hookSpecificOutput : null
-      } catch {
-        return finish({ effect: "deny", message: `harness-guard printed something that is not its JSON reply; denied` })
-      }
-      const reason = reply?.permissionDecisionReason
-      if (code === 2) return finish({ effect: "deny", message: reason || err.trim() || "harness-guard denied this call" })
-      if (code !== 0) return finish({ effect: "deny", message: `harness-guard failed (exit ${code}: ${err.trim().slice(-200)}); denied` })
-      if (reply?.permissionDecision === "deny") return finish({ effect: "deny", message: reason })
-      if (reply?.permissionDecision === "ask") return finish({ effect: "ask", message: reason })
-      finish(null)
-    })
-    child.stdin.on("error", () => {})
-    child.stdin.end(JSON.stringify(payload))
-  })
 }
 
 // Slim an implementor's system prompt (2026-11-24): swap the agent prompt, drop
@@ -159,26 +104,10 @@ function firstUserText(messages) {
 export default {
   id: "harness-guard",
   async setup(ctx) {
-    const bin = process.env.HARNESS_GUARD_BIN || join(ROOT, "bin", "harness-guard")
     const policyPath = process.env.HARNESS_POLICY || join(ROOT, "policy", "permissions.json")
-    const timeoutMs = Number(process.env.HARNESS_GUARD_TIMEOUT_MS) || 5000
-    const { roles, unknown, childDefault } = loadRoles(policyPath)
-    // An agent run as itself (`opencode run --agent review-deep`, the evals,
-    // bin/dream) takes its role from models/roles.json `agents`; the lead
-    // agents (build, plan) have none. A missing or unreadable map leaves only
-    // the role line, and the agents' own frontmatter, as before.
-    let agentRoles = {}
-    try {
-      const map = JSON.parse(readFileSync(process.env.HARNESS_ROLES || join(ROOT, "models", "roles.json"), "utf8")).agents ?? {}
-      // "lead" (build, plan) is deliberately unrestricted; any other name the
-      // policy no longer has falls back to the read-only default.
-      for (const [agent, role] of Object.entries(map)) if (role !== "lead") agentRoles[agent] = roles[role] ? role : unknown
-    } catch {
-      agentRoles = {}
-    }
+    const { roles, unknown } = loadRoles(policyPath)
     const sessions = new Map()
-    // Bounded maps evict their oldest entry: clearing one wholesale could drop a
-    // held ask between execute.before and evaluate (review, 2026-11-23).
+    // A bounded map evicts its oldest entry.
     const remember = (map, key, value) => {
       if (map.size >= 4096) map.delete(map.keys().next().value)
       map.set(key, value)
@@ -196,7 +125,6 @@ export default {
           const body = at < 0 ? text : text.slice(text.indexOf("\n", at) + 1 || text.length)
           const line = body.split("\n").map((l) => l.trim()).find((l) => l !== "" && !T3_PREAMBLE.test(l)) ?? ""
           let role = ROLE_LINE.test(line) ? ROLE_LINE.exec(line)[1].toLowerCase() : ""
-          if (!role && at >= 0) role = childDefault
           if (role && !roles[role]) role = unknown
           await ctx.storage.set(`role/${sessionID}`, role)
           return role
@@ -207,37 +135,27 @@ export default {
       return sessions.get(sessionID)
     }
 
-    const cwdOf = async (sessionID) => {
-      const session = await ctx.session.get({ sessionID }).catch(() => null)
-      return session?.directory ?? session?.location?.directory ?? ctx.location?.directory ?? process.cwd()
+    const roleFor = async (sessionID) => {
+      const role = await roleOf(sessionID)
+      return role && !roles[role] ? unknown : role
     }
-
-    // Every role that applies must allow a call: the role line and the agent's
-    // own role are intersected, so neither can loosen the other (review,
-    // 2026-11-23). A role no longer in the policy is the read-only default.
-    const roleFor = async (sessionID, agent) => {
-      const found = [await roleOf(sessionID), agentRoles[agent]].filter(Boolean).map((r) => (roles[r] ? r : unknown))
-      return [...new Set(found)].join("+")
+    const allows = (role, action) => {
+      const spec = roles[role]
+      return spec.allow.some((r) => r.test(action)) && !spec.deny.some((r) => r.test(action))
     }
-    const allows = (role, action) =>
-      role.split("+").every((name) => {
-        const spec = roles[name]
-        return spec.allow.some((r) => r.test(action)) && !spec.deny.some((r) => r.test(action))
-      })
     const refusal = (role, action) =>
       `role ${role}: ${action} is not allowed for this role. This is a boundary, not an obstacle: do not retry it in another form.`
 
-    // An implementor session loads a slim prompt (policy roles.implementor.context).
-    // Only when implementor is the session's sole role; the lead, a reviewer and a
-    // role-less child keep the full prompt.
+    // An implementor session loads a slim prompt (policy roles.implementor.context);
+    // the lead, a reviewer and a role-less child keep the full prompt.
     await ctx.session.hook("context", async (event) => {
       let role
       try {
-        role = await roleFor(event.sessionID, event.agent)
+        role = await roleFor(event.sessionID)
       } catch {
         return
       }
-      const context = role && !role.includes("+") ? roles[role]?.context : null
+      const context = role ? roles[role]?.context : null
       if (!context) return
       try {
         const dropped = slimSystem(event.system, context, ROOT)
@@ -247,85 +165,36 @@ export default {
       }
     })
 
-    const pendingAsk = new Map()
-    const seenShell = new Map()
     await ctx.tool.hook("execute.before", async (call) => {
       // Code Mode `execute` is never evaluated as a permission (probe,
       // 2026-11-23), so a role's allowlist gates it here: its fetch would
       // otherwise reach the network from a read-only role.
-      if (call.tool === "execute") {
-        let role
-        try {
-          role = await roleFor(call.sessionID, call.agent)
-        } catch (error) {
-          throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
-        }
-        if (role && !allows(role, "execute")) throw new Error(refusal(role, "execute"))
-        // Code Mode's fetch reaches the network too (review, 2026-11-24).
-        const code = String(call.input?.code ?? "")
-        for (const name of role ? role.split("+") : []) {
-          if ((roles[name]?.denyCommands ?? []).some((r) => r.test(code))) {
-            throw new Error(`role ${name}: this code fetches code from a code host, which this role may not do. This is a boundary, not an obstacle: do not retry it in another form.`)
-          }
-        }
-        return
-      }
-      if (call.tool !== "shell" || typeof call.input?.command !== "string") return
-      remember(seenShell, call.id, true)
+      if (call.tool !== "execute") return
       let role
       try {
-        role = await roleFor(call.sessionID, call.agent)
+        role = await roleFor(call.sessionID)
       } catch (error) {
         throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
       }
-      for (const name of role ? role.split("+") : []) {
-        if ((roles[name]?.denyCommands ?? []).some((r) => r.test(call.input.command))) {
-          seenShell.delete(call.id)
-          throw new Error(`role ${name}: this command fetches code from a code host, which this role may not do. This is a boundary, not an obstacle: do not retry it in another form.`)
-        }
-      }
-      const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs, Boolean(role))
-      if (verdict?.effect === "deny") {
-        seenShell.delete(call.id)
-        throw new Error(verdict.message)
-      }
-      if (verdict?.effect === "ask") remember(pendingAsk, call.id, verdict.message)
+      if (role && !allows(role, "execute")) throw new Error(refusal(role, "execute"))
     })
 
     await ctx.permission.hook("evaluate", async (event) => {
-      if (event.action === "shell" && event.source?.id && pendingAsk.has(event.source.id)) {
-        tighten(event, "ask", pendingAsk.get(event.source.id))
-        pendingAsk.delete(event.source.id)
-      }
       let role
       try {
-        role = await roleFor(event.sessionID, event.agent)
+        role = await roleFor(event.sessionID)
       } catch (error) {
         if (!["read", "grep", "glob"].includes(event.action)) {
           tighten(event, "deny", `harness-guard could not read this session's role (${error.message}); denied`)
         }
         return
       }
-      if (role && !allows(role, event.action)) {
+      if (!role) return
+      if (!allows(role, event.action)) {
         tighten(event, "deny", refusal(role, event.action))
         return
       }
-      // A shell call execute.before never saw (another tool reaching shell)
-      // still goes through the guard, per segment, as defense in depth.
-      const unseenShell = event.action === "shell" && !seenShell.delete(event.source?.id)
-      if (event.action === "edit" || unseenShell) {
-        const cwd = await cwdOf(event.sessionID)
-        for (const target of (event.resources ?? []).map(String)) {
-          const payload =
-            event.action === "shell"
-              ? { tool_name: "Bash", tool_input: { command: target }, cwd }
-              : { tool_name: "Edit", tool_input: { file_path: target }, cwd }
-          const verdict = await runGuard(bin, payload, timeoutMs, Boolean(role))
-          if (verdict) tighten(event, verdict.effect, verdict.message)
-          if (event.effect === "deny") break
-        }
-      }
-      if (role && event.effect === "ask") {
+      if (event.effect === "ask") {
         event.effect = "deny"
         event.message = `${event.message ?? "this call needs a person's approval"}. In a role session nobody answers a prompt: return needs-answer with the question instead.`
       }

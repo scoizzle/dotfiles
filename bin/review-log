@@ -7,14 +7,14 @@
     review-log resolve <id> --acted 1 --dismissed 1
     review-log summary [--days 30]
 
-kind is review, consult (advisor) or verify (verifier). Each record is its own
+kind is review, consult (advisor) or verify (a check run). Each record is its own
 file under ~/.config/opencode/reviews/, so parallel reviewers never append to
 one shared file; summary aggregates on read. The legacy ledger,
 ~/.config/opencode/reviews.jsonl (written by the review-log #41 deleted), is
 read as `review` records and never rewritten.
 
 summary flags a kind with no record in the window: a gate that records nothing
-for 30 days is proposed for removal (docs/v2-plan.md, Gates).
+for 30 days is proposed for removal.
 """
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def cmd_add(args, base: Path) -> int:
         print(f"--date {date!r} is not an ISO time", file=sys.stderr)
         return 2
     record = {
-        # `ts` too: evals/scoreboard.py and the legacy rows key the time on it.
+        # `ts` too: the legacy rows key the time on it.
         "id": rid, "kind": args.kind, "date": date, "ts": date, "artifact": args.artifact,
         "model": args.model, "harness": args.harness, "head": args.head,
         "pending": args.pending,

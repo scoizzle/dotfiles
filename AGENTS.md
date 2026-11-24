@@ -1,7 +1,7 @@
 # Global instructions
 
-Repository `AGENTS.md` files are additive; their build/test lines win. Enforced
-rules and their enforcers are in `docs/rules.md`.
+Repository `AGENTS.md` files are additive; their build/test lines win. A rule
+enters only with a named incident.
 
 ## Doing the work
 
@@ -15,8 +15,8 @@ oracle. Never dispatch to avoid deciding.
 red, then green, and record the command and exit code.
 
 **Sensitive change:** auth, secrets, credentials, a schema or data migration, or
-a public contract: `AGENTS.md`, `docs/rules.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`,
-`evals/cases/*`, `skills/*`, `*opencode.json`, `*global.json`, `*.csproj`,
+a public contract: `AGENTS.md`, `agents/*`, `bin/*`, `commands/*`, `policy/*`,
+`skills/*`, `*opencode.json`, `*global.json`, `*.csproj`,
 `*.sln`, `*.slnx`, `*Dockerfile*`. A CI workflow is not sensitive. Before editing,
 write the outcome, done-when and red check in a few lines. After it,
 one independent read-only review (`review-deep`, the `reviewer` role) in a fresh
@@ -26,7 +26,7 @@ gets a fresh Opus (2026-11-22: Sonnet missed a 🔴). With one family it is a fr
 same-model review, unless `models.resolved.json` says `review_mode: stop`.
 
 No such reviewer: stop and ask, leave the edits uncommitted, and report them
-`unreviewed`. A diff that weakens a rule here, in `docs/rules.md` or on a
+`unreviewed`. A diff that weakens a rule here or on a
 sensitive path is a 🔴 for the person, not a finding the reviewer may waive;
 the rest of the review mechanics are in `t3-dispatch`.
 
@@ -64,11 +64,11 @@ follow `finish-change`.
 ## Models and the advisor
 
 Roles (`models/roles.json`, a profile, `models.local.json`) resolve to models
-in `models.resolved.json`. Use your role's model; a lookup may use `explore`.
+in `models.resolved.json`. Use your role's model.
 A read-only advisor consult is required when a trigger fires: a design choice
 the code cannot settle, the same check failed twice, or deleting, rewriting or
 retargeting a test or check (`consult-advisor`). It is the only escalation.
-Record every review, consult and verifier run with `bin/review-log add`.
+Record every review and consult with `bin/review-log add`.
 
 ### Ambiguity
 
@@ -92,8 +92,3 @@ Load `roslynk-rules` before the first C# read or edit; it names the .NET test
 skills to load first. Never imply Roslynk answered when it did not. A skill is a
 procedure; this file and a repository's `AGENTS.md` win over it, and a skill
 routing to a sibling we lack: say it is not installed.
-
-## Enforced rules
-
-`docs/rules.md` pairs each rule with the policy, test or lint check that
-enforces it. A rule enters only with a named incident or a failing eval.

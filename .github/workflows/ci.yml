@@ -38,7 +38,6 @@ jobs:
           shellcheck -s sh setup.sh
           shellcheck -s sh bootstrap.sh
           shellcheck -s sh update.sh
-          shellcheck -s bash evals/run.sh
 
       # Ensures the cold-start path still works when the script is piped, which is the
       # only way it will ever be run on a bare machine.
@@ -102,7 +101,7 @@ jobs:
       - name: managed paths are symlinks that resolve
         run: |
           set -eu
-          for p in AGENTS.md opencode.json agents commands skills memory bin evals; do
+          for p in AGENTS.md opencode.json agents commands skills memory bin plugins; do
             test -L "$HOME/.config/opencode/$p" || { echo "not a symlink: $p"; exit 1; }
             test -e "$HOME/.config/opencode/$p" || { echo "broken: $p"; exit 1; }
           done
@@ -120,11 +119,8 @@ jobs:
           test -f "$HOME/.config/opencode/memory/core/safety.md"
           test -f "$HOME/.config/opencode/memory/learnings/README.md"
 
-      # A wrong skill header fails silently in opencode, so every skill is checked,
-      # not just roslynk-rules. tests/skills.py also enforces the vendored pin.
-
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/models bin/dream bin/harness-guard bin/sync-harness bin/notify-bot bin/setup-bot-webhooks evals/cost.py evals/score.py evals/scoreboard.py evals/compare.py
+        run: python3 -m py_compile bin/review-bundle bin/review-log bin/models bin/dream bin/sync-harness bin/notify-bot bin/setup-bot-webhooks
 
       - name: classifier and policy render tests
         run: |
@@ -135,6 +131,7 @@ jobs:
           python3 tests/dream_cadence.py
           python3 tests/models.py
           python3 tests/guard_plugin.py
+          python3 tests/opencode_config.py
           python3 tests/bot_webhooks.py
 
       # Needs HEAD to exist, and is the same call AGENTS.md makes mid-audit.
@@ -169,7 +166,7 @@ jobs:
           echo "exit codes ok"
 
       # Bookshelf plus dream with no session store. dream must exit 0 and name
-      # the scoreboard path. A later step drives a fixture database.
+      # the store path. A later step drives a fixture database.
       - name: memory bookshelf and dream empty
         run: |
           set -eu
@@ -327,9 +324,7 @@ jobs:
           grep -q 'refusing to append' "$root/refuse.txt"
           test "$(grep -c 'missing/file.txt is not in the tree' "$target" || true)" = "0"
 
-      # Permission policy as a test. Evaluates concrete commands and paths against
-      # every agent's effective rules, so a later allow-all can no longer erase a
-      # global deny unnoticed.
+      # opencode.json's permissions and agent models are rendered from the policy.
       - name: generated config is in sync
         run: ./bin/sync-harness --scope repo
 

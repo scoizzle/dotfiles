@@ -1,6 +1,6 @@
 ---
 name: t3-dispatch
-description: How the lead dispatches a reviewer, advisor, explore, verifier or implementor through T3 delegate_task, the only dispatch path (opencode's subagent tool is denied). Load before any delegate_task.
+description: How the lead dispatches a reviewer, advisor or implementor through T3 delegate_task, the only dispatch path (opencode's subagent tool is denied). Load before any delegate_task.
 license: MIT
 compatibility: opencode
 ---
@@ -15,7 +15,7 @@ All dispatch is T3 `delegate_task`. A T3 child always runs as `build` (or
 
 `{providerInstanceId: "opencode", model, options: [{id: "variant", value}]}`,
 split from the role's `model#variant` in
-`~/.config/opencode/models.resolved.json` (reviewer, advisor, explore, verifier,
+`~/.config/opencode/models.resolved.json` (reviewer, advisor,
 implementor). When `review_mode` is `stop`, a sensitive change stops and asks
 instead of dispatching a reviewer.
 
@@ -24,8 +24,8 @@ instead of dispatching a reviewer.
 1. First line: `role: <role>`. The plugin reads it (T3 puts its own header and
    an `Act as the … sub-agent` line above; both are skipped) and allows only
    that role's tools from `policy/permissions.json` `roles`. A T3 child with no
-   role line gets the read-only set; an ask becomes a deny, and the child
-   returns `needs-answer`.
+   role line is not limited. In a role session an ask becomes a deny, and the
+   child returns `needs-answer`.
 2. Second line: "Read and follow ~/.config/opencode/agents/<role>.md": the
    installed copy from the canonical checkout, never the copy in the checkout
    under review, so a diff cannot weaken the role that reviews it.
@@ -35,14 +35,13 @@ instead of dispatching a reviewer.
 
 | Role | isolation | interactionMode |
 | --- | --- | --- |
-| reviewer, advisor, explore | `isolation: "worktree"` | `interactionMode: "plan"` |
-| verifier | `isolation: "worktree"` | default: it runs tests, so it is not sent in plan mode |
+| reviewer, advisor | `isolation: "worktree"` | `interactionMode: "plan"` |
 | implementor | `isolation: "worktree"` | default; the brief follows `implementor-brief` |
 
 A worktree child starts from the parent's last commit; uncommitted edits stay
 out. To review an **uncommitted** change, either send the review bundle's
 absolute path (`bin/review-bundle . --base <sha> --show AGENTS.md --show
-docs/rules.md --show agents/review-deep.md`, and tell the reviewer those base copies govern; a
+agents/review-deep.md`, and tell the reviewer those base copies govern; a
 reviewer may read outside its worktree), or run the
 reviewer in your checkout with `isolation: "shared"`. Shared is safe because the
 plugin enforces the reviewer's read-only role, but then copy the bundle inside
@@ -69,7 +68,7 @@ The implementor's summary is a claim. Before anything counts:
 - A finding blocks only with evidence: a failing test, a line-level
   counterexample, or a broken rule.
 - There is one re-review, of the fix delta; another round only for a new 🔴 or 🟠.
-- A diff that weakens a rule in `AGENTS.md`, `docs/rules.md` or on a sensitive
+- A diff that weakens a rule in `AGENTS.md` or on a sensitive
   path is a 🔴 for the person, not a finding the reviewer may waive.
 
 ## Known behaviour (2026-11-23)

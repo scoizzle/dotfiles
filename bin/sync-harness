@@ -5,14 +5,9 @@
     sync-harness --apply      # write it
 
 It renders opencode.json `permissions` and each agent's `{file:}` model from
-models/roles.json, and the managed block in agents/verifier.md (its `shell *:
-allow` would otherwise erase the global shell rules). Every target is a tracked
-file in this repo, so a write shows up in git and in review.
-
-v2 runs opencode only (docs/v2-plan.md), so this no longer renders Claude
-Code's ~/.claude/settings.json, ~/.claude/agents or managed settings. An
-existing ~/.claude/settings.json keeps the harness-guard hook it already has;
-bin/harness-guard stays, as the parser the policy vectors and review-bundle use.
+models/roles.json. The target is a tracked file in this repo, so a write shows
+up in git and in review. opencode is the one harness, so nothing is rendered for
+Claude Code.
 """
 from __future__ import annotations
 
@@ -24,9 +19,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BEGIN = "  # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block."
-END = "  # END managed by bin/sync-harness"
-
 
 
 def rule(action: str, resource: str, effect: str) -> dict:
@@ -37,46 +29,7 @@ def render_opencode(policy: dict) -> list[dict]:
     out = [rule("skill", s, "deny") for s in policy["opencode"]["skill_deny"]]
     out += [rule(tool, "*", "deny") for tool in policy["opencode"].get("tool_deny", [])]
     out += [rule(tool, "*", "allow") for tool in policy["opencode"].get("tool_allow", [])]
-    out += shell_rules(policy)
-    prot = policy["protected"]
-    for entry in prot["paths"]:
-        rel = entry[2:]
-        if entry.endswith("/"):
-            out += [rule("shell", f"*/{rel}*", "deny"), rule("shell", f"*~/{rel.rstrip('/')}*", "deny")]
-            out.append(rule("read", entry + "*", "deny"))
-        else:
-            out += [rule("shell", f"*/{rel}" + ("" if rel.endswith("*") else "*"), "deny"), rule("read", entry, "deny")]
-    out += [rule("shell", g, "deny") for g in policy["opencode"].get("shell_deny_extra", [])]
-    for name in prot["names"]:
-        out += [rule("shell", f"*{name}*", "deny"), rule("read", f"**/{name}", "deny")]
-    for glob in prot["name_globs"]:
-        out += [rule("read", f"**/{glob}", "deny"), rule("read", glob, "deny")]
-    out += [rule("read", g, "deny") for g in policy["opencode"]["read_deny_extra"]]
-    for allowed in prot["name_allow"]:
-        out += [rule("read", f"**/{allowed}", "allow"), rule("read", allowed, "allow")]
-    for d in policy["no_edit"]:
-        out += [rule("edit", f"{d}/*", "deny"), rule("edit", f"*/{d}/*", "deny")]
-    out += [rule("edit", path + "*" if path.endswith("/") else path, "ask") for path in control_plane_paths(policy)]
     return dedupe(out)
-
-
-def control_plane_paths(policy: dict) -> list[str]:
-    """The installed live-configuration paths, then every checkout joined with the repo paths."""
-    section = policy["control_plane"]
-    paths = list(section["installed"])
-    paths += [f"{checkout.rstrip('/')}/{rel}" for checkout in section["checkouts"] for rel in section["repo_paths"]]
-    return list(dict.fromkeys(paths))
-
-
-def shell_rules(policy: dict) -> list[dict]:
-    # guard_allow ids are off in the person's sessions: no opencode glob for them.
-    off = set(policy.get("guard_allow", []))
-    policy = {**policy, "shell": {**policy["shell"], "ask": [r for r in policy["shell"]["ask"] if r["id"] not in off]}}
-    out: list[dict] = []
-    for kind in ("ask", "deny"):
-        for r in policy["shell"][kind]:
-            out += [rule("shell", g, kind) for g in r["opencode"]]
-    return out
 
 
 def dedupe(rules: list[dict]) -> list[dict]:
@@ -97,26 +50,6 @@ def dump_opencode(config: dict) -> str:
         text,
     )
     return text + "\n"
-
-
-def verifier_block(policy: dict) -> str:
-    lines = [BEGIN, "  # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here."]
-    shell = [r for r in render_opencode(policy) if r["action"] == "shell"]
-    lines += [f'  - {{ action: shell, resource: "{r["resource"]}", effect: {r["effect"]} }}' for r in shell]
-    # A restated global ask matches after the verifier's own deny, so last match
-    # would be ask. Re-deny those globs for any ask that skips the verifier.
-    trailing = []
-    for ask in policy["shell"]["ask"]:
-        if "verifier" not in ask.get("skip_agents", []):
-            continue
-        for glob in ask["opencode"]:
-            trailing.append(f'  - {{ action: shell, resource: "{glob}", effect: deny }}')
-    if trailing:
-        lines.append("  # verifier deny after the restated ask: last match wins, so this stays deny.")
-        lines.extend(trailing)
-    lines.append(END)
-    return "\n".join(lines)
-
 
 
 ROLE_FILE = "{file:~/.config/opencode/models/%s}"
@@ -141,25 +74,7 @@ def repo_targets(policy: dict, repo: Path) -> dict[Path, str]:
     config = json.loads(config_path.read_text())
     config["permissions"] = render_opencode(policy)
     render_models(config, repo)
-    targets = {config_path: dump_opencode(config)}
-
-    agent = repo / "agents" / "verifier.md"
-    text = agent.read_text()
-    block = verifier_block(policy)
-    if BEGIN in text:
-        text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _m: block, text, flags=re.S)
-    else:
-        marker = '  - { action: shell, resource: "sudo *", effect: deny }'
-        old = re.search(r"  # `shell \*: allow` above.*?(?=\n---\n)", text, flags=re.S)
-        if old:
-            text = text[: old.start()] + block + text[old.end():]
-        elif marker in text:
-            text = text.replace(marker, marker + "\n" + block, 1)
-        else:
-            raise SystemExit("agents/verifier.md: no place to put the managed block")
-    targets[agent] = text
-
-    return targets
+    return {config_path: dump_opencode(config)}
 
 
 def main() -> int:

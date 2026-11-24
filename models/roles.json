@@ -1,13 +1,11 @@
 {
-  "doc": "Roles, not model ids. Each agent names a role; a profile maps every role to a model, a person picks the profile, and their machine may override roles in ~/.config/opencode/models.local.json. bin/models resolves them into one file per role, which opencode.json reads through {file:}. See docs/v2-plan.md, Model roles.",
+  "doc": "Roles, not model ids. Each agent names a role; a profile maps every role to a model, a person picks the profile, and their machine may override roles in ~/.config/opencode/models.local.json. bin/models resolves them into one file per role, which opencode.json reads through {file:}.",
   "default_profile": "claude-go",
   "roles": {
     "lead": "plans, dispatches, reviews and lands; the top-level session",
     "implementor": "writes one bounded task in its own worktree",
     "reviewer": "fresh-context read-only review of a diff",
     "advisor": "read-only consult when a named trigger fires",
-    "verifier": "runs the build and tests against a contract, on request",
-    "explore": "cheap read-only lookups",
     "drafter": "drafts memory lines for dream, no tools"
   },
   "agents": {
@@ -17,8 +15,6 @@
     "general": "implementor",
     "review-deep": "reviewer",
     "advisor": "advisor",
-    "verifier": "verifier",
-    "explore": "explore",
     "dream-drafter": "drafter"
   },
   "default_model_role": "lead"

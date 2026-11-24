@@ -5,8 +5,6 @@
     "implementor": "opencode-go/deepseek-v4.1-flash#low",
     "reviewer": "opencode-go/deepseek-v4.1-flash#high",
     "advisor": "opencode-go/deepseek-v4.1-flash#high",
-    "verifier": "opencode-go/deepseek-v4.1-flash#high",
-    "explore": "opencode-go/deepseek-v4.1-flash#low",
     "drafter": "opencode-go/deepseek-v4.1-flash"
   }
 }

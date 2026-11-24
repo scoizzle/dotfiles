@@ -27,7 +27,6 @@ string[] entries =
     "memory",
     "bin",
     "plugins",
-    "evals",
 ];
 
 var repoRoot = ResolveRepoRoot();
@@ -36,8 +35,7 @@ var targetRoot = Path.Combine(home, ".config", "opencode");
 
 // Links outside ~/.config/opencode, home-relative destination -> repo path. v2
 // runs opencode only, so nothing goes into ~/.claude or ~/.grok any more; a link
-// an earlier install made there is left as is (it is still an ask-protected
-// control-plane path, see policy/permissions.json).
+// an earlier install made there is left as is.
 var homeEntries = new List<(string Dest, string Src, bool IsDir)>
 {
     // notify-bot is the one helper agents run by name rather than by absolute path.
@@ -209,6 +207,79 @@ foreach (var (rel, srcName, isDirEntry) in homeEntries)
     {
         Console.WriteLine($"  FAILED  {label}: {ex.Message}");
         failures++;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// retired: what an earlier install put in place that this repo no longer has
+// (2026-11-24). A link into this checkout goes; a real file or folder there is
+// not ours and is left alone.
+// ---------------------------------------------------------------------------
+foreach (var name in new[] { "evals" })
+{
+    var dst = Path.Combine(targetRoot, name);
+    if (!(TryAttrs(dst, out var attrs) && IsLink(dst, attrs) && SameLinkTarget(dst, Path.Combine(repoRoot, name))))
+        continue;
+    drift.Add(name);
+    if (checkOnly)
+    {
+        Console.WriteLine($"  would   remove {name} (retired)");
+        continue;
+    }
+    DeleteLink(dst);
+    Console.WriteLine($"  removed {name} (retired)");
+}
+
+// bin/harness-guard is gone, so the Claude Code PreToolUse hook an earlier
+// install wrote into ~/.claude/settings.json points at nothing. Remove exactly
+// that hook, keep everything else, and back the file up first.
+var claudeSettings = Path.Combine(home, ".claude", "settings.json");
+var retiredGuard = Path.Combine(targetRoot, "bin", "harness-guard");
+if (File.Exists(claudeSettings))
+{
+    try
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(claudeSettings)) as System.Text.Json.Nodes.JsonObject;
+        var pre = root?["hooks"]?["PreToolUse"] as System.Text.Json.Nodes.JsonArray;
+        var removed = 0;
+        if (pre is not null)
+        {
+            foreach (var entry in pre.OfType<System.Text.Json.Nodes.JsonObject>().ToList())
+            {
+                if (entry["hooks"] is not System.Text.Json.Nodes.JsonArray inner) continue;
+                foreach (var hook in inner.OfType<System.Text.Json.Nodes.JsonObject>().ToList())
+                {
+                    if (hook["command"]?.GetValueKind() == JsonValueKind.String && hook["command"]!.GetValue<string>() == retiredGuard)
+                    {
+                        inner.Remove(hook);
+                        removed++;
+                    }
+                }
+                if (inner.Count == 0) pre.Remove(entry);
+            }
+        }
+        if (removed > 0)
+        {
+            drift.Add("~/.claude/settings.json");
+            if (checkOnly)
+            {
+                Console.WriteLine("  would   remove the harness-guard hook from ~/.claude/settings.json");
+            }
+            else
+            {
+                var hooks = (System.Text.Json.Nodes.JsonObject)root!["hooks"]!;
+                if (pre!.Count == 0) hooks.Remove("PreToolUse");
+                if (hooks.Count == 0) root.Remove("hooks");
+                var bak = $"{claudeSettings}.bak-{DateTime.Now:yyyyMMdd-HHmmss}";
+                File.Copy(claudeSettings, bak);
+                File.WriteAllText(claudeSettings, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+                Console.WriteLine($"  removed the harness-guard hook from ~/.claude/settings.json (backup {Path.GetFileName(bak)})");
+            }
+        }
+    }
+    catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException)
+    {
+        Console.WriteLine($"  warn    ~/.claude/settings.json left as is: {ex.Message}");
     }
 }
 

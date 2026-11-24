@@ -18,8 +18,6 @@ memory/learnings/*
 __pycache__/
 *.py[cod]
 
-# Generated eval output (re-runnable with evals/run.sh)
-evals/canary-*/
 
 # Build output: AOT publish candidates, stamps, locks.
 # bin/ is deliberately NOT ignored yet — the Python tools are still tracked there and
