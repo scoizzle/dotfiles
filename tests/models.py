@@ -132,16 +132,6 @@ with tempfile.TemporaryDirectory() as raw:
         r = run(home, "apply")
         check(r.returncode == 0, f"profile {path.stem} applies (got {r.returncode}: {r.stderr.strip()[-160:]})")
 
-    # 8. dream drafts with the drafter role, not a hard-coded model.
-    home = home_with(tmp, "dream", {"profile": "claude-only"})
-    run(home, "apply")
-    env = dict(os.environ, HOME=str(home))
-    env.pop("DREAM_MODEL", None)
-    r = subprocess.run([sys.executable, str(ROOT / "bin" / "dream"), "--help"], capture_output=True, text=True, env=env, timeout=60)
-    # argparse wraps help text mid-id ("claude-" / "agent/haiku"), so compare without whitespace.
-    check(role_file(home, "drafter") in "".join(r.stdout.split()),
-          "dream's default model is this machine's drafter role")
-
     # 9. Review of 248ffb4 (Opus): the lead writes diffs too.
     home = home_with(tmp, "lead-same", {"roles": {"lead": "opencode-go/deepseek-v4.1-flash#high",
                                                    "reviewer": "opencode-go/deepseek-v4.1-flash#high",

@@ -30,6 +30,10 @@ def effect(action: str) -> str | None:
 
 
 check(effect("subagent") == "deny", "opencode's subagent tool is denied: dispatch is T3 delegate_task")
+# Two skills no session loads (they conflict with this harness); this held only
+# through bin/sync-harness's drift check before it went (advisor, 2026-11-24).
+skills = {r["resource"] for r in rules if r.get("action") == "skill" and r.get("effect") == "deny"}
+check({"antigravity2.0", "pre-ship-review"} <= skills, f"the antigravity2.0 and pre-ship-review skills are denied ({sorted(skills)})")
 check(effect("external_directory") == "allow", "writes outside the checkout do not ask")
 check(not [r for r in rules if r.get("action") in ("shell", "read", "edit")],
       "no shell, read or edit rules remain: agents are not limited there")
