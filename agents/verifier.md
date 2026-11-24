@@ -79,8 +79,14 @@ permissions:
   - { action: shell, resource: "sudo *", effect: deny }
   # BEGIN managed by bin/sync-harness (from policy/permissions.json); edit the policy, not this block.
   # `shell *: allow` above would erase the global shell rules (last match wins), so they are restated here.
-  - { action: shell, resource: "*git push*", effect: ask }
-  - { action: shell, resource: "*git -* push*", effect: ask }
+  - { action: shell, resource: "*git push*main*", effect: ask }
+  - { action: shell, resource: "*git push*master*", effect: ask }
+  - { action: shell, resource: "*git -* push*main*", effect: ask }
+  - { action: shell, resource: "*git -* push*master*", effect: ask }
+  - { action: shell, resource: "*git push*--all*", effect: ask }
+  - { action: shell, resource: "*git push*--branches*", effect: ask }
+  - { action: shell, resource: "*git -* push*--all*", effect: ask }
+  - { action: shell, resource: "*git -* push*--branches*", effect: ask }
   - { action: shell, resource: "*git worktree remove*", effect: ask }
   - { action: shell, resource: "*git -* worktree remove*", effect: ask }
   - { action: shell, resource: "*git push*--force*", effect: deny }

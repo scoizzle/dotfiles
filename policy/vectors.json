@@ -282,22 +282,42 @@
   {
    "kind": "shell",
    "input": "git push",
-   "expect": "ask"
+   "expect": "allow",
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
   },
   {
    "kind": "shell",
    "input": "git push origin feature",
-   "expect": "ask"
+   "expect": "allow",
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
   },
   {
    "kind": "shell",
    "input": "git -C . push origin x",
-   "expect": "ask"
+   "expect": "allow",
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
   },
   {
    "kind": "shell",
    "input": "git push -u origin feature",
-   "expect": "ask"
+   "expect": "allow",
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)",
+   "agents": [
+    "(global)",
+    "implementor"
+   ]
   },
   {
    "kind": "shell",
@@ -1749,10 +1769,11 @@
   {
    "kind": "shell",
    "input": "python3 - <<'PY'\nprint(\"hi\")\nPY",
-   "expect": "ask",
+   "expect": "allow",
    "engines": [
     "guard"
-   ]
+   ],
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)"
   },
   {
    "kind": "shell",
@@ -1821,10 +1842,11 @@
   {
    "kind": "shell",
    "input": "cat <<'EOF' | python3 -\nprint(1)\nEOF",
-   "expect": "ask",
+   "expect": "allow",
    "engines": [
     "guard"
-   ]
+   ],
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)"
   },
   {
    "kind": "shell",
@@ -1853,10 +1875,11 @@
   {
    "kind": "shell",
    "input": "python3 - arg <<'PY'\nprint(1)\nPY",
-   "expect": "ask",
+   "expect": "allow",
    "engines": [
     "guard"
-   ]
+   ],
+   "note": "was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)"
   },
   {
    "kind": "shell",
@@ -1988,11 +2011,11 @@
   {
    "kind": "shell",
    "input": "git push --follow-tags origin feature",
-   "expect": "ask",
+   "expect": "allow",
    "engines": [
     "guard"
    ],
-   "note": "an unrelated long option is not taken for --force"
+   "note": "an unrelated long option is not taken for --force; was ask. the person, 2026-11-23: 'too many prompts in full-access threads'; this ask is off in the person's own sessions (policy guard_allow) and a role session still denies it (tests/guard_plugin.py)"
   },
   {
    "kind": "shell",
@@ -2187,6 +2210,86 @@
     "implementor"
    ],
    "note": "review of b8c2dec (Opus): a link an earlier install made still points into the checkout, so an edit through it stays ask"
+  },
+  {
+   "kind": "shell",
+   "input": "git push",
+   "expect": "deny",
+   "engines": [
+    "opencode"
+   ],
+   "agents": [
+    "verifier"
+   ],
+   "note": "the verifier's own rules keep push denied (advisor, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin main",
+   "expect": "ask",
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "a push naming the default branch asks in every session (advisor, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git push -u origin HEAD:main",
+   "expect": "ask",
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "a refspec onto main asks (advisor, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git -C repo push origin refs/heads/master",
+   "expect": "ask",
+   "engines": [
+    "guard"
+   ],
+   "note": "a full ref onto master asks (advisor, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git push origin feature/main-menu",
+   "expect": "allow",
+   "engines": [
+    "guard"
+   ],
+   "note": "a branch merely containing 'main' is not the default branch (the opencode glob over-asks here; the guard does not)"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --all origin",
+   "expect": "ask",
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "pushes every branch, main included (review, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git push --branches origin",
+   "expect": "ask",
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "pushes every branch, main included (review, 2026-11-23)"
+  },
+  {
+   "kind": "shell",
+   "input": "git -C repo push --all",
+   "expect": "ask",
+   "agents": [
+    "(global)",
+    "implementor"
+   ],
+   "note": "pushes every branch, main included (review, 2026-11-23)"
   }
  ]
 }

@@ -469,6 +469,20 @@ def guard_refusal(commands, repo):
         loader.exec_module(module)
     except Exception as error:
         return commands[0], f"cannot check it against harness-guard ({type(error).__name__}: {error})"
+    # Unattended, so the strict view: an ask the person turned off for their own
+    # sessions (policy guard_allow, e.g. git push) still refuses here (2026-11-23).
+    strict_before = os.environ.get("HARNESS_GUARD_STRICT")
+    os.environ["HARNESS_GUARD_STRICT"] = "1"
+    try:
+        return _refusal(module, commands, repo)
+    finally:
+        if strict_before is None:
+            os.environ.pop("HARNESS_GUARD_STRICT", None)
+        else:
+            os.environ["HARNESS_GUARD_STRICT"] = strict_before
+
+
+def _refusal(module, commands: list[str], repo: str):
     for command in commands:
         try:
             found = module.decide({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": repo})

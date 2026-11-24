@@ -9,6 +9,30 @@
         "opencode": [
           "*git push*",
           "*git -* push*"
+        ],
+        "doc": "Asks only in a role session, where the plugin makes it a deny (children do not push); dropped everywhere else by guard_allow and not rendered into opencode.json."
+      },
+      {
+        "id": "git-push-default-branch",
+        "git": "push",
+        "branch_targets": [
+          "main",
+          "master"
+        ],
+        "opencode": [
+          "*git push*main*",
+          "*git push*master*",
+          "*git -* push*main*",
+          "*git -* push*master*",
+          "*git push*--all*",
+          "*git push*--branches*",
+          "*git -* push*--all*",
+          "*git -* push*--branches*"
+        ],
+        "doc": "A push naming main or master as its target asks in every session: AGENTS.md says never on the default branch (advisor, 2026-11-23). A bare `git push` while on main is not detected. --all and --branches push it too. A target given through a variable or $(...) is not detected.",
+        "all_flags": [
+          "--all",
+          "--branches"
         ]
       },
       {
@@ -345,9 +369,12 @@
     "memory/core"
   ],
   "opencode": {
-    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22), so opencode's own dispatch is off and plain opencode has none.",
+    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22), so opencode's own dispatch is off and plain opencode has none. tool_allow: opencode tools allowed for every agent. external_directory: the person turned off its prompt (2026-11-23, 'pretty much anything is fine'); protected read denies and control-plane edit asks still apply.",
     "tool_deny": [
       "subagent"
+    ],
+    "tool_allow": [
+      "external_directory"
     ],
     "skill_deny": [
       "antigravity2.0",
@@ -364,7 +391,7 @@
     ]
   },
   "roles": {
-    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it in tool execute.before against the same allowlist; a read-only role may not use it. An agent run as itself (opencode run --agent X) takes its role from models/roles.json `agents`. reviewer, advisor and explore (not the verifier) allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree (it still may not edit there). In a full-access T3 thread an ask still reaches the person as an approval request (2026-11-23). A session's role line and its agent's role both apply: a call must pass every one, so neither loosens the other.",
+    "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; the person, 2026-11-22). A session's role is the first line `role: <name>` in its first user message, stored per session the first time it is seen and never relaxed. A T3 child (its first message starts with T3's header) without a role line gets child_default; an unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it in tool execute.before against the same allowlist; a read-only role may not use it. An agent run as itself (opencode run --agent X) takes its role from models/roles.json `agents`. reviewer, advisor and explore (not the verifier) allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree (it still may not edit there). In a full-access T3 thread an ask reaches the person as an approval request; guard_allow keeps the common ones off (2026-11-23). A session's role line and its agent's role both apply: a call must pass every one, so neither loosens the other.",
     "read_only": [
       "read",
       "grep",
@@ -447,5 +474,10 @@
         "allow": []
       }
     }
-  }
+  },
+  "guard_allow": [
+    "git-push",
+    "heredoc-program"
+  ],
+  "guard_allow_doc": "Ask ids that are off in the person's own sessions (2026-11-23: too many prompts in full-access threads). harness-guard drops them unless HARNESS_GUARD_STRICT=1, which the plugin sets in a role session, so a child still gets the ask and the role makes it a deny. sync-harness does not render their opencode globs. Only ask ids may be listed; lint fails on a deny id."
 }

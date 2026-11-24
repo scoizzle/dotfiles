@@ -136,7 +136,7 @@ def check_policy(agents: dict) -> None:
     for payload, rc, decision in (
         ({"tool_name": "Bash", "tool_input": {"command": "git push --force"}}, 2, "deny"),
         ({"toolName": "run_terminal_command", "toolInput": {"command": "rm -rf x"}}, 2, "deny"),
-        ({"tool_name": "Bash", "tool_input": {"command": "git push origin feature"}}, 0, "ask"),
+        ({"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}, 0, "ask"),
         ({"toolName": "run_terminal_command", "toolInput": {"command": "git status"}}, 0, None),
         ({"tool_name": "Read", "tool_input": {"file_path": "~/.ssh/id_rsa"}}, 2, "deny"),
         ({"toolName": "read_file", "toolInput": {"command": "x"}, "toolInputTruncated": True}, 2, "deny"),
@@ -301,6 +301,17 @@ def check_contract() -> None:
                 fail(f"{name}: missing skill wiring {needle!r}")
 
 
+def check_guard_allow() -> None:
+    """policy guard_allow may only turn off an ask, never a deny (advisor, 2026-11-23)."""
+    policy = json.loads((ROOT / "policy" / "permissions.json").read_text())
+    guard_src = (ROOT / "bin" / "harness-guard").read_text()
+    asks = {r["id"] for r in policy["shell"]["ask"]} | set(re.findall(r'Decision\("ask", "([\w-]+)"', guard_src))
+    denies = {r["id"] for r in policy["shell"]["deny"]} | set(re.findall(r'Decision\("deny", "([\w-]+)"', guard_src))
+    for rule_id in policy.get("guard_allow", []):
+        if rule_id in denies or rule_id not in asks:
+            fail(f"policy guard_allow: {rule_id!r} is not an ask rule; guard_allow may only turn off an ask, never a deny")
+
+
 def check_plugins() -> None:
     """OpenCode 2 loads a plugin only as a default definition with an id and a
     setup or effect. It rejects the v1 named-export shape with one warn line in
@@ -400,8 +411,10 @@ def main() -> int:
         for command in never_push:
             if effective(rules, "shell", command) != "deny":
                 fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
-        if effective(rules, "shell", "git push origin feature") == "allow":
-            fail(f"{name}: plain `git push` is allow; it must be ask or deny")
+        # Plain `git push` is off in the person's sessions (2026-11-23); a push to the
+        # default branch still asks, and a role session still denies any push (plugin).
+        if effective(rules, "shell", "git push origin main") == "allow":
+            fail(f"{name}: `git push origin main` is allow; a push to the default branch must be ask or deny")
         for command in never_run + never_shell_read:
             if effective(rules, "shell", command) != "deny":
                 fail(f"{name}: `{command}` is {effective(rules, 'shell', command)}, must be deny")
@@ -450,6 +463,8 @@ def main() -> int:
             fail("build: edit must be allow; the default agent does the work")
         if effective(build, "shell", "ls") != "allow":
             fail("build: shell must be allow; the default agent does the work")
+        if effective(build, "external_directory", "/tmp/x") != "allow":
+            fail("build: external_directory must be allow; the person turned off its prompt (2026-11-23)")
         if effective(build, "subagent", "explore") != "deny":
             fail("build: subagent must be deny; all dispatch goes through T3 delegate_task")
         if "EXECUTE ALLOWLIST:" in build_text:
@@ -471,6 +486,7 @@ def main() -> int:
             fail("implementor: execute must be deny; only the orchestrator has the T3 channel")
 
     check_policy(agents)
+    check_guard_allow()
     check_contract()
     check_plugins()
 

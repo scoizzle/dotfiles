@@ -58,7 +58,7 @@ function tighten(event, effect, message) {
   }
 }
 
-function runGuard(bin, payload, timeoutMs) {
+function runGuard(bin, payload, timeoutMs, strict = false) {
   return new Promise((resolve) => {
     let out = ""
     let err = ""
@@ -72,7 +72,10 @@ function runGuard(bin, payload, timeoutMs) {
     }
     let child
     try {
-      child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] })
+      // A role session runs the guard strictly: policy guard_allow is off there,
+      // so an ask the person turned off for themselves still reaches the role,
+      // which makes it a deny (advisor, 2026-11-23).
+      child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"], env: strict ? { ...process.env, HARNESS_GUARD_STRICT: "1" } : process.env })
     } catch (error) {
       return finish({ effect: "deny", message: `harness-guard could not start (${error.message}); denied. It needs python3; to run without it, remove ~/.config/opencode/plugins/harness-guard.js` })
     }
@@ -198,7 +201,13 @@ export default {
       }
       if (call.tool !== "shell" || typeof call.input?.command !== "string") return
       remember(seenShell, call.id, true)
-      const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs)
+      let role
+      try {
+        role = await roleFor(call.sessionID, call.agent)
+      } catch (error) {
+        throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
+      }
+      const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs, Boolean(role))
       if (verdict?.effect === "deny") {
         seenShell.delete(call.id)
         throw new Error(verdict.message)
@@ -234,7 +243,7 @@ export default {
             event.action === "shell"
               ? { tool_name: "Bash", tool_input: { command: target }, cwd }
               : { tool_name: "Edit", tool_input: { file_path: target }, cwd }
-          const verdict = await runGuard(bin, payload, timeoutMs)
+          const verdict = await runGuard(bin, payload, timeoutMs, Boolean(role))
           if (verdict) tighten(event, verdict.effect, verdict.message)
           if (event.effect === "deny") break
         }

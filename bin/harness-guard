@@ -311,6 +311,12 @@ def rule_matches(rule: dict, seg: list[str]) -> bool:
         sub, rest = git_parts(seg[1:])
         if sub != rule["git"]:
             return False
+        if "branch_targets" in rule:  # a push naming the branch as its target: `main`, `HEAD:main`, `refs/heads/main`
+            names = rule["branch_targets"]
+            if any(tok in rule.get("all_flags", []) for tok in rest):  # --all, --branches push main too
+                return True
+            return any(not tok.startswith("-") and any(
+                tok == n or tok.endswith(":" + n) or tok.endswith("refs/heads/" + n) for n in names) for tok in rest)
         if not any(k in rule for k in ("flags", "short", "refspec", "pathspec", "subargs")):
             return True
         if "subargs" in rule:  # the first non-flag word after the subcommand, e.g. `stash drop`
@@ -825,6 +831,18 @@ def check_paths(policy: dict, tool_input, writing: bool, cwd: str | None = None)
 
 def decide(event: dict) -> list[Decision]:
     policy = load_policy()
+    return drop_allowed(policy, _decide(policy, event))
+
+
+def drop_allowed(policy: dict, found: list[Decision]) -> list[Decision]:
+    """policy guard_allow: ask ids the person turned off (2026-11-23). A deny is never dropped."""
+    if os.environ.get("HARNESS_GUARD_STRICT") == "1":
+        return found  # a role session: the plugin turns these asks into denies
+    allowed = set(policy.get("guard_allow", []))
+    return [d for d in found if not (d.kind == "ask" and d.rule in allowed)]
+
+
+def _decide(policy: dict, event: dict) -> list[Decision]:
     tool = str(event.get("tool_name") or event.get("toolName") or "").lower()
     tool_input = event.get("tool_input") if event.get("tool_input") is not None else event.get("toolInput") or {}
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else None
@@ -845,7 +863,8 @@ def emit(kind: str, reason: str) -> None:
 
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "--explain":
-        found = check_shell(load_policy(), argv[1])
+        policy = load_policy()
+        found = drop_allowed(policy, check_shell(policy, argv[1]))
         print(", ".join(repr(d) for d in found) or "allow")
         return 0
     try:

@@ -13,7 +13,7 @@ A rule enters `AGENTS.md` and this table only with a named incident or a failing
 | Rule | Enforcer | Failure it prevents |
 | --- | --- | --- |
 | No force, delete, mirror or `+refspec` push | policy:git-push-destructive | #16 |
-| `git push` asks | policy:git-push | #16 |
+| A push to main or master asks; a child (role session) never pushes | policy:git-push-default-branch, policy:git-push | #16 |
 | No agent merge in v2.0 | policy:gh-pr-merge, policy:gh-api-merge, policy:gh-api-graphql-merge | — |
 | No `git stash pop`, `drop`, `clear`; use a WIP commit | policy:git-stash-drop | a delegate popped another worktree's WIP |
 | No `rm -rf`, `reset --hard`, `git clean` | policy:rm-recursive-force, policy:git-reset-hard, policy:git-clean | #16 |

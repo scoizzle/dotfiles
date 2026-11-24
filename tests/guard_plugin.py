@@ -268,9 +268,27 @@ def main() -> int:
         res = run(tmp, [{"action": "shell", "resources": ["x"], "segments": ["cat > notes.txt <<'EOF'\nhello\nEOF", "echo ok"], "noBefore": True}])
         check(res["results"][:1] and res["results"][0]["effect"] == "deny",
               "a shell call execute.before never saw is still guarded per segment (review)")
-        res = run(tmp, [{"action": "shell", "resources": ["python3 - <<'EOF'\nprint(1)\nEOF"], "segments": ["python3 -"]}])
+        # Sample ask: a push onto main (a heredoc program no longer asks in the person's
+        # sessions, 2026-11-23). opencode splits off the `cd`, so the segment alone looks harmless.
+        res = run(tmp, [{"action": "shell", "resources": ["cd repo && git push origin main"], "segments": ["git push origin"]}])
         check(res["results"][:1] and res["results"][0]["effect"] == "ask",
               "a guard ask on the whole command reaches the permission decision")
+
+        # The person, 2026-11-23: plain pushes and heredoc programs no longer ask in
+        # their own sessions; a role session still denies both (advisor), and a push
+        # to the default branch asks everywhere.
+        heredoc = "python3 - <<'PY'\nprint(1)\nPY"
+        lead = run(tmp, [{"action": "shell", "resources": ["git push -u origin feature"]},
+                         {"action": "shell", "resources": [heredoc]},
+                         {"action": "shell", "resources": ["git push origin main"]}])
+        check([x["effect"] for x in lead["results"]] == ["allow", "allow", "ask"],
+              f"the person's session: push and heredoc allowed, push to main asks ({[x['effect'] for x in lead['results']]})")
+        for role in ("verifier", "implementor"):
+            child = run(tmp, [{"action": "shell", "resources": ["git push -u origin feature"]},
+                              {"action": "shell", "resources": [heredoc]}],
+                        messages=[user(f"role: {role}\nDo the task.")])
+            check([x["effect"] for x in child["results"]] == ["deny", "deny"],
+                  f"a {role} child may not push or run a heredoc program ({[x['effect'] for x in child['results']]})")
 
         # The real guard: guard-only vectors that opencode's text globs cannot catch.
         real = {}

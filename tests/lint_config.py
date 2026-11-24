@@ -150,6 +150,15 @@ def main() -> int:
                     failed |= not expect(f"{rel}: description loses {word!r}", lint(tree), "description")
                 finally:
                     path.write_text(saved_skill)
+        # guard_allow may only turn off an ask (advisor, 2026-11-23).
+        policy_file = tree / "policy" / "permissions.json"
+        policy_saved = policy_file.read_text()
+        for bad_id in ("heredoc-write", "git-push-destructive", "no-such-rule"):
+            try:
+                policy_file.write_text(policy_saved.replace('"guard_allow": [', f'"guard_allow": [\n    "{bad_id}",', 1))
+                failed |= not expect(f"guard_allow names {bad_id!r}", lint(tree), "guard_allow may only turn off an ask")
+            finally:
+                policy_file.write_text(policy_saved)
         # Each pointer AGENTS.md keeps must name a skill that exists.
         for skill in ("t3-dispatch", "consult-advisor", "finish-change", "memory", "roslynk-rules"):
             saved = agents_path.read_text()

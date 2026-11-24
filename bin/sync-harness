@@ -36,6 +36,7 @@ def rule(action: str, resource: str, effect: str) -> dict:
 def render_opencode(policy: dict) -> list[dict]:
     out = [rule("skill", s, "deny") for s in policy["opencode"]["skill_deny"]]
     out += [rule(tool, "*", "deny") for tool in policy["opencode"].get("tool_deny", [])]
+    out += [rule(tool, "*", "allow") for tool in policy["opencode"].get("tool_allow", [])]
     out += shell_rules(policy)
     prot = policy["protected"]
     for entry in prot["paths"]:
@@ -68,6 +69,9 @@ def control_plane_paths(policy: dict) -> list[str]:
 
 
 def shell_rules(policy: dict) -> list[dict]:
+    # guard_allow ids are off in the person's sessions: no opencode glob for them.
+    off = set(policy.get("guard_allow", []))
+    policy = {**policy, "shell": {**policy["shell"], "ask": [r for r in policy["shell"]["ask"] if r["id"] not in off]}}
     out: list[dict] = []
     for kind in ("ask", "deny"):
         for r in policy["shell"][kind]:
