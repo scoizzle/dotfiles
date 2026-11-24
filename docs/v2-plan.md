@@ -368,6 +368,54 @@ debugging) next to Opus's check, which is where supervision should save Opus;
 and a case where DeepSeek's first attempt is wrong, which is where a catch
 shows. Next: 2–3 multi-file cases mined from the Poly PRs in #1113.
 
+## Phase 8 result: harness vs bare, Poly's layer, DeepSeek (2026-11-24)
+
+The person asked whether bare T3/opencode beats the harness, whether Poly's own
+agent layer earns its keep, and whether DeepSeek can take more of the work. The
+writer eval ran on the three large Poly cases (`evals/writer-cases-large/`,
+blind, 3 runs each, one-commit repositories, so no history leak); the review
+eval on the change cases, 3 attempts. "Bare" is an empty opencode config with
+Claude Code compatibility off (`--bare`); the person's own `~/.agents/skills`
+still load. "No Poly" also skips the repository's `AGENTS.md` (`--no-project`).
+Costs are list price from the session store.
+
+**Writer**
+
+| Arm | Correct (oracle) | Median s | Input / output per run | List $ per run |
+| --- | --- | --- | --- | --- |
+| Opus, harness + Poly | 9/9 | 595 | 4.4M / 26k | 1.99 |
+| Opus, bare + Poly | 9/9 (1 scored a timeout after a correct fix, re-running the full suite) | 659 | 3.6M / 25k | 1.81 |
+| Opus, bare, no Poly | 9/9 | 752 | 2.8M / 24k | 1.53 |
+| DeepSeek, harness + Poly | 5/5 clean runs (4 of 9 fetched the fix from GitHub) | 568–1386 clean | 13.2M / 47k | 0.10 |
+| DeepSeek, bare + Poly | 4/4 clean runs (5 of 9 fetched it; all 3 on `create-entry-notify`) | 534–727 clean | 5.2M / 24k | 0.05 |
+
+No Opus run reached GitHub or the fixture repository. DeepSeek runs did
+(`curl .../pull/1053.diff`, `git clone https://github.com/scoizzle/Poly`); those
+are excluded above, and runs now record `web_ref`.
+
+**Review** (recall of 9 seeded findings; the clean case must draw no 🔴/🟠)
+
+| Arm | Recall | Clean case | List $ per review |
+| --- | --- | --- | --- |
+| Opus, `review-deep` + Poly | 27/27 | 2/3 (one false alarm) | 0.33 |
+| Opus, bare + Poly | 27/27 | 3/3 | 0.25 |
+| Opus, bare, no Poly | 27/27 | 3/3 | 0.17 |
+
+What it shows, on three writer cases and eight review cases:
+- The harness does not make Opus more correct on large tasks or more accurate in
+  review. It costs about 10% more per writer run and 30% more per review, and its
+  reviewer raised the only false alarm. Its measurable value is the guard: it
+  blocked `git stash pop` four times and `rm -rf` twice in these runs (harmless in
+  a scratch clone, not in a real tree).
+- Poly's `AGENTS.md` made Opus faster (595–659 s against 752 s) at about 19% more
+  tokens; in review it changed nothing but the cost.
+- DeepSeek solved every case honestly at least once, including the 1,115-line
+  `create-entry-notify` twice, at about a twentieth of Opus's list cost. With the
+  harness it ran twice as many filtered test runs (93 against 49) and used 2.5x the
+  tokens, with no gain in correctness.
+- Every arm is at ceiling again, so nothing here ranks correctness finely. The
+  oracle sees only the fix's own tests, not regressions elsewhere.
+
 ## v2 reimagined: one harness, roles, profiles (2026-11-22)
 
 Decided by the person, superseding Harness topology and Roles where they differ:

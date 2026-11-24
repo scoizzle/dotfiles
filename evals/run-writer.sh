@@ -369,6 +369,9 @@ $(tail -n +2 "$outdir/verdict.md")"
 
     # The fixture repository stays on disk; mark a writer that names it.
     if grep -q -F -- "$repo" "$outdir/writer.txt" 2>/dev/null; then fixture_ref=1; else fixture_ref=0; fi
+    # The merged fix is public: mark a writer that reached a code host (Phase 8c,
+    # DeepSeek ran `curl .../pull/<n>.diff` and cloned the repository).
+    if grep -q -E "github\.com|githubusercontent\.com|api\.github|gh (pr|repo|api) " "$outdir/writer.txt" 2>/dev/null; then web_ref=1; else web_ref=0; fi
     usage_line="$(python3 -I - "$co" "$start_ms" "$sup_start_ms" "$sup_end_ms" <<'PY'
 import os, sqlite3, sys
 co, since, s0, s1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
@@ -385,8 +388,8 @@ except Exception:
 print(f"cost={cost:.4f} tokens={tokens} sup_cost={scost:.4f} sup_tokens={stokens}")
 PY
 )"
-    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s bare=%s project=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s fixture_ref=%s\n' \
-      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$BARE" "$PROJECT" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" "$fixture_ref" >> "$outdir/writer.txt"
+    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s bare=%s project=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s fixture_ref=%s web_ref=%s\n' \
+      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$BARE" "$PROJECT" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" "$fixture_ref" "$web_ref" >> "$outdir/writer.txt"
 
     TOTAL=$((TOTAL+1))
     if [ -z "$reason" ]; then

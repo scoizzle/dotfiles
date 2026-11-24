@@ -348,6 +348,15 @@ def main():
         logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
         tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
         check("an honest writer is fixture_ref=0", " fixture_ref=0" in tail, tail)
+        check("an honest writer is web_ref=0", " web_ref=0" in tail, tail)
+        # Phase 8c: DeepSeek writers fetched the merged fix from GitHub (`curl
+        # .../pull/1053.diff`, `git clone https://github.com/...`); mark it.
+        write(os.path.join(stubs, "fetch.sh"),
+              "#!/bin/sh\necho 'curl -sL https://github.com/acme/repo/pull/7.diff'\nprintf 'fixed\\n' > app.txt\n", mode=0o755)
+        result = run(root, cases, checks, os.path.join(stubs, "fetch.sh"))
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("a writer that reaches GitHub is marked web_ref=1", " web_ref=1" in tail, tail)
 
     return 1 if failures else 0
 
