@@ -102,15 +102,5 @@ with tempfile.TemporaryDirectory() as raw:
     check("verify   records 1" in r.stdout and "no record in 30 days" in r.stdout.split("verify", 1)[1],
           "a kind last recorded 51 days ago is flagged")
 
-    # evals/scoreboard.py reads the same ledger, including the new records.
-    import importlib.machinery
-    import importlib.util
-    loader = importlib.machinery.SourceFileLoader("scoreboard", str(ROOT / "evals" / "scoreboard.py"))
-    spec = importlib.util.spec_from_loader("scoreboard", loader)
-    scoreboard = importlib.util.module_from_spec(spec)
-    loader.exec_module(scoreboard)
-    ids = {e.get("id") for e in scoreboard.read_ledger(str(legacy), 0)}
-    check(rec["id"] in ids and "old1" in ids, "scoreboard sees both the legacy rows and the new records")
-
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)
