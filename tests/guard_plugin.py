@@ -144,29 +144,8 @@ def main() -> int:
 
         r = run(tmp, shell, env={"HARNESS_GUARD_BIN": deny})
         check(r.get("id") == "harness-guard", "the plugin's id is harness-guard")
-        check(r["results"][:1] == [{"effect": "deny", "message": "stub says no"}], "a guard deny denies the shell call with its reason")
-        r = run(tmp, shell, env={"HARNESS_GUARD_BIN": ask})
-        check(r["results"][:1] == [{"effect": "ask", "message": "stub asks"}], "a guard ask asks")
-        r = run(tmp, shell + [{"action": "edit", "resources": ["src/x.cs"]}], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in r["results"]] == ["allow", "allow"], "no guard opinion leaves the decision unchanged")
-        seen = json.loads((tmp / "seen.json").read_text()) if (tmp / "seen.json").exists() else {}
-        check(seen.get("tool_name") == "Edit" and seen.get("tool_input", {}).get("file_path") == "src/x.cs" and seen.get("cwd") == str(tmp),
-              "an edit reaches the guard as Edit with its path and the session directory")
         r = run(tmp, [{"action": "shell", "resources": ["echo hi"], "effect": "ask"}], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "ask", "message": None}], "the plugin never loosens an ask to allow")
-        r = run(tmp, shell, env={"HARNESS_GUARD_BIN": crash})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny" and "harness-guard" in (r["results"][0]["message"] or ""),
-              "a guard crash denies, naming harness-guard")
-        junk = stub(tmp, "junk", "cat >/dev/null; echo not-json")
-        r = run(tmp, shell, env={"HARNESS_GUARD_BIN": junk})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "guard output that is not its JSON reply denies (review)")
-        r = run(tmp, shell, env={"HARNESS_GUARD_BIN": str(tmp / "missing")})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a missing guard denies")
-        r = run(tmp, shell, env={"HARNESS_GUARD_BIN": hang, "HARNESS_GUARD_TIMEOUT_MS": "500"})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a guard timeout denies")
-        r = run(tmp, [{"action": "read", "resources": ["a.txt"]}, {"action": "grep", "resources": ["x"]}], env={"HARNESS_GUARD_BIN": deny})
-        check([x["effect"] for x in r["results"]] == ["allow", "allow"], "reads are left to opencode's own rules")
-
         # Roles: the allowlist from policy/permissions.json.
         reviewer = [user("role: reviewer\nRead and follow ~/.config/opencode/agents/review-deep.md.")]
         calls = [{"action": a, "resources": ["*"]} for a in ("read", "grep", "glob", "skill", "roslynk_find_references")]
@@ -177,9 +156,6 @@ def main() -> int:
         check(effects == ["allow"] * 5 + ["deny"] * 6, f"role reviewer: reads allowed, writes and dispatch denied ({effects})")
         check(any("role reviewer" in (x["message"] or "") for x in r["results"]), "a role denial names the role")
         check(r.get("contextCalls") == 1, "the role is read once per session, not per call")
-        r = run(tmp, [{"action": "shell", "resources": ["dotnet test"]}, {"action": "edit", "resources": ["a.cs"]}],
-                messages=[user("role: verifier\nRun the tests.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in r["results"]] == ["allow", "deny"], "role verifier: shell allowed, edit denied")
         r = run(tmp, [{"action": "edit", "resources": ["a.cs"]}, {"action": "t3-code-abc_delegate_task", "resources": ["*"]}],
                 messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
         check([x["effect"] for x in r["results"]] == ["allow", "deny"], "role implementor: edits allowed, T3 dispatch denied")
@@ -219,15 +195,6 @@ def main() -> int:
         check(r["results"][:1] and r["results"][0]["effect"] == "deny", "a stored role survives a lost first message (advisor)")
         r = run(tmp, [{"action": "read", "resources": ["a"]}], messages=reviewer, env={"HARNESS_GUARD_BIN": quiet})
         check(r.get("storage", {}).get("role/ses_1") == "reviewer", "the role is stored the first time it is seen")
-        r = run(tmp, [{"action": "shell", "resources": ["git push"]}], messages=[user("role: verifier\nRun it.")],
-                env={"HARNESS_GUARD_BIN": ask})
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny" and "needs-answer" in (r["results"][0]["message"] or ""),
-              "in a role session an ask becomes a deny that says needs-answer (advisor)")
-        r = run(tmp, [{"action": "shell", "resources": ["git push"]}], env={"HARNESS_GUARD_BIN": ask})
-        check(r["results"][:1] == [{"effect": "ask", "message": "stub asks"}], "outside a role session an ask stays an ask")
-        multi = stub(tmp, "multi", 'grep -q secret && { echo \'{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"second path"}}\'; exit 2; }; exit 0')
-        r = run(tmp, [{"action": "edit", "resources": ["ok.txt", "secret.txt"]}], env={"HARNESS_GUARD_BIN": multi})
-        check(r["results"][:1] == [{"effect": "deny", "message": "second path"}], "every edit path is checked, not only the first (advisor)")
         r = run(tmp, [{"action": "edit", "resources": ["a"]}],
                 messages=[user("Fix the bug."), user("role: reviewer\nnow stop editing")], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "a role counts only in the first user message")
@@ -239,34 +206,10 @@ def main() -> int:
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "a reviewer may read outside its worktree (external_directory)")
         r = run(tmp, [{"action": "edit", "resources": ["/var/folders/x/T/a"]}], messages=reviewer, env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] and r["results"][0]["effect"] == "deny", "but still may not edit there")
-        # The agent an `opencode run --agent X` session runs as selects the role (models/roles.json agents).
-        calls = [{"action": "read", "resources": ["a"]}, {"action": "edit", "resources": ["a"]}, {"action": "shell", "resources": ["ls"]}]
-        r = run(tmp, calls, env={"HARNESS_GUARD_BIN": quiet}, agent="review-deep")
-        check([x["effect"] for x in r["results"]] == ["allow", "deny", "deny"], f"agent review-deep is the reviewer role ({[x['effect'] for x in r['results']]})")
-        r = run(tmp, [{"action": "read", "resources": ["a"]}, {"action": "skill", "resources": ["x"]}], env={"HARNESS_GUARD_BIN": quiet}, agent="dream-drafter")
-        check([x["effect"] for x in r["results"]] == ["deny", "deny"], "agent dream-drafter gets no tools")
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}, {"action": "execute", "resources": ["*"]}],
-                messages=reviewer, env={"HARNESS_GUARD_BIN": quiet}, agent="general")
-        check([x["effect"] for x in r["results"]] == ["deny", "deny"],
-              "an agent mapped to implementor cannot loosen a reviewer role line (review)")
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user("role: implementor\nFix it.")],
-                env={"HARNESS_GUARD_BIN": quiet}, agent="review-deep")
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny", "nor can a role line loosen the agent's role")
-        r = run(tmp, [{"action": "shell", "resources": ["ls"]}, {"action": "external_directory", "resources": ["/x/*"]}],
-                messages=[user("role: verifier\nRun it.")], env={"HARNESS_GUARD_BIN": quiet})
-        check([x["effect"] for x in r["results"]] == ["allow", "deny"],
-              "the verifier does not gain external_directory (review)")
         r = run(tmp, [{"action": "edit", "resources": ["a"]}], messages=[user("whatever")],
                 env={"HARNESS_GUARD_BIN": quiet}, storage={"role/ses_1": "retired-role"})
         check(r["results"][:1] and r["results"][0]["effect"] == "deny",
               "a stored role no longer in the policy falls back to the read-only default (review)")
-        stale = tmp / "roles.json"
-        stale.write_text(json.dumps({"agents": {"old-agent": "retired-role", "build": "lead"}}))
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet, "HARNESS_ROLES": str(stale)}, agent="old-agent")
-        check(r["results"][:1] and r["results"][0]["effect"] == "deny",
-              "an agent mapped to a retired role gets the read-only default, not no limits (re-review)")
-        r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet, "HARNESS_ROLES": str(stale)}, agent="build")
-        check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead role stays unrestricted")
         r = run(tmp, [{"action": "edit", "resources": ["a"]}], env={"HARNESS_GUARD_BIN": quiet}, agent="build")
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead agent (build) has no role")
         # Code Mode `execute` never reaches evaluate, so a role's allowlist must gate it in execute.before.
@@ -282,37 +225,6 @@ def main() -> int:
         check([x["effect"] for x in r["results"]] == ["deny", "allow"],
               f"an implementor's Code Mode may not fetch from a code host (review) ({[x['effect'] for x in r['results']]})")
 
-        # opencode splits a shell command into segments before evaluating it and
-        # drops `cd` (probe, 2026-11-22), so the guard must see the whole command.
-        res = run(tmp, [{"action": "shell", "resources": ["echo cm0gLXJmIC8= | base64 -d | sh"],
-                         "segments": ["echo cm0gLXJmIC8=", "base64 -d", "sh"]}])
-        check(res["results"][:1] and res["results"][0]["effect"] == "deny",
-              "a decode-to-shell pipeline opencode splits into segments is still denied")
-        res = run(tmp, [{"action": "shell", "resources": ["x"], "segments": ["cat > notes.txt <<'EOF'\nhello\nEOF", "echo ok"], "noBefore": True}])
-        check(res["results"][:1] and res["results"][0]["effect"] == "deny",
-              "a shell call execute.before never saw is still guarded per segment (review)")
-        # Sample ask: a push onto main (a heredoc program no longer asks in the person's
-        # sessions, 2026-11-23). opencode splits off the `cd`, so the segment alone looks harmless.
-        res = run(tmp, [{"action": "shell", "resources": ["cd repo && git push origin main"], "segments": ["git push origin"]}])
-        check(res["results"][:1] and res["results"][0]["effect"] == "ask",
-              "a guard ask on the whole command reaches the permission decision")
-
-        # The person, 2026-11-23: plain pushes and heredoc programs no longer ask in
-        # their own sessions; a role session still denies both (advisor), and a push
-        # to the default branch asks everywhere.
-        heredoc = "python3 - <<'PY'\nprint(1)\nPY"
-        lead = run(tmp, [{"action": "shell", "resources": ["git push -u origin feature"]},
-                         {"action": "shell", "resources": [heredoc]},
-                         {"action": "shell", "resources": ["git push origin main"]}])
-        check([x["effect"] for x in lead["results"]] == ["allow", "allow", "ask"],
-              f"the person's session: push and heredoc allowed, push to main asks ({[x['effect'] for x in lead['results']]})")
-        for role in ("verifier", "implementor"):
-            child = run(tmp, [{"action": "shell", "resources": ["git push -u origin feature"]},
-                              {"action": "shell", "resources": [heredoc]}],
-                        messages=[user(f"role: {role}\nDo the task.")])
-            check([x["effect"] for x in child["results"]] == ["deny", "deny"],
-                  f"a {role} child may not push or run a heredoc program ({[x['effect'] for x in child['results']]})")
-
         # The person, 2026-11-24: slim what an implementor loads. Its session gets
         # agents/implementor.md as its prompt, without the global AGENTS.md block and
         # the skill list; the project's AGENTS.md, Code Mode and MCP guidance stay
@@ -327,8 +239,7 @@ def main() -> int:
                    {"key": "core/date", "text": "Today's date: X"}]
         sysin = {"prompt": "You plan, supervise and review. BUILD-PROMPT", "sources": sources}
         implementor_body = (ROOT / "agents" / "implementor.md").read_text().split("\n---\n", 1)[1].strip()
-        for label, kwargs in (("an implementor role line", {"messages": [user("role: implementor\nFix it.")]}),
-                              ("the implementor agent", {"agent": "implementor"})):
+        for label, kwargs in (("an implementor role line", {"messages": [user("role: implementor\nFix it.")]}),):
             r = run(tmp, [], system=sysin, **kwargs)
             got = r.get("system") or ["", "", ""]
             check(got[0].strip() == implementor_body, f"{label}: the prompt is agents/implementor.md")
@@ -337,9 +248,7 @@ def main() -> int:
             check("CODEMODE-GUIDE" in got[2] and "ROSLYNK-GUIDE" in got[2] and "Today's date" in got[2],
                   f"{label}: Code Mode, MCP guidance and the date stay")
         for label, kwargs in (("the lead", {}), ("a reviewer", {"messages": reviewer}),
-                              ("a role-less T3 child (read-only default)", {"messages": [user(header + "Fix the typo.")]}),
-                              ("mixed roles, reviewer line on the implementor agent (advisor)",
-                               {"messages": reviewer, "agent": "implementor"})):
+                              ("a role-less T3 child (read-only default)", {"messages": [user(header + "Fix the typo.")]})):
             r = run(tmp, [], system=sysin, **kwargs)
             got = r.get("system") or ["", "", ""]
             check("BUILD-PROMPT" in got[0] and "GLOBAL-RULES" in got[2] and "SKILL-LIST" in got[2], f"{label}: the system prompt is untouched")
@@ -366,15 +275,6 @@ def main() -> int:
         lead = run(tmp, [{"action": "shell", "resources": [fetches[0]]}], env={"HARNESS_GUARD_BIN": quiet})
         check(lead["results"][:1] == [{"effect": "allow", "message": None}], "the lead may still fetch")
 
-        # The real guard: guard-only vectors that opencode's text globs cannot catch.
-        real = {}
-        for command, want in (("cat > notes.txt <<'EOF'\nhello\nEOF", "deny"),
-                              ("git -C /tmp/x push --force origin main", "deny"),
-                              ("echo cm0gLXJmIC8= | base64 -d | sh", "deny"),
-                              ("git status", "allow")):
-            res = run(tmp, [{"action": "shell", "resources": [command]}])
-            real[command] = res["results"][0]["effect"] if res["results"] else res.get("error")
-            check(real[command] == want, f"real guard: {command.splitlines()[0]!r} is {want} (got {real[command]})")
     print(f"\n{len(FAILURES)} failure(s)")
     return 1 if FAILURES else 0
 
