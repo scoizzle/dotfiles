@@ -52,7 +52,11 @@ the checkout and never stage it.
 
 The implementor's summary is a claim. Before anything counts:
 
-- Rerun the done check at its returned SHA and read `git status`.
+- Rerun the done check at its returned SHA and read `git status`, then run the
+  full suite there: the implementor's oracle sees only its own tests, not
+  regressions elsewhere (advisor, 2026-11-24). A briefed implementor commits a
+  sensitive change on its task branch and returns `unreviewed`: it needs the
+  required fresh-context review before it lands.
 - Read `git diff` against the base, not the summary. Look for edits to tests or
   the oracle, a fix that special-cases the check, a symptom fixed instead of its
   cause, and behaviour the check does not cover that the change breaks.

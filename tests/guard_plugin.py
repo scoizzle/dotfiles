@@ -34,6 +34,7 @@ const hooks = {}
 let contextCalls = 0
 const store = new Map(Object.entries(s.storage ?? {}))
 const toolHooks = {}
+const sessionHooks = {}
 const ctx = {
   options: {},
   tool: { hook: async (name, cb) => { toolHooks[name] = cb; return { dispose: async () => {} } } },
@@ -41,6 +42,7 @@ const ctx = {
   location: { directory: s.cwd },
   permission: { hook: async (name, cb) => { hooks[name] = cb; return { dispose: async () => {} } } },
   session: {
+    hook: async (name, cb) => { sessionHooks[name] = cb; return { dispose: async () => {} } },
     context: async () => { contextCalls++; return s.messages },
     get: async () => ({ directory: s.cwd }),
   },
@@ -58,7 +60,7 @@ for (const call of s.calls) {
   // evaluates a permission for it (probe, 2026-11-23).
   if (call.action === "execute") {
     try {
-      await toolHooks["execute.before"]({ tool: "execute", sessionID, agent, messageID: "msg_1", id, input: { code: "return 1" } })
+      await toolHooks["execute.before"]({ tool: "execute", sessionID, agent, messageID: "msg_1", id, input: { code: call.code ?? "return 1" } })
       out.push({ effect: "allow", message: null })
     } catch (error) {
       out.push({ effect: "deny", message: error.message })
@@ -78,7 +80,23 @@ for (const call of s.calls) {
   await hooks.evaluate(event)
   out.push({ effect: event.effect, message: event.message ?? null })
 }
-console.log(JSON.stringify({ id: plugin.id, results: out, contextCalls, storage: Object.fromEntries(store) }))
+// The system prompt as opencode 2.3.2 assembles it (probe, 2026-11-24): part 0 the
+// agent prompt, part 2 the bundled sources listed in metadata.experimental.instructions.
+let system = null
+if (s.system) {
+  const sources = s.system.sources
+  const event = {
+    sessionID: s.sessionID ?? "ses_1", agent: s.agent ?? "build", model: {}, messages: [], options: {}, tools: {},
+    system: [
+      { type: "text", text: s.system.prompt },
+      { type: "text", text: "# Your Model" },
+      { type: "text", text: sources.map((x) => x.text).join("\n\n"), metadata: { experimental: { instructions: sources } } },
+    ],
+  }
+  await sessionHooks.context?.(event)
+  system = event.system.map((part) => part.text)
+}
+console.log(JSON.stringify({ id: plugin.id, results: out, contextCalls, storage: Object.fromEntries(store), system }))
 """
 
 
@@ -92,10 +110,10 @@ def user(text: str) -> dict:
     return {"id": "msg_1", "type": "user", "text": text, "files": []}
 
 
-def run(tmp: Path, calls: list, messages=None, env=None, storage=None, agent=None) -> dict:
+def run(tmp: Path, calls: list, messages=None, env=None, storage=None, agent=None, system=None) -> dict:
     driver = tmp / "driver.mjs"
     driver.write_text(DRIVER)
-    scenario = {"cwd": str(tmp), "messages": messages or [user("do the task")], "calls": calls, "storage": storage or {}, "agent": agent}
+    scenario = {"cwd": str(tmp), "messages": messages or [user("do the task")], "calls": calls, "storage": storage or {}, "agent": agent, "system": system}
     proc = subprocess.run(["node", str(driver), str(PLUGIN), json.dumps(scenario)], capture_output=True, text=True,
                           timeout=120, env={**os.environ, **(env or {})})
     if proc.returncode != 0:
@@ -258,6 +276,11 @@ def main() -> int:
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "an implementor may use Code Mode execute")
         r = run(tmp, [{"action": "execute", "resources": ["*"]}], env={"HARNESS_GUARD_BIN": quiet})
         check(r["results"][:1] == [{"effect": "allow", "message": None}], "the lead may use Code Mode execute")
+        r = run(tmp, [{"action": "execute", "resources": ["*"], "code": 'return await (await fetch("https://github.com/acme/repo/pull/7.diff")).text()'},
+                      {"action": "execute", "resources": ["*"], "code": "return 1 + 1"}],
+                messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
+        check([x["effect"] for x in r["results"]] == ["deny", "allow"],
+              f"an implementor's Code Mode may not fetch from a code host (review) ({[x['effect'] for x in r['results']]})")
 
         # opencode splits a shell command into segments before evaluating it and
         # drops `cd` (probe, 2026-11-22), so the guard must see the whole command.
@@ -289,6 +312,59 @@ def main() -> int:
                         messages=[user(f"role: {role}\nDo the task.")])
             check([x["effect"] for x in child["results"]] == ["deny", "deny"],
                   f"a {role} child may not push or run a heredoc program ({[x['effect'] for x in child['results']]})")
+
+        # The person, 2026-11-24: slim what an implementor loads. Its session gets
+        # agents/implementor.md as its prompt, without the global AGENTS.md block and
+        # the skill list; the project's AGENTS.md, Code Mode and MCP guidance stay
+        # (advisor: Phase 8 showed Poly's AGENTS.md makes runs faster).
+        global_agents = str((ROOT / "AGENTS.md").resolve())
+        instructions = (f"Instructions from: {global_agents}\n# Global instructions GLOBAL-RULES\n"
+                        f"Instructions from: /work/repo/AGENTS.md\n# Project rules PROJECT-RULES\n")
+        sources = [{"key": "core/codemode", "text": "# Code Mode\nCODEMODE-GUIDE"},
+                   {"key": "core/mcp-guidance", "text": "<mcp_instructions>ROSLYNK-GUIDE</mcp_instructions>"},
+                   {"key": "core/skill-guidance", "text": "Skills provide specialized instructions SKILL-LIST"},
+                   {"key": "core/instructions", "text": instructions},
+                   {"key": "core/date", "text": "Today's date: X"}]
+        sysin = {"prompt": "You plan, supervise and review. BUILD-PROMPT", "sources": sources}
+        implementor_body = (ROOT / "agents" / "implementor.md").read_text().split("\n---\n", 1)[1].strip()
+        for label, kwargs in (("an implementor role line", {"messages": [user("role: implementor\nFix it.")]}),
+                              ("the implementor agent", {"agent": "implementor"})):
+            r = run(tmp, [], system=sysin, **kwargs)
+            got = r.get("system") or ["", "", ""]
+            check(got[0].strip() == implementor_body, f"{label}: the prompt is agents/implementor.md")
+            check("GLOBAL-RULES" not in got[2] and "SKILL-LIST" not in got[2], f"{label}: the global AGENTS.md and the skill list are dropped")
+            check("PROJECT-RULES" in got[2], f"{label}: the project's AGENTS.md stays (advisor)")
+            check("CODEMODE-GUIDE" in got[2] and "ROSLYNK-GUIDE" in got[2] and "Today's date" in got[2],
+                  f"{label}: Code Mode, MCP guidance and the date stay")
+        for label, kwargs in (("the lead", {}), ("a reviewer", {"messages": reviewer}),
+                              ("a role-less T3 child (read-only default)", {"messages": [user(header + "Fix the typo.")]}),
+                              ("mixed roles, reviewer line on the implementor agent (advisor)",
+                               {"messages": reviewer, "agent": "implementor"})):
+            r = run(tmp, [], system=sysin, **kwargs)
+            got = r.get("system") or ["", "", ""]
+            check("BUILD-PROMPT" in got[0] and "GLOBAL-RULES" in got[2] and "SKILL-LIST" in got[2], f"{label}: the system prompt is untouched")
+        r = run(tmp, [], system={"prompt": "BUILD-PROMPT", "sources": [{"key": "core/other", "text": "X"}]},
+                messages=[user("role: implementor\nFix it.")])
+        check(r.get("system") is not None, "a system prompt of an unexpected shape does not crash the hook")
+        # An implementor may not fetch code from a code host (advisor, 2026-11-24:
+        # DeepSeek fetched the merged fix from GitHub in 9 of 18 Phase 8 runs).
+        fetches = ["curl -sL https://github.com/acme/repo/pull/7.diff", "git clone https://github.com/acme/repo.git up",
+                   "gh pr diff 7", "wget -qO- https://raw.githubusercontent.com/acme/repo/x/f.cs"]
+        impl = run(tmp, [{"action": "shell", "resources": [c]} for c in fetches] + [{"action": "shell", "resources": ["git status"]}],
+                   messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
+        check([x["effect"] for x in impl["results"]] == ["deny"] * 4 + ["allow"],
+              f"an implementor may not fetch code from a code host ({[x['effect'] for x in impl['results']]})")
+        # Review, 2026-11-24: more fetch routes, and no false positive on a word.
+        more = ["git fetch https://github.com/acme/repo.git main", "git -C x pull https://codeberg.org/a/b",
+                "git remote add up https://github.com/acme/repo.git", "curl -sL \\\n  https://gist.github.com/a/b"]
+        impl2 = run(tmp, [{"action": "shell", "resources": [c]} for c in more]
+                    + [{"action": "shell", "resources": [c]} for c in ("git log --grep=clone", 'git commit -m "fix clone"',
+                                                            "git fetch origin && git checkout -b t origin/main")],
+                    messages=[user("role: implementor\nFix it.")], env={"HARNESS_GUARD_BIN": quiet})
+        check([x["effect"] for x in impl2["results"]] == ["deny"] * 4 + ["allow"] * 3,
+              f"implementor fetch routes denied, a word 'clone' allowed ({[x['effect'] for x in impl2['results']]})")
+        lead = run(tmp, [{"action": "shell", "resources": [fetches[0]]}], env={"HARNESS_GUARD_BIN": quiet})
+        check(lead["results"][:1] == [{"effect": "allow", "message": None}], "the lead may still fetch")
 
         # The real guard: guard-only vectors that opencode's text globs cannot catch.
         real = {}

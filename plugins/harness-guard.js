@@ -46,7 +46,12 @@ function loadRoles(policyPath) {
   const expand = (list) => (list ?? []).flatMap((g) => (g.startsWith("@") ? spec[g.slice(1)] : [g]))
   const roles = {}
   for (const [name, role] of Object.entries(spec.roles)) {
-    roles[name] = { allow: expand(role.allow).map(globToRegExp), deny: expand(role.deny).map(globToRegExp) }
+    roles[name] = {
+      allow: expand(role.allow).map(globToRegExp),
+      deny: expand(role.deny).map(globToRegExp),
+      denyCommands: (role.deny_commands ?? []).map((r) => new RegExp(r)),
+      context: role.context ?? null,
+    }
   }
   return { roles, unknown: spec.unknown_role, childDefault: spec.child_default }
 }
@@ -103,6 +108,45 @@ function runGuard(bin, payload, timeoutMs, strict = false) {
     child.stdin.on("error", () => {})
     child.stdin.end(JSON.stringify(payload))
   })
+}
+
+// Slim an implementor's system prompt (2026-11-24): swap the agent prompt, drop
+// whole instruction sources, and drop the global AGENTS.md block. Each removal is
+// an exact substring, so a layout this does not recognise is left as it is.
+function slimSystem(system, context, root) {
+  if (!Array.isArray(system) || system.length === 0) return 0
+  let dropped = 0
+  if (context.prompt && typeof system[0]?.text === "string") {
+    const body = readFileSync(join(root, context.prompt), "utf8").split("\n---\n").slice(1).join("\n---\n").trim()
+    if (body) {
+      dropped += system[0].text.length - body.length
+      system[0].text = body
+    }
+  }
+  const globalPath = realpathSync(join(root, "AGENTS.md"))
+  for (const part of system) {
+    if (typeof part?.text !== "string") continue
+    for (const source of part.metadata?.experimental?.instructions ?? []) {
+      if (typeof source?.text !== "string") continue
+      let cut = []
+      if ((context.drop_sources ?? []).includes(source.key)) cut.push(source.text)
+      if (context.drop_global_agents && source.key === "core/instructions") {
+        const header = `Instructions from: ${globalPath}\n`
+        const at = source.text.indexOf(header)
+        if (at >= 0) {
+          const next = source.text.indexOf("Instructions from: ", at + header.length)
+          cut.push(source.text.slice(at, next < 0 ? source.text.length : next))
+        }
+      }
+      for (const text of cut) {
+        if (text && part.text.includes(text)) {
+          part.text = part.text.replace(text, "")
+          dropped += text.length
+        }
+      }
+    }
+  }
+  return dropped
 }
 
 function firstUserText(messages) {
@@ -183,6 +227,26 @@ export default {
     const refusal = (role, action) =>
       `role ${role}: ${action} is not allowed for this role. This is a boundary, not an obstacle: do not retry it in another form.`
 
+    // An implementor session loads a slim prompt (policy roles.implementor.context).
+    // Only when implementor is the session's sole role; the lead, a reviewer and a
+    // role-less child keep the full prompt.
+    await ctx.session.hook("context", async (event) => {
+      let role
+      try {
+        role = await roleFor(event.sessionID, event.agent)
+      } catch {
+        return
+      }
+      const context = role && !role.includes("+") ? roles[role]?.context : null
+      if (!context) return
+      try {
+        const dropped = slimSystem(event.system, context, ROOT)
+        if (dropped > 0) await ctx.storage.set(`slim/${event.sessionID}`, dropped)
+      } catch {
+        // A slimming failure leaves the full prompt: it costs tokens, never a rule.
+      }
+    })
+
     const pendingAsk = new Map()
     const seenShell = new Map()
     await ctx.tool.hook("execute.before", async (call) => {
@@ -197,6 +261,13 @@ export default {
           throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
         }
         if (role && !allows(role, "execute")) throw new Error(refusal(role, "execute"))
+        // Code Mode's fetch reaches the network too (review, 2026-11-24).
+        const code = String(call.input?.code ?? "")
+        for (const name of role ? role.split("+") : []) {
+          if ((roles[name]?.denyCommands ?? []).some((r) => r.test(code))) {
+            throw new Error(`role ${name}: this code fetches code from a code host, which this role may not do. This is a boundary, not an obstacle: do not retry it in another form.`)
+          }
+        }
         return
       }
       if (call.tool !== "shell" || typeof call.input?.command !== "string") return
@@ -206,6 +277,12 @@ export default {
         role = await roleFor(call.sessionID, call.agent)
       } catch (error) {
         throw new Error(`harness-guard could not read this session's role (${error.message}); denied`)
+      }
+      for (const name of role ? role.split("+") : []) {
+        if ((roles[name]?.denyCommands ?? []).some((r) => r.test(call.input.command))) {
+          seenShell.delete(call.id)
+          throw new Error(`role ${name}: this command fetches code from a code host, which this role may not do. This is a boundary, not an obstacle: do not retry it in another form.`)
+        }
       }
       const verdict = await runGuard(bin, { tool_name: "Bash", tool_input: { command: call.input.command }, cwd: await cwdOf(call.sessionID) }, timeoutMs, Boolean(role))
       if (verdict?.effect === "deny") {

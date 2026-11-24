@@ -94,15 +94,18 @@ check("blocks only with evidence" in skill and "one re-review" in skill, "t3-dis
 for needle in ("consult is required when a trigger fires", "bin/review-log add", "never read `pending/`", "memory/core/**"):
     check(needle in agents_md, f"AGENTS.md keeps {needle!r}")
 ib = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
-# The person, 2026-11-23, after Phase 6b: a small change the lead does itself; a
-# large one goes to an implementor under skeptical supervision.
+# The person, 2026-11-24, after Phase 8 (DeepSeek solved the large cases at ~1/20
+# of Opus's cost): implementation with an oracle goes to the implementor whatever
+# its size; the lead plans, supervises and reviews.
 doing = agents_md.split("## Doing the work", 1)[-1].split("\n\n", 2)[1]
-for needle in ("small change yourself", "large one", "more than three files or issues, or a check that failed twice",
-               "supervise it skeptically", "Never dispatch to avoid editing"):
+for needle in ("You plan, supervise and review", "failing test or a clear oracle", "whatever its size",
+               "supervise it skeptically", "full suite", "Never dispatch to avoid deciding"):
     check(needle in doing, f"AGENTS.md -> Doing the work: {needle!r}")
-check("small change yourself" in build and "Never dispatch to avoid editing" in build,
-      "agents/build.md opens with the same split")
-check("by size" in ib, "implementor-brief says AGENTS.md decides by size")
+check("more than three files" not in doing, "the size threshold is gone")
+check("You plan, supervise and review" in build and "Never dispatch to avoid deciding" in build,
+      "agents/build.md opens with the same rule")
+check("oracle" in ib and "by size" not in ib, "implementor-brief defers to AGENTS.md on the oracle rule")
+check("full suite" in skill.split("## After it returns", 1)[-1], "t3-dispatch: the lead runs the full suite at the returned SHA")
 check("heavy lifting" in ib and "supervis" in ib, "implementor-brief: the implementor investigates and fixes; the lead supervises")
 brief = (ROOT / "skills" / "implementor-brief" / "SKILL.md").read_text()
 check("delegate_task" in brief and "agents/implementor.md" in brief, "implementor-brief dispatches via delegate_task and names agents/implementor.md")

@@ -468,7 +468,22 @@
           "webfetch",
           "websearch",
           "question"
-        ]
+        ],
+        "context": {
+          "doc": "What an implementor session loads (the person, 2026-11-24: slim what an implementor loads; with the full harness DeepSeek used 2.5x the tokens of bare, Phase 8). The plugin's context hook replaces the agent prompt with this file's body, drops these instruction sources, and drops the global AGENTS.md block (the project's AGENTS.md stays). Only a session whose sole role is implementor.",
+          "prompt": "agents/implementor.md",
+          "drop_sources": [
+            "core/skill-guidance"
+          ],
+          "drop_global_agents": true
+        },
+        "deny_commands": [
+          "\\b(curl|wget|http|aria2c)\\b[\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)",
+          "\\bgit\\b(\\s+\\S+)*?\\s+(clone|fetch|pull|remote\\s+add|submodule\\s+add)\\b[\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)",
+          "\\bgh\\s+(pr\\s+(diff|view|checkout)|repo\\s+clone|api|gist\\s+view)\\b",
+          "\\bfetch\\s*\\([\\s\\S]*(github\\.com|githubusercontent\\.com|gitlab\\.com|bitbucket\\.org|codeberg\\.org|sr\\.ht)"
+        ],
+        "deny_commands_doc": "Shell commands and Code Mode code an implementor may not run: fetching code from a code host (advisor and review, 2026-11-24: DeepSeek fetched the merged fix from GitHub in 9 of 18 Phase 8 runs). A git command needs a code-host URL to match, so `git fetch origin` passes."
       },
       "drafter": {
         "allow": []

@@ -48,9 +48,44 @@ check(set(STATUS.findall(text)) == set(STATUS.findall(impl)) == {"done", "blocke
 check(re.search(r"(?i)briefed.{0,220}(does not|never) open", impl.replace("\n", " ")) is not None,
       "implementor.md says a briefed implementor commits and returns, and does not open the PR")
 check(re.search(r"(?i)lead pushes", text) is not None, "the brief has the lead push its base before dispatch")
-check(re.search(r"(?i)until.{0,80}(eval|phase 6).{0,120}AGENTS\.md", text.replace("\n", " ")) is not None,
-      "the skill defers to AGENTS.md on whether to dispatch until the eval reports")
+# The eval reported (Phase 8, 2026-11-24) and the rule moved into AGENTS.md; the
+# skill still says AGENTS.md, not the skill, decides whether to dispatch.
+check(re.search(r"(?i)AGENTS\.md`?\s*→\s*Doing the work decides whether to dispatch", text.replace("\n", " ")) is not None,
+      "the skill defers to AGENTS.md on whether to dispatch")
 check(re.search(r"(?i)no `git stash`", text) is not None, "the brief forbids git stash, not merely names it")
+
+# 2026-11-24: an implementor session loads agents/implementor.md instead of
+# AGENTS.md (plugin context hook), so the file must carry every AGENTS.md rule an
+# implementor needs (advisor). A rule missing here is a rule the implementor lost.
+for needle, rule in (
+    ("git add -A", "stage only touched paths, never git add -A"),
+    ("default branch", "never on the default branch"),
+    ("git stash", "no git stash; a WIP commit instead"),
+    ("boundary", "a denied command is a boundary, not an obstacle"),
+    ("no undo", "stop before a change with no undo"),
+    ("weaken", "never weaken a test"),
+    ("needs-answer", "intent goes back as needs-answer"),
+    ("design choice", "the advisor triggers stop the work"),
+    ("failed twice", "the advisor triggers stop the work"),
+    ("flaky", "a flaky test stops the work"),
+    ("memory/core", "never edit memory/core"),
+    ("roslynk-rules", "load roslynk-rules before C#"),
+    ("run-tests", "load run-tests before a .NET test command"),
+    ("sensitive", "a sensitive change is reported for review"),
+    ("network", "solve from the repository, never download the fix"),
+    ("last test", "never remove the last test that covers a behaviour (review)"),
+    ("git status", "green means a named commit and a git status you read"),
+    ("not installed", "a skill routing to a missing sibling: say it is not installed"),
+):
+    check(needle in impl, f"implementor.md carries: {rule}")
+
+# Every sensitive path in AGENTS.md is in implementor.md's list (review, 2026-11-24).
+agents_md = (ROOT / "AGENTS.md").read_text()
+listed = re.findall(r"`([^`]+)`", agents_md.split("**Sensitive change:**", 1)[1].split("A CI workflow", 1)[0])
+for path in listed:
+    check(path in impl, f"implementor.md lists the sensitive path {path}")
+for word in ("auth", "secrets", "credentials", "migration"):
+    check(word in impl, f"implementor.md lists sensitive {word}")
 
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)

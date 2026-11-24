@@ -357,6 +357,16 @@ def main():
         logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
         tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
         check("a writer that reaches GitHub is marked web_ref=1", " web_ref=1" in tail, tail)
+        # --role NAME runs the writer as a T3 brief would: its prompt opens with
+        # `role: NAME`, so the plugin applies that role (2026-11-24: the slim
+        # implementor, measured as production runs it).
+        result = run(root, cases, checks, os.path.join(stubs, "record-fix.sh"), "--role", "implementor")
+        seen = open(prompt_log, encoding="utf-8").read() if os.path.exists(prompt_log) else ""
+        check("--role puts the role line first", result.returncode == 0 and seen.startswith("role: implementor\n"), seen[:120])
+        logs = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(root, "work")) for f in fs if f == "writer.txt"]
+        tail = open(max(logs, key=os.path.getmtime)).read().strip().splitlines()[-1] if logs else ""
+        check("a --role run is marked role=implementor", " role=implementor" in tail, tail)
+        check("every writer prompt says not to download the fix", "Do not download code or patches" in seen, seen[-300:])
 
     return 1 if failures else 0
 

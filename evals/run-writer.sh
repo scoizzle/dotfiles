@@ -55,6 +55,7 @@ SUPERVISOR=""
 BLIND=0
 BARE=0
 PROJECT=1
+ROLE=""
 AGENT="build"
 ONLY=""
 RUNS=1
@@ -65,7 +66,7 @@ PASSED=0
 CASE_TIMEOUT="${EVAL_CASE_TIMEOUT:-900}"
 
 usage() {
-  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]] [--supervise provider/model[#variant]] [--bare] [--no-project]" >&2
+  echo "usage: $0 -m provider/model[#variant] [-a agent] [-c case-id] [--runs N] [--blind] [--lead provider/model[#variant]] [--supervise provider/model[#variant]] [--bare] [--no-project] [--role NAME]" >&2
   exit 2
 }
 
@@ -80,6 +81,7 @@ while [ $# -gt 0 ]; do
     --supervise) [ $# -ge 2 ] || usage; SUPERVISOR="$2"; BLIND=1; shift 2 ;;
     --bare) BARE=1; shift ;;
     --no-project) PROJECT=0; shift ;;
+    --role) [ $# -ge 2 ] || usage; ROLE="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -194,7 +196,11 @@ ${check}
 Do not modify these paths; they are the oracle, and editing one fails the run:
 ${protect}
 
-Run the check yourself before you finish. Do not launch subagents."
+Run the check yourself before you finish. Do not launch subagents. Do not download code or patches from the network; solve it from this repository."
+  # --role: the prompt opens with the role line a T3 brief carries, so the plugin
+  # applies that role as it does for a T3 child (2026-11-24).
+  if [ -n "$ROLE" ]; then prompt="role: ${ROLE}
+${prompt}"; fi
 
   k=1
   while [ "$k" -le "$RUNS" ]; do
@@ -388,8 +394,8 @@ except Exception:
 print(f"cost={cost:.4f} tokens={tokens} sup_cost={scost:.4f} sup_tokens={stokens}")
 PY
 )"
-    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s bare=%s project=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s fixture_ref=%s web_ref=%s\n' \
-      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$BARE" "$PROJECT" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" "$fixture_ref" "$web_ref" >> "$outdir/writer.txt"
+    printf '\n[eval] exit=%s check=%s case=%s run=%s/%s agent=%s model=%s lead=%s supervisor=%s blind=%s bare=%s project=%s role=%s seconds=%s %s brief_code=%s pre_pass=%s verdict=%s sup=%s fixture_ref=%s web_ref=%s\n' \
+      "$wrc" "$crc" "$id" "$k" "$RUNS" "$AGENT" "$MODEL" "${LEAD:--}" "${SUPERVISOR:--}" "$BLIND" "$BARE" "$PROJECT" "${ROLE:--}" "$((end-start))" "$usage_line" "$brief_code" "$pre_pass" "$verdict" "$sup_class" "$fixture_ref" "$web_ref" >> "$outdir/writer.txt"
 
     TOTAL=$((TOTAL+1))
     if [ -z "$reason" ]; then

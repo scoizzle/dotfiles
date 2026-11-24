@@ -16,8 +16,9 @@ left out (an approach already settled, such as "reuse helper X", is a
 decision); but it states the goal and the check, not the lead's theory of the
 fix.
 
-Until a large-task writer eval reports (`docs/v2-plan.md`), `AGENTS.md` → Doing
-the work decides whether to dispatch, by size; this skill only says how.
+`AGENTS.md` → Doing the work decides whether to dispatch: implementation with a
+failing test or a clear oracle goes to an implementor, whatever its size (Phase 8,
+`docs/v2-plan.md`). This skill only says how.
 
 ## The brief, in this order
 

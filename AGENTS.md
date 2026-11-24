@@ -5,10 +5,11 @@ rules and their enforcers are in `docs/rules.md`.
 
 ## Doing the work
 
-You do a small change yourself. Hand a large one
-(more than three files or issues, or a check that failed twice)
-to an implementor and supervise it skeptically (`t3-dispatch`).
-Never dispatch to avoid editing.
+You plan, supervise and review. Implementation with a failing test or a clear oracle
+goes to the `implementor` role, briefed per `implementor-brief`, whatever its size;
+supervise it skeptically and run the full suite at its SHA before it lands
+(`t3-dispatch`). You do a one-or-two-line fix, design, and work you cannot give an
+oracle. Never dispatch to avoid deciding.
 
 **Ordinary change:** do it. A behavior change gets a failing check first: run it
 red, then green, and record the command and exit code.
