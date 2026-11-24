@@ -1,19 +1,7 @@
 ---
-description: Point at the out-of-band dream pass. Do not rewrite memory mid-task.
+description: Run the dream pass (recent sessions become pending memory lessons), or promote pending lessons. Not mid-task.
 ---
 
-Do not mine transcripts or rewrite `memory/` during the current task.
-
-When the user asks for a curriculum update, or when the work is a weekend or nightly pass, run:
-
-```sh
-~/.config/opencode/bin/dream
-```
-
-A dry run prints the proposed append and writes nothing:
-
-```sh
-~/.config/opencode/bin/dream --dry-run
-```
-
-The script reads the opencode session store and the T3 `grok`/`claudeAgent` threads, then stages lines in `~/.config/opencode/memory/learnings/pending/YYYY-MM-DD.md`. Agents do not read pending lines; a person reviews them with `dream --promote`. It does not write `memory/core/`. `dream --promote` also compacts the archive into `learnings/working.md` and still does not write `memory/core/`. Flags and sources: `dream --help`.
+Load the `dream` skill and follow it. $ARGUMENTS names the window (default the
+last 24 hours) or says `promote`. Promote only what the person has read and
+kept. Never write `memory/core/`.

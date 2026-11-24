@@ -4,7 +4,6 @@
     "lead": "claude-agent/opus#medium",
     "implementor": "claude-agent/sonnet#medium",
     "reviewer": "claude-agent/opus#medium",
-    "advisor": "claude-agent/opus#medium",
-    "drafter": "claude-agent/haiku"
+    "advisor": "claude-agent/opus#medium"
   }
 }

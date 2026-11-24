@@ -3,10 +3,26 @@
   "model": "{file:~/.config/opencode/models/lead}",
   "default_agent": "build",
   "permissions": [
-    { "action": "skill", "resource": "antigravity2.0", "effect": "deny" },
-    { "action": "skill", "resource": "pre-ship-review", "effect": "deny" },
-    { "action": "subagent", "resource": "*", "effect": "deny" },
-    { "action": "external_directory", "resource": "*", "effect": "allow" }
+    {
+      "action": "skill",
+      "resource": "antigravity2.0",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "pre-ship-review",
+      "effect": "deny"
+    },
+    {
+      "action": "subagent",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "allow"
+    }
   ],
   "agents": {
     "build": {
@@ -24,9 +40,6 @@
     },
     "advisor": {
       "model": "{file:~/.config/opencode/models/advisor}"
-    },
-    "dream-drafter": {
-      "model": "{file:~/.config/opencode/models/drafter}"
     },
     "review-deep": {
       "model": "{file:~/.config/opencode/models/reviewer}"

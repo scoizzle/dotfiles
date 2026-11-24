@@ -1,19 +1,6 @@
 {
   "version": 1,
-  "doc": "The permission policy of opencode. bin/sync-harness renders `opencode` into opencode.json; plugins/harness-guard.js enforces `roles`. The person, 2026-11-24 ('ENABLE the agents'): no shell, read or edit rules; only the read-only roles are limited.",
-  "opencode": {
-    "doc": "tool_deny: opencode tools denied for every agent. subagent: all agent orchestration goes through T3 delegate_task (the person, 2026-11-22). tool_allow: opencode tools allowed for every agent; external_directory does not prompt (2026-11-23). skill_deny: skills no session loads.",
-    "tool_deny": [
-      "subagent"
-    ],
-    "tool_allow": [
-      "external_directory"
-    ],
-    "skill_deny": [
-      "antigravity2.0",
-      "pre-ship-review"
-    ]
-  },
+  "doc": "The roles plugins/harness-guard.js enforces. opencode.json is edited by hand (the person, 2026-11-24: no bin/sync-harness); tests/opencode_config.py checks the few rules it keeps. No shell, read or edit rules ('ENABLE the agents', 2026-11-24).",
   "roles": {
     "doc": "Enforced by plugins/harness-guard.js in every opencode session (a T3 child runs as build, so agent frontmatter cannot limit it; 2026-11-22). A session's role is the first line `role: <name>` in its first user message (after T3's header and preamble), stored per session the first time it is seen and never relaxed. No role line: no limit. An unknown role gets unknown_role. allow and deny are action globs (opencode permission actions; MCP tools are <server>_<tool>); deny wins, and an action not allowed is denied. In a role session an ask becomes a deny: the child returns needs-answer instead. Code Mode `execute` is never evaluated as a permission, so the plugin gates it against the same allowlist; a read-only role may not use it. reviewer and advisor allow external_directory so a T3 reviewer can read its role file and the review bundle outside its worktree. implementor: everything but T3 tools and question; its context is the slim prompt.",
     "read_only": [

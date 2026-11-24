@@ -32,10 +32,9 @@ for anything sensitive. Please do not open a public issue for it.
   denied (dispatch is T3), and `plugins/harness-guard.js` keeps a `role:
   reviewer` or `role: advisor` session read-only. `memory/core/` is protected
   by the Memory section of `AGENTS.md`, not by a rule.
-- `bin/dream` appends only to `memory/learnings/YYYY-MM-DD.md`. It refuses a
-  path that resolves under `memory/core/`. `dream --promote` also rewrites
-  only `memory/learnings/working.md` (a compaction of the dated archive), and
-  never `memory/core/`.
+- The `dream` skill stages lessons in `memory/learnings/pending/`; a promote,
+  on the person's word, appends to `memory/learnings/YYYY-MM-DD.md` and rebuilds
+  `working.md`. It never writes `memory/core/` (an instruction, not a rule).
 - CI is required to pass before anything lands on `main`.
 
 ## Platform scope

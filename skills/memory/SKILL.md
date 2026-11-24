@@ -21,7 +21,7 @@ Durable memory is `~/.config/opencode/memory/`.
 Append to `learnings/pending/YYYY-MM-DD.md` (UTC date), under the version header
 in `learnings/README.md`: who, when in UTC, the session or context id, and the
 source. One constraint per line, prefixed `never`, `known` or `derived`, with a
-`harness`, `loop` or `graph` tag. A person promotes it with `dream --promote`.
+`harness`, `loop` or `graph` tag. A person promotes it (the `dream` skill, on their word).
 
 ## Never
 

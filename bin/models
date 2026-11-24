@@ -56,7 +56,7 @@ PROVIDER_VENDOR = {"claude-agent": "anthropic", "anthropic": "anthropic", "xai":
 
 # Roles a machine may still name in models.local.json; the trim of 2026-11-24
 # removed them, so they are skipped with a note rather than refused.
-RETIRED_ROLES = ("explore", "verifier")
+RETIRED_ROLES = ("explore", "verifier", "drafter")
 
 class Refused(Exception):
     pass

@@ -5,8 +5,7 @@
     "lead": "plans, dispatches, reviews and lands; the top-level session",
     "implementor": "writes one bounded task in its own worktree",
     "reviewer": "fresh-context read-only review of a diff",
-    "advisor": "read-only consult when a named trigger fires",
-    "drafter": "drafts memory lines for dream, no tools"
+    "advisor": "read-only consult when a named trigger fires"
   },
   "agents": {
     "build": "lead",
@@ -14,8 +13,7 @@
     "implementor": "implementor",
     "general": "implementor",
     "review-deep": "reviewer",
-    "advisor": "advisor",
-    "dream-drafter": "drafter"
+    "advisor": "advisor"
   },
   "default_model_role": "lead"
 }

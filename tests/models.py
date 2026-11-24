@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS = ROOT / "bin" / "models"
-ROLES = ("lead", "implementor", "reviewer", "advisor", "drafter")
+ROLES = ("lead", "implementor", "reviewer", "advisor")
 FAILURES = []
 
 
@@ -79,13 +79,13 @@ with tempfile.TemporaryDirectory() as raw:
     check(r.returncode == 0, f"check passes on a fresh apply (got {r.returncode}: {r.stdout.strip()[-200:]})")
 
     # 2. A friend picks another profile; a machine overrides one role.
-    home = home_with(tmp, "friend", {"profile": "go-only", "roles": {"drafter": "opencode-go/deepseek-v4.1-flash#high"}})
+    home = home_with(tmp, "friend", {"profile": "go-only", "roles": {"advisor": "opencode-go/deepseek-v4.1-flash#low"}})
     r = run(home, "apply")
     check(r.returncode == 0, f"a chosen profile applies (got {r.returncode}: {r.stderr.strip()[-200:]})")
     if r.returncode == 0:
         go = json.loads((ROOT / "models" / "profiles" / "go-only.json").read_text())
         check(role_file(home, "lead") == go["roles"]["lead"], "the chosen profile's model fills an unset role")
-        check(role_file(home, "drafter") == "opencode-go/deepseek-v4.1-flash#high", "the machine's override wins")
+        check(role_file(home, "advisor") == "opencode-go/deepseek-v4.1-flash#low", "the machine's override wins")
         check(resolved(home)["review_mode"] == "fresh-same-model",
               "one family resolves to a fresh same-model review by default")
 
@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory() as raw:
                         ("opencode-go/glm-5.3-flash", "zhipu"),
                         ("opencode-go/deepseek-v4.1-flash#low", "deepseek")):
         check(mod.family(model) == want, f"family({model}) is {want} (got {mod.family(model)})")
-    home = home_with(tmp, "unknown-vendor", {"roles": {"drafter": "opencode/big-pickle"}})
+    home = home_with(tmp, "unknown-vendor", {"roles": {"advisor": "opencode/big-pickle"}})
     r = run(home, "apply")
     check(r.returncode != 0 and "unknown model family" in r.stderr, f"an unknown vendor is refused (got {r.returncode})")
 
@@ -174,9 +174,10 @@ with tempfile.TemporaryDirectory() as raw:
     check(run(home, "apply").returncode == 0, "apply recovers from a leftover .models-old")
 
     # 13. Review, 2026-11-24: a machine that still overrides a retired role
-    # (explore, verifier) installs, with a note, instead of failing.
+    # (explore, verifier, drafter) installs, with a note, instead of failing.
     home = home_with(tmp, "retired", {"roles": {"explore": "opencode-go/deepseek-v4.1-flash#low",
-                                                "verifier": "opencode-go/deepseek-v4.1-flash#high"}})
+                                                "verifier": "opencode-go/deepseek-v4.1-flash#high",
+                                                "drafter": "opencode-go/deepseek-v4.1-flash"}})
     r = run(home, "apply")
     check(r.returncode == 0 and "retired" in (r.stdout + r.stderr) and not (home / ".config" / "opencode" / "models" / "explore").exists(),
           f"a retired role in models.local.json is skipped with a note (got {r.returncode}: {(r.stdout + r.stderr).strip()[-160:]})")

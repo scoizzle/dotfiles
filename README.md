@@ -17,8 +17,8 @@ Agents run without command, read or edit rules. `policy/permissions.json` holds
 what is left: the `subagent` deny, two skill denies, and the roles, which
 `plugins/harness-guard.js` enforces: a T3 brief whose first line is `role:
 reviewer` or `role: advisor` is read-only, and `role: implementor` gets no T3
-tools and a slim prompt. `bin/sync-harness` renders the policy into
-`opencode.json`. opencode is the one harness.
+tools and a slim prompt. `opencode.json` is edited by hand;
+`tests/opencode_config.py` checks the rules it keeps. opencode is the one harness.
 
 ## Default agent
 
@@ -108,15 +108,14 @@ The repo is the single source for opencode.
 | `commands/`     | slash commands | opencode |
 | `skills/`       | `roslynk-rules`: local Roslynk policy for C# work; four vendored `dotnet/skills` test skills (see `skills/UPSTREAM.md`) | opencode |
 | `plugins/`      | OpenCode plugins loaded at startup; `claude-entrypoint.js` labels OpenCode's Claude Agent SDK traffic so the 5-hour window is metered normally; `harness-guard.js` enforces a T3 brief's `role:` line | opencode (`~/.config/opencode/plugins`) |
-| `policy/`       | the permission policy | `bin/sync-harness` renders it into `opencode.json`; the plugin reads its roles |
+| `policy/`       | the roles the plugin enforces | `plugins/harness-guard.js` |
 | `memory/`       | bookshelf, read-only core, learnings format         | opencode path, read by absolute path from the others |
-| `bin/`          | `review-bundle`, `review-log`, `models`, `dream`, `sync-harness`, `notify-bot`, `setup-bot-webhooks` | by absolute path; `notify-bot` also links to `~/.local/bin` |
+| `bin/`          | `models`, `notify-bot`, `setup-bot-webhooks` | by absolute path; `notify-bot` also links to `~/.local/bin` |
 
-`install.cs` makes the links and writes each role's model file; `bin/sync-harness
---apply` re-renders `opencode.json` from the policy. Both are safe to repeat.
-v2 writes nothing into `~/.claude` or `~/.grok`, except that `install.cs` removes
+`install.cs` makes the links and writes each role's model file; it is safe to
+repeat. v2 writes nothing into `~/.claude` or `~/.grok`, except that `install.cs` removes
 the retired `harness-guard` hook from `~/.claude/settings.json` (after a backup).
-The memory bookshelf and the `dream` pass: `commands/dream.md` and `dream --help`.
+The memory bookshelf: `memory/INDEX.md`; the dream pass: the `dream` skill.
 
 ## Bot webhook callbacks
 
@@ -163,13 +162,12 @@ Left in `~/.config/opencode`, untracked, per machine:
 - `service.json` — holds a generated password. Never commit this.
 - `cli.json` — TUI state (theme, layout, verbosity). Written by opencode itself;
   add it to `entries` in `install.cs` with `--copy` if you want it to travel.
-- `reviews/` — one JSON record per review or consult, written by
-  `bin/review-log`; `review-log summary` flags a gate with no record in 30 days.
-- `reviews.jsonl` — the legacy single-file log (to 2026-11-14), read, never rewritten.
+- `reviews/`, `reviews.jsonl` — the review ledger of earlier versions; nothing
+  writes it now.
 
 `memory/learnings/*.md`, except `README.md` and `.gitkeep`, is gitignored; that
 includes the generated `working.md`, which is local-only like the dated files. With
-the default symlink, `bin/dream` writes those files into this checkout: they
+the default symlink, a dream pass writes those files into this checkout: they
 are on disk here, and `git clone` does not carry them to another machine. A
 `--copy` install keeps them only under `~/.config/opencode/memory/learnings/`.
 
@@ -214,7 +212,7 @@ those processes are running.
 ## Models for your subscription
 
 The repo names roles, never models: `lead`, `implementor`, `reviewer`,
-`advisor`, `drafter` (`models/roles.json`). A profile in
+`advisor` (`models/roles.json`). A profile in
 `models/profiles/` fills every role for one subscription bundle:
 
 | Profile | For | Review |
@@ -297,8 +295,8 @@ Fix on a machine that hits it: run `./setup.sh` (it puts the dotnetup-managed SD
   server rather than a hardcoded path, so the same tracked file resolves
   correctly under `/Users/...` and `/home/...`. (`dotnet tool install -g` puts
   tools in `$HOME/.dotnet/tools` on both.) Verify with `opencode debug config`.
-- Everything in `bin/` is Python: no `sed -i ''`, `stat -f`, `pbcopy`, or other
-  BSD-only idioms.
+- The scripts in `bin/` are Python: no `sed -i ''`, `stat -f`, `pbcopy`, or
+  other BSD-only idioms.
 - `.gitattributes` forces LF. A CRLF shebang (`#!/usr/bin/env dotnet\r`) makes
   the scripts unrunnable on Linux.
 - No filename differs only by case, which macOS tolerates and Linux does not.

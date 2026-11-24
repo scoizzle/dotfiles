@@ -123,7 +123,7 @@ jobs:
         run: cd skills && shasum -a 256 -c UPSTREAM.sha256
 
       - name: python tools still parse
-        run: python3 -m py_compile bin/review-bundle bin/review-log bin/models bin/dream bin/sync-harness bin/notify-bot bin/setup-bot-webhooks
+        run: python3 -m py_compile bin/models bin/notify-bot bin/setup-bot-webhooks
 
       - name: plugin, models and config tests
         run: |

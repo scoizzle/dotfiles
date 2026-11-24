@@ -4,7 +4,6 @@
     "lead": "claude-agent/opus#medium",
     "implementor": "opencode-go/deepseek-v4.1-flash#low",
     "reviewer": "claude-agent/opus#medium",
-    "advisor": "claude-agent/opus#medium",
-    "drafter": "opencode-go/deepseek-v4.1-flash"
+    "advisor": "claude-agent/opus#medium"
   }
 }

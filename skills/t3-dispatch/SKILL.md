@@ -39,13 +39,22 @@ instead of dispatching a reviewer.
 | implementor | `isolation: "worktree"` | default; the brief follows `implementor-brief` |
 
 A worktree child starts from the parent's last commit; uncommitted edits stay
-out. To review an **uncommitted** change, either send the review bundle's
-absolute path (`bin/review-bundle . --base <sha> --show AGENTS.md --show
-agents/review-deep.md`, and tell the reviewer those base copies govern; a
-reviewer may read outside its worktree), or run the
-reviewer in your checkout with `isolation: "shared"`. Shared is safe because the
-plugin enforces the reviewer's read-only role, but then copy the bundle inside
-the checkout and never stage it.
+out. A reviewer has no shell, so write the change into files it can read,
+outside the checkout (a reviewer may read outside its worktree):
+
+```sh
+b=$(mktemp -d "${TMPDIR:-/tmp}/review.XXXXXX")
+git status --short > "$b/status.txt"
+git diff <base> > "$b/diff.txt"                      # tracked changes, committed or not
+git ls-files --others --exclude-standard | while read -r f; do echo "### $f"; cat "$f"; done > "$b/untracked.txt"
+git diff --name-status <base> -- tests '*test*' > "$b/test-changes.txt"
+git show <base>:AGENTS.md > "$b/AGENTS.base.md"
+git show <base>:agents/review-deep.md > "$b/review-deep.base.md"
+{ <check>; echo "exit $?"; } > "$b/check.txt" 2>&1      # once per check you ran
+```
+
+Send `$b` by its absolute path and tell the reviewer the `*.base.md` copies
+govern. Leave out an untracked file that holds a secret.
 
 ## After it returns: supervise, skeptically
 
@@ -63,8 +72,6 @@ The implementor's summary is a claim. Before anything counts:
   back: one REJECT with the findings and their
   evidence, as a new `delegate_task` to the same role. A second failure on the
   same check is an advisor trigger, then the person.
-- Record every review and consult with `bin/review-log add` (a blocked run is
-  recorded too).
 - A finding blocks only with evidence: a failing test, a line-level
   counterexample, or a broken rule.
 - There is one re-review, of the fix delta; another round only for a new 🔴 or 🟠.

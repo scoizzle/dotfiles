@@ -33,4 +33,3 @@ skill's description fires. It is the only model escalation.
 
 - Record its answer in your reply: the risks, the simpler alternative, the
   missed cases, and what you acted on.
-- Log it with `bin/review-log add --kind consult`.

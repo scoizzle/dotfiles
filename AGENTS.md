@@ -68,7 +68,6 @@ in `models.resolved.json`. Use your role's model.
 A read-only advisor consult is required when a trigger fires: a design choice
 the code cannot settle, the same check failed twice, or deleting, rewriting or
 retargeting a test or check (`consult-advisor`). It is the only escalation.
-Record every review and consult with `bin/review-log add`.
 
 ### Ambiguity
 
