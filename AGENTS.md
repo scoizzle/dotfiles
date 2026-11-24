@@ -83,7 +83,8 @@ returns `needs-answer`.
 ## Memory
 
 Before heavy work, and to record a lesson: `memory`. Never edit `memory/core/**`,
-even by shell redirect, and agents never read `pending/`.
+even by shell redirect, and agents never read `pending/` except in a promote
+the person asks for (`dream`).
 
 ## C# / .NET
 

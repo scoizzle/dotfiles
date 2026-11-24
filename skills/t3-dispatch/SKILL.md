@@ -48,14 +48,15 @@ b=$(mktemp -d "${TMPDIR:-/tmp}/review.XXXXXX")
 git status --short > "$b/status.txt"
 git diff "${base}" > "$b/diff.txt"                   # tracked changes, committed or not
 git ls-files --others --exclude-standard | while read -r f; do echo "### $f"; cat "$f"; done > "$b/untracked.txt"
-git diff --name-status "${base}" -- tests '*test*' > "$b/test-changes.txt"
+git diff --name-status "${base}" -- tests '*test*' .github/workflows > "$b/test-changes.txt"
 git show "${base}:AGENTS.md" > "$b/AGENTS.base.md"
 git show "${base}:agents/review-deep.md" > "$b/review-deep.base.md"
-{ <check>; echo "exit $?"; } > "$b/check.txt" 2>&1      # once per check you ran
+{ echo '$ <check>'; <check>; echo "exit $?"; } >> "$b/check.txt" 2>&1   # append, once per check
 ```
 
 Send `$b` by its absolute path and tell the reviewer the `*.base.md` copies
-govern. Leave out an untracked file that holds a secret.
+govern. Leave out an untracked file that holds a secret or is not part of the
+change, and name each one in `$b/untracked-omitted.txt` so the reviewer knows.
 
 ## After it returns: supervise, skeptically
 

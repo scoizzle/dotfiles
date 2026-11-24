@@ -44,10 +44,24 @@ for name, role in roles["agents"].items():
     check(model == "{file:~/.config/opencode/models/%s}" % role, f"agent {name} reads its model from the {role} role file")
 # Review, 2026-11-24: agent frontmatter outranks the global rule, so no agent
 # may re-allow opencode's own dispatch.
+# Each `- key: value` list entry is read whole, in any key order, quotes stripped.
+def entries(front: str) -> list[dict]:
+    out = []
+    for line in front.splitlines():
+        m = re.match(r"^\s*(-\s+)?(\w+):\s*(.*?)\s*$", line)
+        if not m:
+            continue
+        if m.group(1):
+            out.append({})
+        if out:
+            out[-1][m.group(2)] = m.group(3).strip("'\"")
+    return out
+
+
 for path in sorted((ROOT / "agents").glob("*.md")):
     front = path.read_text().split("\n---\n", 1)[0]
-    blocks = re.findall(r"- action: subagent\n(?:\s+\w+: .*\n)*?\s+effect: (\w+)", front + "\n")
-    check(all(b == "deny" for b in blocks), f"agents/{path.name} does not re-allow subagent")
+    bad = [e for e in entries(front) if e.get("action") == "subagent" and e.get("effect") != "deny"]
+    check(not bad, f"agents/{path.name} does not re-allow subagent ({bad})")
 for path in (ROOT / "agents").glob("*.md"):
     check(path.stem in agents or path.stem in ("build",), f"agents/{path.name} is rendered into opencode.json")
 

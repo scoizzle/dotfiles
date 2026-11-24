@@ -22,8 +22,11 @@ in the middle of other work.
    sqlite3 -readonly "$db" "select id, title, agent, directory from session_v2
      where time_created >= $since order by time_created desc limit 50"
    # per session: what the person said, and the tool calls that failed
-   sqlite3 -readonly "$db" "select json_extract(data,'$.text') from session_message
-     where session_id = '<id>' and type = 'user' order by seq"
+   sqlite3 -readonly "$db" "select coalesce(json_extract(data,'$.text'),
+       (select group_concat(json_extract(j.value,'$.text'), char(10))
+        from json_each(json_extract(data,'$.content')) j
+        where json_extract(j.value,'$.type') = 'text'))
+     from session_message where session_id = '<id>' and type = 'user' order by seq"
    sqlite3 -readonly "$db" "select json_extract(j.value,'$.name'),
      substr(json_extract(j.value,'$.state.error'),1,300)
      from session_message m, json_each(json_extract(m.data,'$.content')) j
@@ -31,12 +34,28 @@ in the middle of other work.
        and json_extract(j.value,'$.state.status') = 'error'"
    ```
 
-   T3's own `grok` and `claudeAgent` threads are not in opencode.db; they are in
-   `~/.t3/userdata/statev2.sqlite`: `orchestration_v2_projection_provider_threads`
-   (`provider`, `updated_at` as ISO text, `thread_id`) and
-   `orchestration_v2_projection_messages` (`thread_id`, `role`,
-   `json_extract(payload_json,'$.text')`, `created_at`). Skip its `opencode`
-   threads: their work is already in opencode.db. Skip earlier dream sessions.
+   T3's own `grok` and `claudeAgent` threads are not in opencode.db; read them
+   from `~/.t3/userdata/statev2.sqlite`. Select by `provider_thread_id`, never
+   `thread_id`: one thread can carry an `opencode` row (already in opencode.db)
+   and a `grok` row.
+
+   ```sh
+   t3=~/.t3/userdata/statev2.sqlite
+   sqlite3 -readonly "$t3" "select provider_thread_id, thread_id, provider, updated_at
+     from orchestration_v2_projection_provider_threads
+     where provider in ('grok','claudeAgent') and updated_at >= '<ISO time>'
+     order by updated_at desc limit 50"
+   # per thread: what was said, and what failed
+   sqlite3 -readonly "$t3" "select role, substr(json_extract(payload_json,'$.text'),1,1500)
+     from orchestration_v2_projection_messages where thread_id = '<thread_id>' order by created_at"
+   sqlite3 -readonly "$t3" "select type, substr(payload_json,1,400)
+     from orchestration_v2_projection_turn_items
+     where provider_thread_id = '<provider_thread_id>' and status in ('failed','error')
+     order by ordinal"
+   ```
+
+   Skip earlier dream sessions: their first user message runs this skill or
+   `/dream`.
 
 2. **Find the lessons:** a failure and what fixed it, a correction from the
    person, a mistake made twice, a durable fact about a tool or repo. Skip
@@ -53,7 +72,9 @@ in the middle of other work.
 
 ## Promote: only on the person's word
 
-After the person has read the pending lines and says which to keep:
+The one time an agent reads `pending/` and writes the dated files and
+`working.md` (`AGENTS.md` → Memory). Show the person the pending lines; once
+they say which to keep:
 
 1. Append the kept lines, with their header, to `memory/learnings/YYYY-MM-DD.md`
    (the pending file's date). Remove each promoted pending file; a line the

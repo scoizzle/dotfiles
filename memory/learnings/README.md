@@ -24,9 +24,9 @@ source: 4 sessions since 2026-10-30T03:15:00+00:00 (ses_a, ses_b)
 - **session or context id** — the opencode session the note came from, or `dream` for the out-of-band pass.
 - **source** — what was read: session ids and the window, a person, or a path.
 
-The `dream` skill stages its block in `pending/YYYY-MM-DD.md` (UTC date) with this header. An agent may append a block there too, with the same header and a `source:` line. A promote, on the person's word, appends the kept lines to `YYYY-MM-DD.md`, which is the file sessions read. Agents never write `YYYY-MM-DD.md` directly.
+The `dream` skill stages its block in `pending/YYYY-MM-DD.md` (UTC date) with this header. An agent may append a block there too, with the same header and a `source:` line. A promote, on the person's word, appends the kept lines to `YYYY-MM-DD.md`, which is the file sessions read. Agents never write `YYYY-MM-DD.md` directly, except in that promote.
 
-`working.md` is rebuilt by the promote from the dated files (duplicates collapsed, sources cited). Agents read it and do not write it; the dated files stay the archive.
+`working.md` is rebuilt by the promote from the dated files (duplicates collapsed, sources cited). Agents read it and write it only in that promote; the dated files stay the archive.
 
 ## Entries
 
