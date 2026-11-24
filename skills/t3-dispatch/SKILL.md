@@ -43,13 +43,14 @@ out. A reviewer has no shell, so write the change into files it can read,
 outside the checkout (a reviewer may read outside its worktree):
 
 ```sh
+base=<sha>   # braces below: in zsh, $base:A... is a path modifier
 b=$(mktemp -d "${TMPDIR:-/tmp}/review.XXXXXX")
 git status --short > "$b/status.txt"
-git diff <base> > "$b/diff.txt"                      # tracked changes, committed or not
+git diff "${base}" > "$b/diff.txt"                   # tracked changes, committed or not
 git ls-files --others --exclude-standard | while read -r f; do echo "### $f"; cat "$f"; done > "$b/untracked.txt"
-git diff --name-status <base> -- tests '*test*' > "$b/test-changes.txt"
-git show <base>:AGENTS.md > "$b/AGENTS.base.md"
-git show <base>:agents/review-deep.md > "$b/review-deep.base.md"
+git diff --name-status "${base}" -- tests '*test*' > "$b/test-changes.txt"
+git show "${base}:AGENTS.md" > "$b/AGENTS.base.md"
+git show "${base}:agents/review-deep.md" > "$b/review-deep.base.md"
 { <check>; echo "exit $?"; } > "$b/check.txt" 2>&1      # once per check you ran
 ```
 
