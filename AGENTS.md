@@ -3,6 +3,11 @@
 A repo's own `AGENTS.md` adds to this and its build and test lines win. This
 file wins over any skill.
 
+Use the installed skills without being asked. Before each step, check whether
+one fits; if it plausibly does, load it first and follow it. Skipping an
+applicable skill is a mistake; loading one that turns out not to fit is not.
+Name in your brief any skill a child should load.
+
 ## Changes
 
 - Work on a branch, never the default. Stage only the paths you touched.
