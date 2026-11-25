@@ -35,8 +35,9 @@ children do almost all the work: research, implementation, tests, and the
 review that §Review requires. It does the work itself only when it is a one-
 or two-line fix, a decision of its own, or when `delegate_task` is unavailable,
 the target model is not offered, or the work needs a secret or permission only
-this session holds; it names which in its report. A question of intent comes
-to me, never to a child.
+this session holds; it names which in its report. The §Review review is never
+one of these: without a reviewer it stops and asks, and never reviews its own
+change. A question of intent comes to me, never to a child.
 
 Children run through T3 Code's `delegate_task`. Implementation goes to
 `opencode-go/deepseek-v4.1-flash` with option `variant: low` and
@@ -45,44 +46,51 @@ than the writer's (`claude-opus-5-5` for a DeepSeek diff). If that model is not
 offered, say so and ask; do not substitute. Run independent children in
 parallel.
 
-Before sending a brief, the manager runs each acceptance command on the base
-commit and sees it give the expected result (red where it should be red), then
-leaves the tree as it found it. Every brief stands alone (a child sees none of
-this thread) and has:
+A behavior change starts from a failing test that the child did not write: the
+manager, or a test child, commits it first. Before sending the implementation
+brief, the manager runs that test at the commit it committed and sees the
+expected failure line, then leaves the tree as it found it. Every brief stands
+alone (a child sees none of this thread) and has:
 
 1. **First line:** `You are a delegated child: do this task yourself, do not
    delegate, do not watch or merge a PR, and do not ask the user. If you are
    blocked, stop and report needs-answer with the question.`
 2. **Goal**, in one or two sentences, and what is out of scope.
-3. **Context**: the repo, the base commit or branch to start from, the branch
-   to commit on, and the files and facts it needs.
-4. **Allowed paths**: what it may change (`none` for a review). Anything else
-   is a rejection.
+3. **Context**: the repo; the red commit (where the failing test was
+   committed, which stays the red check on every attempt); the commit or branch
+   to start from; the branch to commit on; and the files and facts it needs.
+4. **Allowed paths**: what it may change, never the failing test (`none` for a
+   review). Anything else is a rejection.
 5. **Acceptance**: each criterion is a command with an expected exit code or
-   output, runnable from the repo root. For a behavior change, one must fail on
-   the base commit for the stated reason, quoted as its expected failure line,
-   and pass on the result. A change with no runnable behavior (wording, docs)
-   instead passes a fresh-context review asked one yes/no question. Prose is
-   not a criterion. The child may not edit, skip or weaken an acceptance check.
+   output, runnable from the repo root: for a behavior change, the failing test
+   passes. Prose is not a criterion. The child may not edit, skip or weaken an
+   acceptance check.
 6. **Report**: the branch and commit SHA (or `nothing committed: <reason>`),
    then per criterion the command, exit code and the last lines of output,
    then anything it could not do. No narrative. A child commits; it does not
-   push or open a PR.
+   push or open a PR. A review child instead reports a first line `ANSWER: yes`
+   or `ANSWER: no`, then each finding with the diff line it quotes.
 
-A child's report is a claim, not proof. Before accepting, the manager, in a
+A child's report is a claim, not proof. To accept a commit, the manager, in a
 scratch `git worktree add <tmp> <sha>` that it removes afterwards (never its own
 checkout):
 
-- runs every acceptance command at the reported SHA, and the red check on the
-  base with only the test applied, matching the quoted failure line;
-- reads `git diff --name-only <base>..<sha>` against the allowed paths, and
-  the diff itself.
+- runs every acceptance command at the reported SHA, and the failing test at
+  the red commit, matching its expected failure line;
+- reads `git diff --name-only <red>..<sha>` against the allowed paths, and the
+  diff itself.
 
-Then: a missing or unreachable SHA is a rejection. `needs-answer` is the
-manager's to decide, or mine if it is intent; never another child's. A miss
-gets a new brief that starts from the failed branch and names the failed
-command and its output, never "try again"; after two misses on the same
-criterion it stops and tells me. On acceptance the manager pushes the branch
+A change with no runnable behavior (wording, docs) is accepted on those path
+and diff checks plus a review child asked one yes/no question about the
+reported SHA. To accept a review, the manager confirms each quoted line is in
+the reviewed diff, then decides every finding itself.
+
+Then: a missing or unreachable SHA, a path outside the allowed ones, or a
+failed criterion is a rejection. It gets a new brief that starts from the
+failed branch and names what failed (the command and its output, the path, or
+the missing SHA), never "try again". `needs-answer` is the manager's to decide,
+or mine if it is intent; never another child's. After two rejections of the
+same task, it stops and tells me. On acceptance the manager pushes the branch
 and opens the PR.
 
 To me, the manager speaks with one voice: what is done, the evidence it
