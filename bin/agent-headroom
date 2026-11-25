@@ -1,0 +1,124 @@
+#!/bin/sh
+# agent-headroom: report OpenCode Go usage and check the weekly pace.
+#
+# Endpoint: GET https://opencode.ai/inference/go/v1/usage
+# Auth:     Authorization: Bearer $OPENCODE_API_KEY
+# Prints one line each for the rolling, weekly and monthly percent used.
+#
+# Pace: the weekly window resets Monday 00:00 UTC. If the weekly percent is
+# more than 10 points ahead of the elapsed share of the week, exit 1.
+#
+# Test hooks:
+#   AGENT_HEADROOM_JSON_FILE  read usage JSON from this file instead of curl
+#   AGENT_HEADROOM_NOW        pretend the clock is this epoch (default: date +%s)
+#
+# Exit codes:
+#   0  ok, or usage unavailable: no key, curl failure, or no weekly percent
+#   1  weekly usage is more than 10 points over pace
+#   2  bad usage
+# Without OPENCODE_API_KEY it only warns and exits 0, still printing the
+# double-rate warning for the current time.
+set -eu
+
+usage() {
+  cat <<'EOF'
+usage: agent-headroom [-h|--help]
+
+Print OpenCode Go rolling/weekly/monthly usage percent and check the weekly
+pace (resets Monday 00:00 UTC). Exit 1 when more than 10 points over pace.
+
+Environment:
+  OPENCODE_API_KEY          token for the usage endpoint
+  AGENT_HEADROOM_JSON_FILE  read usage JSON from this file instead of curl
+  AGENT_HEADROOM_NOW        pretend the clock is this epoch (default: date +%s)
+EOF
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  "") ;;
+  *)
+    echo "agent-headroom: unknown argument: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+if [ "$#" -gt 1 ]; then
+  echo "agent-headroom: too many arguments" >&2
+  exit 2
+fi
+
+now=${AGENT_HEADROOM_NOW:-$(date +%s)}
+
+# Warn on stderr when the UTC clock is inside a Flash double-rate window:
+# weekdays Mon-Fri, hours 01-03 or 06-09.
+double_rate_warning() {
+  dow=$(awk -v now="$now" 'BEGIN {
+    days = int(now / 86400)
+    d = (days + 3) % 7
+    if (d < 0) d += 7
+    print d
+  }')
+  hour=$(awk -v now="$now" 'BEGIN { print int((now % 86400) / 3600) }')
+  if [ "$dow" -le 4 ] && { { [ "$hour" -ge 1 ] && [ "$hour" -le 3 ]; } || { [ "$hour" -ge 6 ] && [ "$hour" -le 9 ]; }; }; then
+    echo "agent-headroom: warning: Flash is in its double-rate window (UTC weekday ${hour}:00)" >&2
+  fi
+}
+
+skip() { # skip <reason>: usage unavailable, so warn and pass
+  echo "agent-headroom: warning: $1; skipping the pace check" >&2
+  double_rate_warning
+  exit 0
+}
+
+json=
+if [ -n "${AGENT_HEADROOM_JSON_FILE:-}" ]; then
+  [ -r "$AGENT_HEADROOM_JSON_FILE" ] || skip "cannot read $AGENT_HEADROOM_JSON_FILE"
+  json=$(cat -- "$AGENT_HEADROOM_JSON_FILE") || skip "cannot read $AGENT_HEADROOM_JSON_FILE"
+else
+  [ -n "${OPENCODE_API_KEY:-}" ] || skip "OPENCODE_API_KEY is not set"
+  json=$(curl -sf --max-time 10 \
+    -H "Authorization: Bearer $OPENCODE_API_KEY" \
+    https://opencode.ai/inference/go/v1/usage) || skip "usage request failed"
+fi
+
+window() { # window <name>: the body of that window's JSON object
+  printf '%s\n' "$json" |
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p" |
+    head -n 1
+}
+
+percent() { # percent <window body>: its percent value
+  printf '%s' "$1" |
+    sed -n 's/.*"percent"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
+}
+
+weekly=$(percent "$(window weekly)")
+[ -n "$weekly" ] || skip "usage response has no weekly percent"
+
+printf 'rolling: %s%%\n' "$(percent "$(window rolling)")"
+printf 'weekly: %s%%\n' "$weekly"
+printf 'monthly: %s%%\n' "$(percent "$(window monthly)")"
+
+double_rate_warning
+
+# Elapsed share of the week, from the last Monday 00:00 UTC. Epoch day 0 is a
+# Thursday, so (days + 3) % 7 gives 0 for Monday.
+elapsed_pct=$(awk -v now="$now" 'BEGIN {
+  days = int(now / 86400)
+  dow = (days + 3) % 7
+  if (dow < 0) dow += 7
+  last_monday = (days - dow) * 86400
+  printf "%.6f", (now - last_monday) / 604800 * 100
+}')
+
+if awk -v used="$weekly" -v elapsed="$elapsed_pct" 'BEGIN { exit !(used > elapsed + 10) }'; then
+  printf 'over pace: weekly %s%% is more than 10 points ahead of %.1f%% elapsed\n' \
+    "$weekly" "$elapsed_pct" >&2
+  exit 1
+fi
+
+exit 0
