@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: shell / ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck -s sh install.sh
+      - name: sh -n
+        run: sh -n install.sh
+      - name: vendored skills match their pin
+        run: cd skills && shasum -a 256 -c UPSTREAM.sha256
+
+  installer:
+    name: installer / ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install into a throwaway home, twice
+        run: |
+          set -eu
+          home="$(mktemp -d)"
+          mkdir -p "$home/.claude/skills/run-tests" "$home/.claude/skills/someone-elses"
+          echo old > "$home/.claude/skills/run-tests/SKILL.md"
+          HOME="$home" FORCE=1 ./install.sh
+          for p in .config/opencode/AGENTS.md .config/opencode/opencode.json .claude/CLAUDE.md; do
+            test -L "$home/$p" && test -e "$home/$p" || { echo "not linked: $p"; exit 1; }
+          done
+          for d in skills/*/; do
+            n="$(basename "$d")"
+            test -f "$home/.config/opencode/skills/$n/SKILL.md" || { echo "not linked: opencode $n"; exit 1; }
+            test -f "$home/.claude/skills/$n/SKILL.md" || { echo "not linked: claude $n"; exit 1; }
+          done
+          test -d "$home/.claude/skills/someone-elses" && test ! -L "$home/.claude/skills/someone-elses"
+          ls "$home"/.config/dotfiles-backup-*/.claude/skills/run-tests/SKILL.md
+          HOME="$home" ./install.sh --check
+      - name: no ~/.claude without Claude Code
+        run: |
+          set -eu
+          home="$(mktemp -d)"
+          HOME="$home" FORCE=1 ./install.sh
+          test ! -e "$home/.claude"
+      - name: another checkout is refused
+        run: |
+          set -eu
+          home="$(mktemp -d)"
+          rc=0; HOME="$home" ./install.sh || rc=$?
+          test "$rc" -eq 3
+          test ! -e "$home/.config/opencode/AGENTS.md"

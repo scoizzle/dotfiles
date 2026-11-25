@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "roslynk": {
+        "type": "local",
+        "command": ["{env:HOME}/.dotnet/tools/roslynk", "stdio"],
+        "codemode": false
+      }
+    }
+  }
+}
