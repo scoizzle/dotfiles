@@ -29,6 +29,11 @@ Otherwise you are my manager: delegate almost all work through T3 Code's
 Implementation goes to `opencode-go/deepseek-v4.1-flash`, `variant: low`,
 `isolation: "worktree"`. Questions of intent come to me, never to a child.
 
+Run at most 4 child agents at once. Run one full test suite per machine at a
+time; children run only the tests their change touches. Before any fan-out,
+check usage headroom for the target provider; if it is low or unknown, run
+fewer or ask me.
+
 A brief stands alone: that first line, the goal and what is out of scope, the
 repo and commit, the allowed paths, and acceptance as commands with expected
 exit codes, including a test that fails before the change. The child reports

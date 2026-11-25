@@ -17,8 +17,10 @@ git clone <remote> ~/dotfiles
 
 Anything already at a destination, a link included, is moved to
 `~/.config/dotfiles-backup-<stamp>/`, never deleted; only a dangling link into
-this repo is removed. Only the canonical checkout (`$DOTFILES_DIR`, default
-`~/dotfiles`) may install; `FORCE=1` overrides that on purpose.
+this repo is removed. A real directory is the one exception: it is refused,
+never moved, and install exits 4 (also under `FORCE=1` or `--check`). Only the
+canonical checkout (`$DOTFILES_DIR`, default `~/dotfiles`) may install;
+`FORCE=1` overrides that on purpose.
 
 Claude Code does not read `opencode.json`. For Roslynk there, once per machine:
 

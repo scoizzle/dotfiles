@@ -1,13 +1,15 @@
 #!/bin/sh
 # Link this repo's agent config into Claude Code and opencode.
 #
-#   ./install.sh          link (anything already there is moved to a backup)
-#   ./install.sh --check  show what would change; exit 1 if anything would
+#   ./install.sh          link (a file or link already there is moved to a backup)
+#   ./install.sh --check  show what would change; exit 1 if anything would,
+#                         4 if a real directory sits at a destination
 #
 # AGENTS.md     -> ~/.config/opencode/AGENTS.md and ~/.claude/CLAUDE.md
 # opencode.json -> ~/.config/opencode/opencode.json
 # skills/<n>    -> ~/.config/opencode/skills/<n> and ~/.claude/skills/<n>
 # ~/.claude is used only when it exists (Claude Code is installed).
+# A real directory at a destination is never moved; install refuses (exit 4).
 set -eu
 
 check=0
@@ -25,10 +27,40 @@ if [ "$check" -eq 0 ] && [ "$repo" != "$canonical" ] && [ "${FORCE:-0}" != 1 ]; 
   echo "refusing: $repo is not ${DOTFILES_DIR:-$HOME/dotfiles}; run that checkout's install.sh, or FORCE=1" >&2
   exit 3
 fi
+oc="$HOME/.config/opencode"
+refused=0
+refuse() { # a real folder at $1 is never moved out of the way
+  if [ -d "$1" ] && [ ! -L "$1" ]; then
+    if [ "$check" -eq 1 ]; then
+      echo "would refuse: $1 is a real directory" >&2
+    else
+      echo "refusing: $1 is a real directory; move it yourself, then rerun" >&2
+    fi
+    refused=1
+  fi
+}
+refuse "$oc/AGENTS.md"
+refuse "$oc/opencode.json"
+for d in "$repo"/skills/*/; do
+  n=$(basename -- "$d")
+  [ -f "$d/SKILL.md" ] || continue
+  # a linked skills folder is replaced wholesale by realdir; skip its contents
+  if [ ! -L "$oc/skills" ]; then refuse "$oc/skills/$n"; fi
+  if [ -d "$HOME/.claude" ] && [ ! -L "$HOME/.claude/skills" ]; then
+    refuse "$HOME/.claude/skills/$n"
+  fi
+done
+if [ -d "$HOME/.claude" ]; then refuse "$HOME/.claude/CLAUDE.md"; fi
+[ "$refused" -eq 0 ] || exit 4
+
 backup="$HOME/.config/dotfiles-backup-$(date +%Y%m%d-%H%M%S)"
 drift=0
 
-save() { # move whatever is at $1 (file, folder or link) into the backup
+save() { # move whatever is at $1 (file or link) into the backup
+  if [ -d "$1" ] && [ ! -L "$1" ]; then # backstop; the preflight above should catch it first
+    echo "refusing: $1 is a real directory; move it yourself, then rerun" >&2
+    exit 4
+  fi
   mkdir -p "$backup$(dirname -- "${1#"$HOME"}")"
   mv -- "$1" "$backup${1#"$HOME"}"
   echo "saved  $1 -> $backup${1#"$HOME"}"
@@ -76,7 +108,6 @@ skills_into() { # skills_into <skills folder>
   prune "$1"
 }
 
-oc="$HOME/.config/opencode"
 realdir "$oc"
 link AGENTS.md "$oc/AGENTS.md"
 link opencode.json "$oc/opencode.json"
