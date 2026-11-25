@@ -19,9 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck -s sh install.sh
+        run: shellcheck -s sh install.sh bin/agent-headroom test/agent-headroom.sh
       - name: sh -n
-        run: sh -n install.sh
+        run: for f in install.sh bin/agent-headroom test/agent-headroom.sh; do sh -n "$f"; done
+      - name: agent-headroom pace math
+        run: sh test/agent-headroom.sh
       - name: vendored skills match their pin
         run: cd skills && shasum -a 256 -c UPSTREAM.sha256
 
@@ -44,6 +46,7 @@ jobs:
           for p in .config/opencode/AGENTS.md:AGENTS.md .config/opencode/opencode.json:opencode.json .claude/CLAUDE.md:AGENTS.md; do
             test "$(readlink "$home/${p%%:*}")" = "$repo/${p#*:}" || { echo "not linked: ${p%%:*}"; exit 1; }
           done
+          test "$(readlink "$home/.claude/settings.json")" = "$repo/claude-settings.json" || { echo "not linked: .claude/settings.json"; exit 1; }
           for d in skills/*/; do
             n="$(basename "$d")"
             for dst in .config/opencode/skills .claude/skills; do

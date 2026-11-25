@@ -7,6 +7,7 @@
 #
 # AGENTS.md     -> ~/.config/opencode/AGENTS.md and ~/.claude/CLAUDE.md
 # opencode.json -> ~/.config/opencode/opencode.json
+# claude-settings.json -> ~/.claude/settings.json
 # skills/<n>    -> ~/.config/opencode/skills/<n> and ~/.claude/skills/<n>
 # ~/.claude is used only when it exists (Claude Code is installed).
 # A real directory at a destination is never moved; install refuses (exit 4).
@@ -50,7 +51,7 @@ for d in "$repo"/skills/*/; do
     refuse "$HOME/.claude/skills/$n"
   fi
 done
-if [ -d "$HOME/.claude" ]; then refuse "$HOME/.claude/CLAUDE.md"; fi
+if [ -d "$HOME/.claude" ]; then refuse "$HOME/.claude/CLAUDE.md"; refuse "$HOME/.claude/settings.json"; fi
 [ "$refused" -eq 0 ] || exit 4
 
 backup="$HOME/.config/dotfiles-backup-$(date +%Y%m%d-%H%M%S)"
@@ -115,6 +116,7 @@ skills_into "$oc/skills"
 
 if [ -d "$HOME/.claude" ]; then
   link AGENTS.md "$HOME/.claude/CLAUDE.md"
+  link claude-settings.json "$HOME/.claude/settings.json"
   skills_into "$HOME/.claude/skills"
 fi
 

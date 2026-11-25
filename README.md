@@ -5,8 +5,11 @@ My agent config for Claude Code and opencode, run through T3 Code.
 | Path | What |
 | --- | --- |
 | `AGENTS.md` | The instructions every agent loads. |
-| `opencode.json` | The Roslynk MCP server for opencode. Models are chosen in each app's own settings. |
+| `LESSONS.md` | Rules that cost something to learn, with the evidence and what enforces them. |
+| `opencode.json` | The Roslynk MCP server for opencode, plus its default and small models. |
+| `claude-settings.json` | The Claude Code model and subagent settings, linked to `~/.claude/settings.json`. |
 | `skills/` | Vendored skills, verbatim and pinned: see `skills/UPSTREAM.md`. |
+| `bin/agent-headroom` | Pace check to run before fan-out; a non-zero exit means run fewer agents. |
 | `install.sh` | Links the above into `~/.config/opencode` and, when Claude Code is installed, `~/.claude`. |
 
 ```sh
@@ -17,7 +20,8 @@ git clone <remote> ~/dotfiles
 
 Anything already at a destination, a link included, is moved to
 `~/.config/dotfiles-backup-<stamp>/`, never deleted; only a dangling link into
-this repo is removed. A real directory is the one exception: it is refused,
+this repo is removed (an existing `~/.claude/settings.json` is backed up and
+replaced by the link). A real directory is the one exception: it is refused,
 never moved, and install exits 4 (also under `FORCE=1` or `--check`). Only the
 canonical checkout (`$DOTFILES_DIR`, default `~/dotfiles`) may install;
 `FORCE=1` overrides that on purpose.
