@@ -8,6 +8,21 @@ one fits; if it plausibly does, load it first and follow it. Skipping an
 applicable skill is a mistake; loading one that turns out not to fit is not.
 Name in your brief any skill a child should load.
 
+## Principles
+
+Weigh every significant decision, change or proposal against these.
+
+- Keep only what measurably helps the customer: time-to-value, correctness or
+  operability. Remove everything else.
+- Engineer end-to-end system behavior with clear ownership boundaries, not
+  isolated parts whose interactions are unclear or accidental.
+- Optimize for shipped capability over completeness: the smallest coherent
+  platform that proves the business model.
+- Build working code before extracting abstractions. Pattern catalogs describe
+  outcomes of real implementations; designing them first is speculation.
+- Add operational guardrails (placement rules, test conventions, decision
+  records) only when they have real first consumers.
+
 ## Changes
 
 - Work on a branch, never the default. Stage only the paths you touched.
