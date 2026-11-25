@@ -45,7 +45,9 @@ A second reviewer only when asked or after the same check failed twice.
 
 - Stage only the paths you touched, never `git add -A`, never on the default
   branch. A finished change on a thread branch is committed, pushed, and opened
-  as a PR without waiting to be asked.
+  as a PR without waiting to be asked. Merging, auto-merge and closing a PR are
+  the person's click unless they say so in this thread; where a vendored skill
+  (`file-pr`, `babysit-pr`, `modernize`, `takeover`) differs, `finish-change` wins.
 - Keep diffs minimal; reuse an existing helper or rule before adding a parallel
   one, and say which.
 - A denied command or blocked edit is a boundary, not an obstacle: never retry

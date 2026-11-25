@@ -23,11 +23,25 @@ and an unreviewed sensitive change stays uncommitted and is reported
 3. `link_pull_request` with the full URL, as the next call.
 4. One `watch_pull_request`, then end the turn. It is never re-armed, and a wake
    is not a merge: merging is the person's click. When the person asks to
-   babysit the PR, follow `babysit-pr` instead (its T3 section).
+   babysit the PR, `babysit-pr`'s T3 section runs the watch loop and the review
+   handling; merging stays the person's click.
 5. `unwatch_pull_request` before handing the thread back.
 6. `t3_worktree_handoff` goes last: it ends the session.
 
 Children never watch.
+
+## Where this wins over the vendored skills
+
+`file-pr`, `leaving-pr-comments`, `babysit-pr`, `modernize` and `takeover` are
+vendored verbatim (`skills/UPSTREAM.md`); where they differ, this skill and
+`AGENTS.md` win:
+
+- Never merge, enable auto-merge or close a PR unless the person says so in
+  this thread; "babysit" or "take over" alone is not that.
+- In a `leaving-pr-comments` note, `<user>` is the GitHub login of the account
+  posting, never a real name.
+- `babysit-pr`'s `pr-wait` is not installed. Outside T3, check the PR once and
+  hand back. A GitHub rate limit is reported, not waited out with a sleep.
 
 ## Bot callback
 

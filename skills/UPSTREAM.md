@@ -81,6 +81,10 @@ the skill's "everywhere else" path is not available here), the Codex `agents/ope
 and `full-send`, `full-stop`, `council` and `sol-loop` (they need GPT Sol or three providers;
 `full-send` also merges, and merging is the person's click).
 
+Known gaps: `modernize` triggers on "rebase a pr", so a plain rebase request gets its full
+disposition procedure, which may stop before pushing (REWORK or CLOSE). Where these skills differ
+from this harness (merging, the comment attribution, `pr-wait`), `finish-change` says which wins.
+
 Re-vendor the same way as above, with
 `B="https://raw.githubusercontent.com/t3dotgg/tstack/$SHA/skills"` and the five `<skill>/SKILL.md`
 paths.
