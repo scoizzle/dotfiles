@@ -1,5 +1,6 @@
 #!/bin/sh
-# Link this repo's agent config into Claude Code and opencode.
+# Link this repo's agent config into the tools that don't read ~/.agents.
+# Grok reads ~/.agents/skills itself and ~/.claude/CLAUDE.md, so it needs none.
 #
 #   ./install.sh          link (anything already there is moved to a backup)
 #   ./install.sh --check  show what would change; exit 1 if anything would
@@ -20,9 +21,9 @@ esac
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 # Links point at the checkout that runs this, so only the canonical one may
 # apply (2026-11-20: a feature worktree's install held for 32 hours).
-canonical=$(CDPATH='' cd -- "${DOTFILES_DIR:-$HOME/dotfiles}" 2>/dev/null && pwd -P || echo "")
+canonical=$(CDPATH='' cd -- "${DOTFILES_DIR:-$HOME/.agents}" 2>/dev/null && pwd -P || echo "")
 if [ "$check" -eq 0 ] && [ "$repo" != "$canonical" ] && [ "${FORCE:-0}" != 1 ]; then
-  echo "refusing: $repo is not ${DOTFILES_DIR:-$HOME/dotfiles}; run that checkout's install.sh, or FORCE=1" >&2
+  echo "refusing: $repo is not ${DOTFILES_DIR:-$HOME/.agents}; run that checkout's install.sh, or FORCE=1" >&2
   exit 3
 fi
 backup="$HOME/.config/dotfiles-backup-$(date +%Y%m%d-%H%M%S)"

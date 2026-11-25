@@ -73,13 +73,21 @@ jobs:
           home="$(mktemp -d)"
           HOME="$home" FORCE=1 ./install.sh
           test ! -e "$home/.claude"
+      - name: the checkout at ~/.agents installs without FORCE
+        run: |
+          set -eu
+          repo="$(pwd -P)"
+          home="$(mktemp -d)"
+          ln -s "$repo" "$home/.agents"
+          HOME="$home" "$home/.agents/install.sh"
+          test "$(readlink "$home/.config/opencode/AGENTS.md")" = "$repo/AGENTS.md"
       - name: another checkout is refused, and so is an unknown argument
         run: |
           set -eu
           home="$(mktemp -d)"
           rc=0; HOME="$home" ./install.sh || rc=$?
           test "$rc" -eq 3
-          mkdir "$home/dotfiles"
+          mkdir "$home/.agents"
           rc=0; HOME="$home" ./install.sh || rc=$?
           test "$rc" -eq 3
           test ! -e "$home/.config/opencode/AGENTS.md"
