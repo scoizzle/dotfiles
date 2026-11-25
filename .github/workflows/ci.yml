@@ -33,34 +33,56 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: install into a throwaway home, twice
+      - name: install, then --check finds nothing to change
         run: |
           set -eu
+          repo="$(pwd -P)"
           home="$(mktemp -d)"
           mkdir -p "$home/.claude/skills/run-tests" "$home/.claude/skills/someone-elses"
           echo old > "$home/.claude/skills/run-tests/SKILL.md"
           HOME="$home" FORCE=1 ./install.sh
-          for p in .config/opencode/AGENTS.md .config/opencode/opencode.json .claude/CLAUDE.md; do
-            test -L "$home/$p" && test -e "$home/$p" || { echo "not linked: $p"; exit 1; }
+          for p in .config/opencode/AGENTS.md:AGENTS.md .config/opencode/opencode.json:opencode.json .claude/CLAUDE.md:AGENTS.md; do
+            test "$(readlink "$home/${p%%:*}")" = "$repo/${p#*:}" || { echo "not linked: ${p%%:*}"; exit 1; }
           done
           for d in skills/*/; do
             n="$(basename "$d")"
-            test -f "$home/.config/opencode/skills/$n/SKILL.md" || { echo "not linked: opencode $n"; exit 1; }
-            test -f "$home/.claude/skills/$n/SKILL.md" || { echo "not linked: claude $n"; exit 1; }
+            for dst in .config/opencode/skills .claude/skills; do
+              test "$(readlink "$home/$dst/$n")" = "$repo/skills/$n" || { echo "not linked: $dst/$n"; exit 1; }
+            done
           done
           test -d "$home/.claude/skills/someone-elses" && test ! -L "$home/.claude/skills/someone-elses"
           ls "$home"/.config/dotfiles-backup-*/.claude/skills/run-tests/SKILL.md
           HOME="$home" ./install.sh --check
+      - name: a skills folder that is a link to the repo (the old layout) is replaced, the repo untouched
+        run: |
+          set -eu
+          repo="$(pwd -P)"
+          home="$(mktemp -d)"
+          mkdir -p "$home/.config/opencode"
+          ln -s "$repo/skills" "$home/.config/opencode/skills"
+          rc=0; HOME="$home" ./install.sh --check || rc=$?
+          test "$rc" -eq 1
+          HOME="$home" FORCE=1 ./install.sh
+          test ! -L "$home/.config/opencode/skills" && test -d "$home/.config/opencode/skills"
+          test "$(readlink "$home/.config/opencode/skills/run-tests")" = "$repo/skills/run-tests"
+          test -z "$(git status --porcelain)"
+          cd skills && shasum -a 256 -c UPSTREAM.sha256
       - name: no ~/.claude without Claude Code
         run: |
           set -eu
           home="$(mktemp -d)"
           HOME="$home" FORCE=1 ./install.sh
           test ! -e "$home/.claude"
-      - name: another checkout is refused
+      - name: another checkout is refused, and so is an unknown argument
         run: |
           set -eu
           home="$(mktemp -d)"
           rc=0; HOME="$home" ./install.sh || rc=$?
           test "$rc" -eq 3
+          mkdir "$home/dotfiles"
+          rc=0; HOME="$home" ./install.sh || rc=$?
+          test "$rc" -eq 3
           test ! -e "$home/.config/opencode/AGENTS.md"
+          rc=0; HOME="$home" FORCE=1 ./install.sh --dry-run || rc=$?
+          test "$rc" -eq 2
+          test ! -e "$home/.config/opencode"
