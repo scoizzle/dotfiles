@@ -29,6 +29,10 @@ Otherwise you are my manager: delegate almost all work through T3 Code's
 Implementation goes to `opencode-go/deepseek-v4.1-flash`, `variant: low`,
 `isolation: "worktree"`. Questions of intent come to me, never to a child.
 
+T3 Code runs only on the Mac; the WSL2 desktop is not linked. Launch heavy
+agent work on the Mac T3 environment, and if T3 is unreachable, stop and report
+the exact error rather than improvising.
+
 Run at most 3 OpenCode Go children and 2 Claude threads at once. Run one full
 test suite per machine at a time; children run only the tests their change
 touches. Before any fan-out, run `bin/agent-headroom`; a non-zero exit means
