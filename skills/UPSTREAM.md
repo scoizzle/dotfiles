@@ -60,3 +60,27 @@ shasum -a 256 run-tests/SKILL.md platform-detection/SKILL.md \
 
 Read the diff of a re-vendor like any other change: a skill may gain a dependency on a sibling
 that is not installed, or change its trigger description in a way that misfires.
+
+# Vendored skills from t3dotgg/tstack
+
+Five skills copied verbatim (byte-identical) from [t3dotgg/tstack](https://github.com/t3dotgg/tstack)
+at commit `11e37a74d0a6868c121cd0910ab2b3bd9873b92a` (2026-11-11), pinned in the same
+`UPSTREAM.sha256`. MIT; the upstream notice is `UPSTREAM-LICENSE-tstack`. The same rule holds: do
+not edit them here; put a difference in `AGENTS.md` or in the skill that calls them.
+
+| Skill | Why |
+| --- | --- |
+| `file-pr` | PR titles and descriptions that lead with the problem; `finish-change` uses it. |
+| `leaving-pr-comments` | The attribution note and style for comments an agent posts for the person. |
+| `babysit-pr` | Watching a PR through CI and review bots when the person asks to babysit it. |
+| `modernize` | Bring an old PR up to date, or say it should be reworked or closed. |
+| `takeover` | Finish someone else's PR, branch or thread and keep their credit. |
+
+Not vendored: `babysit-pr/scripts/pr-wait` (Python; T3's `watch_pull_request` replaces it, so
+the skill's "everywhere else" path is not available here), the Codex `agents/openai.yaml` files,
+and `full-send`, `full-stop`, `council` and `sol-loop` (they need GPT Sol or three providers;
+`full-send` also merges, and merging is the person's click).
+
+Re-vendor the same way as above, with
+`B="https://raw.githubusercontent.com/t3dotgg/tstack/$SHA/skills"` and the five `<skill>/SKILL.md`
+paths.

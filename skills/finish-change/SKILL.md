@@ -18,10 +18,12 @@ and an unreviewed sensitive change stays uncommitted and is reported
 `gh pr create` (or `pull_request_*`) own the PR.
 
 1. Stage only the paths you touched, commit, `git push`.
-2. Open the PR (`gh pr create`, or `pull_request_create`, which links it).
+2. Open the PR (`gh pr create`, or `pull_request_create`, which links it); its
+   title and description follow `file-pr`, and any comment `leaving-pr-comments`.
 3. `link_pull_request` with the full URL, as the next call.
 4. One `watch_pull_request`, then end the turn. It is never re-armed, and a wake
-   is not a merge: merging is the person's click.
+   is not a merge: merging is the person's click. When the person asks to
+   babysit the PR, follow `babysit-pr` instead (its T3 section).
 5. `unwatch_pull_request` before handing the thread back.
 6. `t3_worktree_handoff` goes last: it ends the session.
 
