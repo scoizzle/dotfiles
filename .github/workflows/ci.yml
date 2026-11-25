@@ -67,9 +67,11 @@ jobs:
           test ! -L "$home/.claude/skills/run-tests"
           test "$(cat "$home/.claude/skills/run-tests/SKILL.md")" = mine
           test ! -e "$home/.config/opencode"
-          ! ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null
-          rc=0; HOME="$home" ./install.sh --check || rc=$?
+          if ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null; then echo "a backup was made"; exit 1; fi
+          rc=0; HOME="$home" ./install.sh --check 2>"$err" || rc=$?
+          cat "$err"
           test "$rc" -eq 4
+          grep -q "would refuse" "$err"
           home="$(mktemp -d)"
           mkdir -p "$home/.config/opencode/skills/run-tests"
           echo mine > "$home/.config/opencode/skills/run-tests/SKILL.md"
@@ -80,7 +82,7 @@ jobs:
           test ! -L "$home/.config/opencode/skills/run-tests"
           test "$(cat "$home/.config/opencode/skills/run-tests/SKILL.md")" = mine
           test ! -e "$home/.config/opencode/AGENTS.md"
-          ! ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null
+          if ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null; then echo "a backup was made"; exit 1; fi
       - name: a skills folder that is a link to the repo (the old layout) is replaced, the repo untouched
         run: |
           set -eu

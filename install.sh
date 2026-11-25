@@ -56,7 +56,11 @@ if [ -d "$HOME/.claude" ]; then refuse "$HOME/.claude/CLAUDE.md"; fi
 backup="$HOME/.config/dotfiles-backup-$(date +%Y%m%d-%H%M%S)"
 drift=0
 
-save() { # move whatever is at $1 (file, folder or link) into the backup
+save() { # move whatever is at $1 (file or link) into the backup
+  if [ -d "$1" ] && [ ! -L "$1" ]; then # backstop; the preflight above should catch it first
+    echo "refusing: $1 is a real directory; move it yourself, then rerun" >&2
+    exit 4
+  fi
   mkdir -p "$backup$(dirname -- "${1#"$HOME"}")"
   mv -- "$1" "$backup${1#"$HOME"}"
   echo "saved  $1 -> $backup${1#"$HOME"}"
