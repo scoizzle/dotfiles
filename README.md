@@ -7,7 +7,7 @@ edited; each tool gets links only where it doesn't read `~/.agents` itself.
 | Tool | Skills | `AGENTS.md` |
 | --- | --- | --- |
 | Claude Code | linked into `~/.claude/skills` | linked as `~/.claude/CLAUDE.md` |
-| opencode | linked into `~/.config/opencode/skills` | linked as `~/.config/opencode/AGENTS.md` |
+| opencode | reads `~/.agents/skills` | linked as `~/.config/opencode/AGENTS.md` |
 | Grok | reads `~/.agents/skills` | reads `~/.claude/CLAUDE.md` |
 
 | Path | What |

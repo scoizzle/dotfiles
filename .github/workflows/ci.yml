@@ -46,10 +46,9 @@ jobs:
           done
           for d in skills/*/; do
             n="$(basename "$d")"
-            for dst in .config/opencode/skills .claude/skills; do
-              test "$(readlink "$home/$dst/$n")" = "$repo/skills/$n" || { echo "not linked: $dst/$n"; exit 1; }
-            done
+            test "$(readlink "$home/.claude/skills/$n")" = "$repo/skills/$n" || { echo "not linked: .claude/skills/$n"; exit 1; }
           done
+          test ! -e "$home/.config/opencode/skills" || { echo "opencode reads ~/.agents/skills itself; nothing to link"; exit 1; }
           test -d "$home/.claude/skills/someone-elses" && test ! -L "$home/.claude/skills/someone-elses"
           ls "$home"/.config/dotfiles-backup-*/.claude/skills/run-tests/SKILL.md
           HOME="$home" ./install.sh --check
@@ -58,13 +57,13 @@ jobs:
           set -eu
           repo="$(pwd -P)"
           home="$(mktemp -d)"
-          mkdir -p "$home/.config/opencode"
-          ln -s "$repo/skills" "$home/.config/opencode/skills"
+          mkdir -p "$home/.claude"
+          ln -s "$repo/skills" "$home/.claude/skills"
           rc=0; HOME="$home" ./install.sh --check || rc=$?
           test "$rc" -eq 1
           HOME="$home" FORCE=1 ./install.sh
-          test ! -L "$home/.config/opencode/skills" && test -d "$home/.config/opencode/skills"
-          test "$(readlink "$home/.config/opencode/skills/run-tests")" = "$repo/skills/run-tests"
+          test ! -L "$home/.claude/skills" && test -d "$home/.claude/skills"
+          test "$(readlink "$home/.claude/skills/run-tests")" = "$repo/skills/run-tests"
           test -z "$(git status --porcelain)"
           cd skills && shasum -a 256 -c UPSTREAM.sha256
       - name: no ~/.claude without Claude Code

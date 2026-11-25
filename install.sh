@@ -1,13 +1,14 @@
 #!/bin/sh
-# Link this repo's agent config into the tools that don't read ~/.agents.
-# Grok reads ~/.agents/skills itself and ~/.claude/CLAUDE.md, so it needs none.
+# Link this repo's agent config only where a tool doesn't read ~/.agents.
+# opencode and Grok read ~/.agents/skills themselves; Grok also reads
+# ~/.claude/CLAUDE.md. Claude Code reads nothing from ~/.agents.
 #
 #   ./install.sh          link (anything already there is moved to a backup)
 #   ./install.sh --check  show what would change; exit 1 if anything would
 #
 # AGENTS.md     -> ~/.config/opencode/AGENTS.md and ~/.claude/CLAUDE.md
 # opencode.json -> ~/.config/opencode/opencode.json
-# skills/<n>    -> ~/.config/opencode/skills/<n> and ~/.claude/skills/<n>
+# skills/<n>    -> ~/.claude/skills/<n>
 # ~/.claude is used only when it exists (Claude Code is installed).
 set -eu
 
@@ -81,7 +82,6 @@ oc="$HOME/.config/opencode"
 realdir "$oc"
 link AGENTS.md "$oc/AGENTS.md"
 link opencode.json "$oc/opencode.json"
-skills_into "$oc/skills"
 
 if [ -d "$HOME/.claude" ]; then
   link AGENTS.md "$HOME/.claude/CLAUDE.md"
