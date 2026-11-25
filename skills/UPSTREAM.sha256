@@ -1,7 +1,0 @@
-# sha256 for the skills vendored from dotnet/skills at 2877c712edc20643b72f64e2983b168e6661d607
-# Regenerate from the skills/ directory: shasum -a 256 <skill>/<file> ...
-7b9698bb5c1f172ca35695dc3b614957c2cb8badf7b230a4b8118d173650fe2b  run-tests/SKILL.md
-c824bf8f8cbf1233b8b0dbc6e38fae6ac2486c42a6a1f6553a6335daa6838c1a  platform-detection/SKILL.md
-08e276dcafe6bd5bfbaab435065ca24a5800a4eae3ffd7fc15daa1e81354bbc4  platform-detection/references/command-mode.md
-01cf87008db2f6ffe17f397856d9ccb5080bbc869e4089baab9acee2e5b0027c  test-anti-patterns/SKILL.md
-6c6cc5d4646a8b1eeaae7bf3db18ea5418fce35e48cc4f84a9493d3890a5a107  assertion-quality/SKILL.md
