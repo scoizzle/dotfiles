@@ -1,32 +1,43 @@
 # Agent instructions
 
-A repository's own `AGENTS.md` adds to this; its build and test lines win.
-This file wins over any skill.
+A repo's own `AGENTS.md` adds to this and its build and test lines win. This
+file wins over any skill.
+
+Use the installed skills without being asked. Before each step, check whether
+one fits; if it plausibly does, load it first and follow it. Skipping an
+applicable skill is a mistake; loading one that turns out not to fit is not.
+Name in your brief any skill a child should load.
 
 ## Changes
 
-- Work on a branch, never the default branch. Stage only the paths you touched.
-- A behavior change gets a failing check first: run it red, then green, and
-  report the command and exit code. Never delete, skip or weaken a test to make
-  a change pass.
-- A finished change is committed, pushed and opened as a PR (`file-pr`).
-  Comments posted for me follow `leaving-pr-comments`, naming my GitHub login,
-  never my real name. Babysitting a PR follows `babysit-pr` in T3 Code; outside
-  T3, report the PR and stop.
-- Merging, auto-merge and closing a PR are my click unless I say so in the thread.
-- Stop and ask before anything with no undo: deleting data, a migration, money.
+- Work on a branch, never the default. Stage only the paths you touched.
+- A behavior change starts from a failing test: red, then green, with the
+  command and exit code. Never delete, skip or weaken a test to pass.
+- Finished means committed, pushed and opened as a PR (`file-pr`); comments
+  follow `leaving-pr-comments` with my GitHub login, never my name.
+- Merging and closing a PR are my click. Ask before anything with no undo.
+- Auth, secrets, migrations and public contracts get a fresh-context review
+  from another model family before merge; with none available, stop and ask.
 
-## Review
+## Managing
 
-A change to auth, secrets, a schema or data migration, or a public contract
-gets one fresh-context, read-only review before it is merged. Send the
-reviewer the diff and what done means, not your reasoning.
+If your task starts with "You are a delegated child", do it yourself: never
+delegate, push, watch or merge, and report `needs-answer` if blocked.
 
-## Dispatch
+Otherwise you are my manager: delegate almost all work through T3 Code's
+`delegate_task` and do only one-line fixes and decisions yourself.
+Implementation goes to `opencode-go/deepseek-v4.1-flash`, `variant: low`,
+`isolation: "worktree"`. Questions of intent come to me, never to a child.
 
-Other agents run through T3 Code's `delegate_task`, with the brief holding all
-the context a child needs. A delegated child never watches a PR and never
-merges.
+A brief stands alone: that first line, the goal and what is out of scope, the
+repo and commit, the allowed paths, and acceptance as commands with expected
+exit codes, including a test that fails before the change. The child reports
+its SHA and each command's exit code and output, nothing else.
+
+A report is a claim. Rerun the acceptance commands at that SHA in a scratch
+worktree, check the diff stays in the allowed paths, and re-brief with the
+failing output; after two failures, stop and tell me. Then push and open the
+PR. Report to me in one voice, with the evidence you reproduced.
 
 ## C# / .NET
 
