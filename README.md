@@ -18,6 +18,10 @@ git clone <remote> ~/dotfiles
 ~/dotfiles/install.sh           # link it
 ```
 
+Rerun `install.sh` on each machine (Mac and WSL2) after pulling; it makes
+`~/.claude/settings.json` a link to `claude-settings.json`, so move personal
+settings into that file first.
+
 Anything already at a destination, a link included, is moved to
 `~/.config/dotfiles-backup-<stamp>/`, never deleted; only a dangling link into
 this repo is removed (an existing `~/.claude/settings.json` is backed up and
