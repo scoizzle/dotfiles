@@ -38,8 +38,8 @@ jobs:
           set -eu
           repo="$(pwd -P)"
           home="$(mktemp -d)"
-          mkdir -p "$home/.claude/skills/run-tests" "$home/.claude/skills/someone-elses"
-          echo old > "$home/.claude/skills/run-tests/SKILL.md"
+          mkdir -p "$home/.claude/skills/someone-elses"
+          echo old > "$home/.claude/CLAUDE.md"
           HOME="$home" FORCE=1 ./install.sh
           for p in .config/opencode/AGENTS.md:AGENTS.md .config/opencode/opencode.json:opencode.json .claude/CLAUDE.md:AGENTS.md; do
             test "$(readlink "$home/${p%%:*}")" = "$repo/${p#*:}" || { echo "not linked: ${p%%:*}"; exit 1; }
@@ -51,8 +51,36 @@ jobs:
             done
           done
           test -d "$home/.claude/skills/someone-elses" && test ! -L "$home/.claude/skills/someone-elses"
-          ls "$home"/.config/dotfiles-backup-*/.claude/skills/run-tests/SKILL.md
+          ls "$home"/.config/dotfiles-backup-*/.claude/CLAUDE.md
           HOME="$home" ./install.sh --check
+      - name: a real directory at a destination is refused, even with FORCE, and nothing changes
+        run: |
+          set -eu
+          home="$(mktemp -d)"
+          err="$(mktemp)"
+          mkdir -p "$home/.claude/skills/run-tests"
+          echo mine > "$home/.claude/skills/run-tests/SKILL.md"
+          rc=0; HOME="$home" FORCE=1 ./install.sh 2>"$err" || rc=$?
+          cat "$err"
+          test "$rc" -eq 4
+          grep -q "real directory" "$err"
+          test ! -L "$home/.claude/skills/run-tests"
+          test "$(cat "$home/.claude/skills/run-tests/SKILL.md")" = mine
+          test ! -e "$home/.config/opencode"
+          ! ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null
+          rc=0; HOME="$home" ./install.sh --check || rc=$?
+          test "$rc" -eq 4
+          home="$(mktemp -d)"
+          mkdir -p "$home/.config/opencode/skills/run-tests"
+          echo mine > "$home/.config/opencode/skills/run-tests/SKILL.md"
+          rc=0; HOME="$home" FORCE=1 ./install.sh 2>"$err" || rc=$?
+          cat "$err"
+          test "$rc" -eq 4
+          grep -q "real directory" "$err"
+          test ! -L "$home/.config/opencode/skills/run-tests"
+          test "$(cat "$home/.config/opencode/skills/run-tests/SKILL.md")" = mine
+          test ! -e "$home/.config/opencode/AGENTS.md"
+          ! ls -d "$home"/.config/dotfiles-backup-* 2>/dev/null
       - name: a skills folder that is a link to the repo (the old layout) is replaced, the repo untouched
         run: |
           set -eu
