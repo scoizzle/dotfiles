@@ -39,7 +39,7 @@ this session holds; it names which in its report. A question of intent comes
 to me, never to a child.
 
 Children run through T3 Code's `delegate_task`. Implementation goes to
-`opencode-go/deepseek-v4.1-flash` with option `variant: high` and
+`opencode-go/deepseek-v4.1-flash` with option `variant: low` and
 `isolation: "worktree"`; review goes to a fresh model of a different family
 than the writer's (`claude-opus-5-5` for a DeepSeek diff). If that model is not
 offered, say so and ask; do not substitute. Run independent children in
