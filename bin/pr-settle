@@ -3,13 +3,14 @@
 #
 # Usage: pr-settle <pr-number-or-url>
 #
-# Prints the checks, unresolved review-thread count and mergeability, then
-# exits:
-#   0  ready: green checks, zero unresolved review threads, mergeable
+# Prints the required checks, unresolved review-thread count and mergeability,
+# then exits:
+#   0  ready: required checks green, zero unresolved review threads, mergeable
 #   1  failing checks
-#   2  pending checks
+#   2  pending: pending checks, or mergeability GitHub has not computed yet
 #   3  unresolved review threads (checks otherwise ok)
-#   4  other blocker: conflicts, draft, merged/closed, not a PR, gh error
+#   4  other blocker: conflicts, merge blocked or branch behind base, draft,
+#      merged/closed, not a PR, gh error
 #
 # This is a status snapshot, not a watch. Check it once, then use T3's
 # watch_pull_request if a PR needs to settle. Do not poll with
@@ -21,9 +22,9 @@ usage() {
 usage: pr-settle <pr-number-or-url>
 
 One-shot pull request readiness check. Exit codes:
-  0 ready   1 failing checks   2 pending checks
-  3 unresolved review threads  4 other blocker (conflicts, draft, merged,
-  closed, not a PR, gh error)
+  0 ready   1 failing checks   2 pending (checks, or mergeability not yet
+  computed)   3 unresolved review threads   4 other blocker (conflicts, merge
+  blocked or branch behind base, draft, merged, closed, not a PR, gh error)
 EOF
 }
 
@@ -100,16 +101,18 @@ if [ "$mergeable" = CONFLICTING ] || [ "$merge_state" = DIRTY ]; then
   echo "pr-settle: blocker: merge conflicts"
   exit 4
 fi
-if [ "$mergeable" = UNKNOWN ]; then
-  echo "pr-settle: blocker: mergeability unknown; GitHub has not computed it"
-  exit 4
+# GitHub returns UNKNOWN right after a push while it computes mergeability, so
+# that is pending, not a blocker.
+merge_pending=no
+if [ "$mergeable" = UNKNOWN ] || [ "$merge_state" = UNKNOWN ]; then
+  merge_pending=yes
 fi
 
-# Checks: bucket values are pass, fail, pending, skipping, cancel. Treat
-# skipping as fine and anything unknown as pending.
-buckets=$(gh pr checks "$number" "$@" --json bucket --jq '.[].bucket' \
-  2> "$gh_err") || true
-if [ -z "$buckets" ] && [ -s "$gh_err" ] && ! grep -qi "no checks" "$gh_err"; then
+# Checks: required checks only. Bucket values are pass, fail, pending, skipping,
+# cancel. Treat skipping as fine and anything unknown as pending.
+buckets=$(gh pr checks "$number" "$@" --required --json bucket \
+  --jq '.[].bucket' 2> "$gh_err") || true
+if [ -z "$buckets" ] && [ -s "$gh_err" ] && ! grep -qiE "no (required )?checks" "$gh_err"; then
   echo "pr-settle: cannot read checks:" >&2
   sed 's/^/  /' "$gh_err" >&2
   exit 4
@@ -169,9 +172,17 @@ if [ "$n_pending" -gt 0 ]; then
   echo "pr-settle: pending checks"
   exit 2
 fi
+if [ "$merge_pending" = yes ]; then
+  echo "pr-settle: pending: mergeability unknown; GitHub has not computed it"
+  exit 2
+fi
 if [ "$unresolved" -gt 0 ]; then
   echo "pr-settle: unresolved review threads"
   exit 3
+fi
+if [ "$merge_state" = BLOCKED ] || [ "$merge_state" = BEHIND ]; then
+  echo "pr-settle: blocker: merge state is $merge_state"
+  exit 4
 fi
 if [ "$mergeable" != MERGEABLE ]; then
   echo "pr-settle: blocker: mergeable is $mergeable"
