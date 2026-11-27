@@ -8,7 +8,6 @@ Copied verbatim (byte-identical) and pinned in `UPSTREAM.sha256`; CI runs
 | --- | --- | --- |
 | `run-tests`, `platform-detection`, `test-anti-patterns`, `assertion-quality` | [dotnet/skills](https://github.com/dotnet/skills) `2877c712edc20643b72f64e2983b168e6661d607`, `plugins/dotnet-test/skills/` | MIT, `UPSTREAM-LICENSE-dotnet` |
 | `file-pr`, `leaving-pr-comments`, `babysit-pr`, `modernize`, `takeover` | [t3dotgg/tstack](https://github.com/t3dotgg/tstack) `11e37a74d0a6868c121cd0910ab2b3bd9873b92a`, `skills/` | MIT, `UPSTREAM-LICENSE-tstack` |
-| `roslynk` | [mrpmorris/Roslynk](https://github.com/mrpmorris/Roslynk) `bb2f5426121be844e99a1dc5f786ef9c6fdb15c5`, `skills/` | MIT per GitHub metadata; upstream ships no license file |
 
 Not vendored: `babysit-pr/scripts/pr-wait` (T3's `watch_pull_request` does that
 job), and tstack's `full-send`, `full-stop`, `council` and `sol-loop`.

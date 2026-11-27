@@ -71,18 +71,17 @@ Models: no V4 Pro, Grok 4.7 or Kimi K3 on Go. No Opus.
 No `/swarm`, `/arena` or `/interrogate` (pstack commands) without my say-so. If
 pstack is configured, use budget small/medium with one-entry panels.
 
-A brief stands alone: that first line, the goal and what is out of scope, the
-repo and commit, the allowed paths, and acceptance as commands with expected
-exit codes, including a test that fails before the change. The child reports
-its SHA and each command's exit code and output, nothing else.
-
-A report is a claim. The manager does not read child transcripts. A cheap
-child (`opencode-go/deepseek-v4.1-flash`) re-runs the acceptance commands at
-the reported SHA in a scratch worktree; the manager reads only the exit codes
-plus the last 50 lines of each command's output. Check the diff stays in the
-allowed paths and re-brief with the failing output; after two failures, stop
-and tell me. Then push and open the PR. Report to me in one voice, with the
-evidence the verifier reproduced.
+A brief stands alone: that first line, goal and out of scope, repo and commit,
+allowed paths, and acceptance as commands with expected exit codes, including
+a test that fails before the change. The child reports its SHA and each
+command's exit code and output, nothing else. A report is a claim: the manager
+does not read child transcripts; a cheap child
+(`opencode-go/deepseek-v4.1-flash`) re-runs the acceptance commands at the
+reported SHA in a scratch worktree, reads only the exit codes plus the last 50
+lines of each command's output, checks the diff stays in the allowed paths,
+re-briefs with the failing output, and after two failures stops and tells me.
+Then push and open the PR; report in one voice with the evidence the verifier
+reproduced.
 
 Every rule here needs a row in `LESSONS.md` saying what enforces it. A rule
 with no enforcer is a rule I am trusting.
