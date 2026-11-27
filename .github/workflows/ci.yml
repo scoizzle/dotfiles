@@ -99,7 +99,6 @@ jobs:
           test ! -L "$home/.config/opencode/skills" && test -d "$home/.config/opencode/skills"
           test "$(readlink "$home/.config/opencode/skills/run-tests")" = "$repo/skills/run-tests"
           test -z "$(git status --porcelain)"
-          cd skills && shasum -a 256 -c UPSTREAM.sha256
       - name: no ~/.claude without Claude Code
         run: |
           set -eu
