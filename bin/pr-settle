@@ -61,26 +61,29 @@ case "$arg" in
 esac
 
 tmp=$(mktemp -d) || exit 4
-trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 4' HUP INT TERM
 
 gh_err=$tmp/gh.err
-view_field() { # view_field <json field>: print that field
-  if [ -n "$repo" ]; then
-    gh pr view "$number" --repo "$repo" --json "$1" --jq ".$1"
-  else
-    gh pr view "$number" --json "$1" --jq ".$1"
-  fi
-}
+if [ -n "$repo" ]; then
+  set -- --repo "$repo"
+else
+  set --
+fi
 
-if ! state=$(view_field state 2> "$gh_err"); then
+# One read, so a later gh failure cannot leak out as exit 1 under set -e.
+if ! fields=$(gh pr view "$number" "$@" \
+    --json state,isDraft,mergeable,mergeStateStatus,url \
+    --jq '[.state, (.isDraft | tostring), .mergeable, .mergeStateStatus, .url] | @tsv' \
+    2> "$gh_err"); then
   echo "pr-settle: cannot read PR $arg:" >&2
   sed 's/^/  /' "$gh_err" >&2
   exit 4
 fi
-is_draft=$(view_field isDraft)
-mergeable=$(view_field mergeable)
-merge_state=$(view_field mergeStateStatus)
-url=$(view_field url)
+tab=$(printf '\t')
+IFS=$tab read -r state is_draft mergeable merge_state url <<EOF
+$fields
+EOF
 
 printf 'pr-settle: %s %s\n' "$url" "$state"
 printf '  mergeable: %s (%s)\n' "$mergeable" "$merge_state"
@@ -104,11 +107,6 @@ fi
 
 # Checks: bucket values are pass, fail, pending, skipping, cancel. Treat
 # skipping as fine and anything unknown as pending.
-if [ -n "$repo" ]; then
-  set -- --repo "$repo"
-else
-  set --
-fi
 buckets=$(gh pr checks "$number" "$@" --json bucket --jq '.[].bucket' \
   2> "$gh_err") || true
 if [ -z "$buckets" ] && [ -s "$gh_err" ] && ! grep -qi "no checks" "$gh_err"; then

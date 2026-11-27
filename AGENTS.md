@@ -33,7 +33,7 @@ Weigh every significant decision, change or proposal against these.
 - A PR you opened or took over ends the turn with `link_pull_request` then
   `watch_pull_request`; never poll (`gh pr checks --watch`, `gh run watch`,
   sleep loops). `bin/pr-settle <n>` is the one-shot status. Done means required
-  checks green and unresolved review threads resolved, or the exact blocker
+  checks green and review threads resolved, or the exact blocker
   reported. On a wake, fix checks, resolve threads, re-watch if waiting, and
   unwatch before handback. A wake is not a merge decision.
 - Review-only threads may skip the watch but must resolve, or clearly leave

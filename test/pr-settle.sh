@@ -11,6 +11,7 @@ tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 fails=0
+target=60
 pass() { echo "PASS $1"; }
 fail() { echo "FAIL $1"; fails=$((fails + 1)); }
 
@@ -18,6 +19,15 @@ mkdir "$tmp/bin"
 cat > "$tmp/bin/gh" <<'EOF'
 #!/bin/sh
 # Fixture gh: every value comes from the environment, set per test.
+# GH_FAIL_AFTER=n lets the first n calls through, then fails (auth or network
+# loss mid-run).
+if [ -n "${GH_FAIL_AFTER:-}" ]; then
+  echo x >> "$GH_COUNT"
+  if [ "$(wc -l < "$GH_COUNT")" -gt "$GH_FAIL_AFTER" ]; then
+    echo "gh: HTTP 401: Bad credentials" >&2
+    exit 1
+  fi
+fi
 case "$1" in
   pr)
     case "$2" in
@@ -26,17 +36,10 @@ case "$1" in
           echo "gh: could not resolve PR" >&2
           exit 1
         fi
-        case "$*" in
-          *mergeStateStatus*) printf '%s\n' "${PR_MERGE_STATE:-CLEAN}" ;;
-          *mergeable*) printf '%s\n' "${PR_MERGEABLE:-MERGEABLE}" ;;
-          *isDraft*) printf '%s\n' "${PR_DRAFT:-false}" ;;
-          *url*) printf '%s\n' "${PR_URL:-https://github.com/scoizzle/dotfiles/pull/60}" ;;
-          *state*) printf '%s\n' "${PR_STATE:-OPEN}" ;;
-          *)
-            echo "fake gh: unhandled pr view: $*" >&2
-            exit 1
-            ;;
-        esac
+        # state, isDraft, mergeable, mergeStateStatus, url as @tsv.
+        printf '%s\t%s\t%s\t%s\t%s\n' "${PR_STATE:-OPEN}" "${PR_DRAFT:-false}" \
+          "${PR_MERGEABLE:-MERGEABLE}" "${PR_MERGE_STATE:-CLEAN}" \
+          "${PR_URL:-https://github.com/scoizzle/dotfiles/pull/60}"
         ;;
       checks)
         printf '%s\n' "${PR_CHECKS:-pass}"
@@ -63,7 +66,8 @@ check() { # check <name> <expected exit> [env assignments...]
   want=$2
   shift 2
   rc=0
-  env PATH="$tmp/bin:$PATH" "$@" sh "$script" 60 > "$tmp/out" 2> "$tmp/err" || rc=$?
+  rm -f "$tmp/count"
+  env PATH="$tmp/bin:$PATH" GH_COUNT="$tmp/count" "$@" sh "$script" "$target" > "$tmp/out" 2> "$tmp/err" || rc=$?
   if [ "$rc" -eq "$want" ]; then
     pass "$name"
   else
@@ -97,10 +101,14 @@ check "unknown-mergeable" 4 PR_MERGEABLE=UNKNOWN
 check "draft" 4 PR_DRAFT=true
 # gh failure is a clear blocker, not a crash.
 check "gh-failure" 4 GH_FAIL=1
+# gh failing after the first call is still a blocker, never "failing checks".
+check "gh-failure-mid-run" 4 GH_FAIL_AFTER=1
 # No checks configured counts as green.
 check "no-checks" 0 PR_CHECKS=
 # A full URL is accepted and resolves the same way.
+target=https://github.com/scoizzle/dotfiles/pull/60
 check "url-arg" 0 PR_CHECKS="pass pass"
+target=60
 
 # The URL form must be passed through as a repo-qualified target, not treated
 # as a bare number. The fake gh records its arguments for this one check.
@@ -111,13 +119,8 @@ case "$1" in
   pr)
     case "$2" in
       view)
-        case "$*" in
-          *mergeStateStatus*) echo CLEAN ;;
-          *mergeable*) echo MERGEABLE ;;
-          *isDraft*) echo false ;;
-          *url*) echo "https://github.com/scoizzle/dotfiles/pull/60" ;;
-          *state*) echo OPEN ;;
-        esac
+        printf 'OPEN\tfalse\tMERGEABLE\tCLEAN\t%s\n' \
+          "https://github.com/scoizzle/dotfiles/pull/60"
         ;;
       checks) echo pass ;;
     esac
