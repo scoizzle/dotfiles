@@ -44,15 +44,40 @@ Otherwise you are my manager: delegate almost all work through T3 Code's
 Implementation goes to `opencode-go/deepseek-v4.1-flash`, `variant: low`,
 `isolation: "worktree"`. Questions of intent come to me, never to a child.
 
+T3 Code runs only on the Mac; the WSL2 desktop is not linked. Launch heavy
+agent work on the Mac T3 environment, and if T3 is unreachable, stop and report
+the exact error rather than improvising.
+
+Run at most 3 OpenCode Go children and 2 Claude threads at once. Run one full
+test suite per machine at a time; children run only the tests their change
+touches. Before any fan-out, run `bin/agent-headroom`; a non-zero exit means
+run fewer children or stop and ask me. Exit 0 with a warning means the endpoint
+or `OPENCODE_API_KEY` was unavailable; then ask instead of guessing.
+
+Start a new thread per task. At about 300 messages, write a summary file (goal,
+state, branch/SHA, next step, open risks) and continue in a fresh thread from
+that file.
+
+Models: no V4 Pro, Grok 4.7 or Kimi K3 on Go. No Opus.
+
+No `/swarm`, `/arena` or `/interrogate` (pstack commands) without my say-so. If
+pstack is configured, use budget small/medium with one-entry panels.
+
 A brief stands alone: that first line, the goal and what is out of scope, the
 repo and commit, the allowed paths, and acceptance as commands with expected
 exit codes, including a test that fails before the change. The child reports
 its SHA and each command's exit code and output, nothing else.
 
-A report is a claim. Rerun the acceptance commands at that SHA in a scratch
-worktree, check the diff stays in the allowed paths, and re-brief with the
-failing output; after two failures, stop and tell me. Then push and open the
-PR. Report to me in one voice, with the evidence you reproduced.
+A report is a claim. The manager does not read child transcripts. A cheap
+child (`opencode-go/deepseek-v4.1-flash`) re-runs the acceptance commands at
+the reported SHA in a scratch worktree; the manager reads only the exit codes
+plus the last 50 lines of each command's output. Check the diff stays in the
+allowed paths and re-brief with the failing output; after two failures, stop
+and tell me. Then push and open the PR. Report to me in one voice, with the
+evidence the verifier reproduced.
+
+Every rule here needs a row in `LESSONS.md` saying what enforces it. A rule
+with no enforcer is a rule I am trusting.
 
 ## C# / .NET
 
