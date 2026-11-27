@@ -30,6 +30,14 @@ Weigh every significant decision, change or proposal against these.
   command and exit code. Never delete, skip or weaken a test to pass.
 - Finished means committed, pushed and opened as a PR (`file-pr`); comments
   follow `leaving-pr-comments` with my GitHub login, never my name.
+- A PR you opened or took over ends the turn with `link_pull_request` then
+  `watch_pull_request`; never poll (`gh pr checks --watch`, `gh run watch`,
+  sleep loops). `bin/pr-settle <n>` is the one-shot status. Done means required
+  checks green and review threads resolved, or the exact blocker
+  reported. On a wake, fix checks, resolve threads, re-watch if waiting, and
+  unwatch before handback. A wake is not a merge decision.
+- Review-only threads may skip the watch but must resolve, or clearly leave
+  open, every conversation they start.
 - Merging and closing a PR are my click. Ask before anything with no undo.
 - Auth, secrets, migrations and public contracts get a fresh-context review
   from another model family before merge; with none available, stop and ask.

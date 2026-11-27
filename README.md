@@ -10,6 +10,7 @@ My agent config for Claude Code and opencode, run through T3 Code.
 | `claude-settings.json` | The Claude Code model and subagent settings, linked to `~/.claude/settings.json`. |
 | `skills/` | Vendored skills, verbatim and pinned: see `skills/UPSTREAM.md`. |
 | `bin/agent-headroom` | Pace check to run before fan-out; a non-zero exit means run fewer agents. |
+| `bin/pr-settle` | One-shot PR readiness check: checks, unresolved review threads, mergeability. |
 | `install.sh` | Links the above into `~/.config/opencode` and, when Claude Code is installed, `~/.claude`. |
 
 ```sh
