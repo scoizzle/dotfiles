@@ -21,3 +21,11 @@ Known gaps:
 
 To re-vendor: download the same paths at a new commit, read the diff, then re-pin from this
 directory with `shasum -a 256 <skill>/<file> ...` and update the table.
+
+## Reviewed, not vendored
+
+[p3-stack](https://github.com/uzairansaruzi/p3-stack)
+`09909ebb5c0125e27fad3e57d96b81e832696d69` (2026-11-27), read in full from a
+clone outside this repo. Nothing was copied, so it has no sha256 rows: its T3
+guidance (native `watch_pull_request` and `pull_request_read`) replaced
+`bin/pr-settle`, and its skills are additive, which would grow this repo.
