@@ -31,11 +31,13 @@ Weigh every significant decision, change or proposal against these.
 - Finished means committed, pushed and opened as a PR (`file-pr`); comments
   follow `leaving-pr-comments` with my GitHub login, never my name.
 - A PR you opened or took over ends the turn with `link_pull_request` then
-  `watch_pull_request`; never poll (`gh pr checks --watch`, `gh run watch`,
-  sleep loops). `bin/pr-settle <n>` is the one-shot status. Done means required
-  checks green and review threads resolved, or the exact blocker
-  reported. On a wake, fix checks, resolve threads, re-watch if waiting, and
-  unwatch before handback. A wake is not a merge decision.
+  `watch_pull_request`. One `pull_request_read` (`include: checks, threads`) is
+  the status: its `required` flags, `behindBy`, `unresolvedThreads` and
+  `mergeability: unknown` replace a private script. Done means required checks
+  green and no unresolved review thread, or the exact blocker reported. On a
+  wake, fix checks, resolve threads, re-watch if waiting, and unwatch before
+  handback. A wake is not a merge decision. WSL2 gets PR checks once it is
+  linked as a T3 environment.
 - Review-only threads may skip the watch but must resolve, or clearly leave
   open, every conversation they start.
 - Merging and closing a PR are my click. Ask before anything with no undo.
