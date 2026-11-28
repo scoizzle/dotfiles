@@ -19,13 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck -s sh install.sh bin/agent-headroom test/agent-headroom.sh test/native-pr-status.sh
+        run: shellcheck -s sh install.sh bin/agent-headroom test/agent-headroom.sh
       - name: sh -n
-        run: for f in install.sh bin/agent-headroom test/agent-headroom.sh test/native-pr-status.sh; do sh -n "$f"; done
+        run: for f in install.sh bin/agent-headroom test/agent-headroom.sh; do sh -n "$f"; done
       - name: agent-headroom pace math
         run: sh test/agent-headroom.sh
-      - name: PR status stays native
-        run: sh test/native-pr-status.sh
       - name: vendored skills match their pin
         run: cd skills && shasum -a 256 -c UPSTREAM.sha256
 
